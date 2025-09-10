@@ -1,9 +1,8 @@
-const router = require('express').Router();
-const { register, login } = require('../controllers/authController');
+const express = require('express');
+const router = express.Router();
+const authController = require('../controllers/authController');
 
-
-router.post('/register', register); // SuperAdmin/Partner can create users for their org via separate UI rules
-router.post('/login', login);
-
+router.post('/register', authController.register);
+router.post('/login', authController.login);
 
 module.exports = router;
