@@ -41,10 +41,10 @@ exports.createCompany = asyncHandler(async (req, res) => {
 
 // 🟢 Agent ke liye apne client ki saari companies laana
 exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
-    
-    const agentId = req.body._id; // maan lo user login hai aur req.user me agent ka data hai
+
+    const agentId = req.headers.agentid; // maan lo user login hai aur req.user me agent ka data hai
     // 1. Agent ka detail nikaalo
-    console.log("Request User:", req);
+    console.log("Request User:", req.headers);
     const agent = await User.findById(agentId);
     
       if (!agent || agent.role !== 'Agent') {
@@ -63,3 +63,59 @@ exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
 
   res.status(200).json(new ApiResponse(200, companies, "Companies fetched successfully"));
 });
+
+//Assign salesman to company
+exports.assignSalesman = async (req, res) => {
+  try {
+    const { companyId, salesmanId } = req.body;
+
+    const company = await Company.findById(companyId);
+    if (!company) return res.status(404).json({ error: "Company not found" });
+
+    const salesman = await User.findById(salesmanId);
+    if (!salesman || salesman.role !== "Salesman") {
+      return res.status(400).json({ error: "Invalid salesman" });
+    }
+
+    if (!company.salesmen.includes(salesmanId)) {
+      company.salesmen.push(salesmanId);
+      await company.save();
+    }
+
+    res.json({ message: "Salesman assigned", company });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// 3. Set access for salesman in company
+exports.setAccess = async (req, res) => {
+  try {
+    const { companyId, userId, module, permissions } = req.body;
+
+    let access = await CompanyUserAccess.findOne({ company: companyId, user: userId, module });
+
+    if (!access) {
+      access = new CompanyUserAccess({ company: companyId, user: userId, module, permissions });
+    } else {
+      access.permissions = permissions;
+    }
+
+    await access.save();
+
+    res.json({ message: "Access updated", access });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// 4. Get access list
+exports.getAccess = async (req, res) => {
+  try {
+    const { companyId, userId } = req.query;
+    const access = await CompanyUserAccess.find({ company: companyId, user: userId });
+    res.json({ access });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
