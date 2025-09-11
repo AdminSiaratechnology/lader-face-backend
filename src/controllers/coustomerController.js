@@ -1,0 +1,119 @@
+const Customer = require('../models/Customer');
+const Company = require('../models/Company');
+const asyncHandler = require('../utils/asyncHandler');
+const ApiError = require('../utils/apiError');
+const ApiResponse = require('../utils/apiResponse');
+
+// 🟢 Create Customer
+exports.createCustomer = asyncHandler(async (req, res) => {
+  const {
+    customerName,
+    customerCode,
+    emailAddress,
+    phoneNumber,
+    company, // company reference
+    ...rest
+  } = req.body;
+
+  if (!customerName || !customerCode) {
+    throw new ApiError(400, "Customer name and code are required");
+  }
+
+  // Company check
+  const existingCompany = await Company.findById(company);
+  if (!existingCompany) {
+    throw new ApiError(404, "Company not found");
+  }
+
+  let logoUrl = null;
+  let registrationDocs = [];
+
+  // Logo file
+  if (req?.files?.['logo'] && req?.files?.['logo'][0]) {
+    logoUrl = req.files['logo'][0].location;
+  }
+
+  // Registration docs files
+  if (req?.files?.['registrationDocs']) {
+    registrationDocs = req.files['registrationDocs'].map(file => ({
+      type: req.body.docType || 'Other',
+      file: file.location,
+      fileName: file.originalname
+    }));
+  }
+
+  const customer = await Customer.create({
+    customerName,
+    customerCode,
+    emailAddress,
+    phoneNumber,
+    company,
+    ...rest,
+    logo: logoUrl || "",
+    registrationDocs: registrationDocs || [],
+  });
+
+  res
+    .status(201)
+    .json(new ApiResponse(201, customer, "Customer created successfully"));
+});
+
+// 🟢 Update Customer
+exports.updateCustomer = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  const customer = await Customer.findById(id);
+  if (!customer) throw new ApiError(404, "Customer not found");
+
+  let logoUrl = customer.logo;
+  let registrationDocs = customer.registrationDocs;
+
+  // Replace logo if new one uploaded
+  if (req?.files?.['logo'] && req?.files?.['logo'][0]) {
+    logoUrl = req.files['logo'][0].location;
+  }
+
+  // Replace registration docs if new ones uploaded
+  if (req?.files?.['registrationDocs']) {
+    registrationDocs = req.files['registrationDocs'].map(file => ({
+      type: req.body.docType || 'Other',
+      file: file.location,
+      fileName: file.originalname
+    }));
+  }
+
+  const updatedCustomer = await Customer.findByIdAndUpdate(
+    id,
+    { ...req.body, logo: logoUrl, registrationDocs },
+    { new: true }
+  );
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, updatedCustomer, "Customer updated successfully"));
+});
+
+// 🟢 Get All Customers (for a company)
+exports.getCustomersByCompany = asyncHandler(async (req, res) => {
+  const { companyId } = req.query;
+
+  if (!companyId) throw new ApiError(400, "Company ID is required");
+
+  const customers = await Customer.find({ company: companyId }).populate("company");
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, customers, "Customers fetched successfully"));
+});
+
+// 🟢 Get Single Customer
+exports.getCustomerById = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  const customer = await Customer.findById(id).populate("company");
+  if (!customer) throw new ApiError(404, "Customer not found");
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, customer, "Customer fetched successfully"));
+});

@@ -1,8 +1,8 @@
 const mongoose = require('mongoose');
 
 const registrationDocSchema = new mongoose.Schema({
-  type: { type: String, required: true },   
-  file: { type: String, required: true },   
+  type: { type: String, required: true },
+  file: { type: String, required: true },
   fileName: { type: String, required: true }
 }, { _id: false });
 
@@ -35,10 +35,11 @@ const companySchema = new mongoose.Schema({
   udyamNumber: String,
   defaultCurrency: String,
   banks: [bankSchema],
-  logo: { type: String, default: null }, 
+  logo: { type: String, default: null },
   notes: String,
   registrationDocs: [registrationDocSchema],
-   client: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+
+  client: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Company', companySchema);
