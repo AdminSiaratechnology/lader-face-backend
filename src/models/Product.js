@@ -1,0 +1,67 @@
+// src/models/Product.js
+const mongoose = require('mongoose');
+const Schema = mongoose.Schema;
+
+// TaxConfiguration sub-schema
+const TaxConfigurationSchema = new Schema({
+  applicable: { type: Boolean, default: false },
+  hsnCode: { type: String },
+  taxPercentage: { type: Number },
+  cgst: { type: Number },
+  sgst: { type: Number },
+  cess: { type: Number },
+  additionalCess: { type: Number },
+  applicableDate: { type: Date }
+}, { _id: false });
+
+// OpeningQuantity sub-schema
+const OpeningQuantitySchema = new Schema({
+  godown: { type: Schema.Types.ObjectId, ref: 'Godown' },
+  batch: { type: String },
+  quantity: { type: Number, default: 0 },
+  rate: { type: Number, default: 0 },
+  amount: { type: Number, default: 0 }
+}, { _id: false });
+
+// ProductImage sub-schema
+const ProductImageSchema = new Schema({
+  angle: { type: String },
+  fileUrl: { type: String },   // stored file URL (S3 or local)
+  previewUrl: { type: String }
+}, { _id: false });
+
+const ProductSchema = new Schema({
+  clientId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  companyId: { type: Schema.Types.ObjectId, ref: 'Company', required: true },
+
+  code: { type: String, required: true, unique: true },
+  name: { type: String, required: true },
+  partNo: { type: String },
+
+  stockGroup: { type: Schema.Types.ObjectId, ref: 'StockGroup' },
+  stockCategory: { type: Schema.Types.ObjectId, ref: 'StockCategory' },
+
+  batch: { type: Boolean, default: false },
+
+  unit: { type: Schema.Types.ObjectId, ref: 'Unit' },
+  alternateUnit: { type: Schema.Types.ObjectId, ref: 'Unit' },
+
+  minimumQuantity: { type: Number },
+  defaultSupplier: { type: String },
+  minimumRate: { type: Number },
+  maximumRate: { type: Number },
+
+  defaultGodown: { type: Schema.Types.ObjectId, ref: 'Godown' },
+  productType: { type: String },
+
+  taxConfiguration: TaxConfigurationSchema,
+
+  openingQuantities: [OpeningQuantitySchema],
+
+  images: [ProductImageSchema],
+
+  remarks: { type: String }
+
+}, { timestamps: true });
+
+module.exports = mongoose.model('Product', ProductSchema);

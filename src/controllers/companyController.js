@@ -5,6 +5,11 @@ const ApiResponse = require('../utils/apiResponse');
 const User = require('../models/User');
 
 exports.createCompany = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const user = await User.findById(userId);
+  if (!user) throw new ApiError(404, "User not found");
+  console.log("Logged in user:", user);
+  // res.status(200).json({ message: "Create Company - Not Implemented" });
     const { namePrint, banks, ...rest } = req.body;
     if (!namePrint) throw new ApiError(400, 'Company name is required');
     
@@ -26,10 +31,14 @@ exports.createCompany = asyncHandler(async (req, res) => {
   }
 //    res.send("Create Company Controller is working")
 // res.send(req.body)
+if(user.role==="Client" || user.role==="Admin"){
+  // Allow creating company
+
 
   const company = await Company.create({
     namePrint,
     ...rest,
+    client: user.role === 'Client' ? userId : user.clientAgent,
     // banks: banks ? JSON.parse(banks) : [],
     banks: banks,
     logo: logoUrl || "",
@@ -37,29 +46,35 @@ exports.createCompany = asyncHandler(async (req, res) => {
   });
 
   res.status(201).json(new ApiResponse(201, company, "Company created successfully"));
+} else {
+  throw new ApiError(403, "Only clients and admins can create companies");
+}
 });
 
 // 🟢 Agent ke liye apne client ki saari companies laana
 exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
+  console.log("Headers:", req);
+  // res.status(200).json({ message: "Get Companies for Agent - Not Implemented" });
 
-    const agentId = req.headers.agentid; // maan lo user login hai aur req.user me agent ka data hai
+    const agentId = req.user.id; // maan lo user login hai aur req.user me agent ka data hai
     // 1. Agent ka detail nikaalo
     console.log("Request User:", req.headers);
     const agent = await User.findById(agentId);
     
-      if (!agent || agent.role !== 'Agent') {
-            throw new ApiError(403, "Only agents can access this resource");
-          }
+      // if (!agent || agent.role !== 'Agent') {
+      //       throw new ApiError(403, "Only agents can access this resource");
+      //     }
         
 
   // 2. Agent ke parent (Client) ka ID lelo
-  const clientId = agent.parent;
+  const clientId = agent?.parent;
   if (!clientId) {
     throw new ApiError(404, "Client not found for this agent");
   }
 
   // 3. Client ki saari companies nikaalo
-  const companies = await Company.find({ client: clientId });
+  console.log("clientId:", clientId);
+  const companies = await Company.find({ client: clientId , isDeleted: false }); // 🟢 sirf active companies
 
   res.status(200).json(new ApiResponse(200, companies, "Companies fetched successfully"));
 });
@@ -119,3 +134,71 @@ exports.getAccess = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+exports.updateCompany = asyncHandler(async (req, res) => {
+
+  const { id } = req.params;
+  const user = await User.findById(req.user.id);
+
+  if (!user) throw new ApiError(404, "User not found");
+
+  const company = await Company.findById(id);
+  if (!company) throw new ApiError(404, "Company not found");
+
+  // 🔐 Ownership check
+  if (user.role === "Client" && company.client.toString() !== user._id.toString()) {
+    throw new ApiError(403, "You can only update your own companies");
+  }
+
+  // Logo update
+  if (req?.files?.["logo"] && req?.files?.["logo"][0]) {
+    req.body.logo = req.files["logo"][0].location;
+  }
+
+  // Docs update
+  if (req?.files?.["registrationDocs"]) {
+    req.body.registrationDocs = req.files["registrationDocs"].map((file) => ({
+      type: req.body.docType || "Other",
+      file: file.location,
+      fileName: file.originalname,
+    }));
+  }
+
+  const updatedCompany = await Company.findByIdAndUpdate(id, req.body, { new: true });
+
+  res.status(200).json(new ApiResponse(200, updatedCompany, "Company updated successfully"));
+});
+
+// Get Companies
+exports.getCompanies = asyncHandler(async (req, res) => {
+  const { clientId } = req.query;
+
+  const filter = { isDeleted: false }; // 🟢 sirf active companies
+  if (clientId) filter.client = clientId;
+
+  const companies = await Company.find(filter);
+
+  res.status(200).json(new ApiResponse(200, companies, "Companies fetched successfully"));
+});
+
+// Delete Company (Soft Delete)
+exports.deleteCompany = asyncHandler(async (req, res) => {
+  console.log("Delete Company Request Params:", req.params);
+  const { id } = req.params;
+  const user = await User.findById(req.user.id);
+
+  if (!user) throw new ApiError(404, "User not found");
+
+  const company = await Company.findById(id);
+  if (!company) throw new ApiError(404, "Company not found");
+
+  // 🔐 Ownership check
+  if (user.role === "Client" && company.client.toString() !== user._id.toString()) {
+    throw new ApiError(403, "You can only delete your own companies");
+  }
+
+  company.isDeleted = true; // 🟢 Soft delete
+  await company.save();
+
+  res.status(200).json(new ApiResponse(200, null, "Company deleted successfully"));
+});
