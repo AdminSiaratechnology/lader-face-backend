@@ -21,5 +21,7 @@ router.get('/agent/companies', companyController.getCompaniesForAgent);
 router.post('/assign-salesman', companyController.assignSalesman);
 router.post('/set-access', companyController.setAccess);
 router.get('/get-access', companyController.getAccess);
+router.put('/update/:id', companyController.updateCompany);
+router.delete('/delete/:id', companyController.deleteCompany);
 
 module.exports = router;

@@ -27,7 +27,7 @@ const userSchema = new mongoose.Schema({
 
   role: {
     type: String,
-    enum: ['SuperAdmin', 'Partner', 'SubPartner', 'Client', 'Agent', 'Salesman', 'Customer'],
+    enum: ['SuperAdmin', 'Partner', 'SubPartner', 'Client', 'Agent', 'Salesman', 'Customer', 'Admin'],
     required: true
   },
   subRole: {
@@ -36,7 +36,8 @@ const userSchema = new mongoose.Schema({
       'superadmin_devteam', 'superadmin_supportteam', 'superadmin_accounts', 'superadmin_adminteam',
       'partner_admin', 'partner_accounts',
       'subpartner_admin', 'subpartner_accounts',
-      'salesman', 'admin', 'customer', 'client', 'agent'
+      'salesman', 'admin', 'customer', 'client', 'agent',
+      'Admin', 'InventoryManager', 'SalesManager', 'PurchaseManager', 'HRManager', 'FinanceManager'
     ]
   },
 

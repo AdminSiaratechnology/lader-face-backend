@@ -39,7 +39,8 @@ const companySchema = new mongoose.Schema({
   notes: String,
   registrationDocs: [registrationDocSchema],
 
-  client: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }
+  client: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  isDeleted: { type: Boolean, default: false },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Company', companySchema);
