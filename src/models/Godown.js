@@ -20,7 +20,7 @@ const godownSchema = new mongoose.Schema(
     city: { type: String },
     country: { type: String },
     isPrimary: { type: Boolean, default: false },
-    status: { type: String, enum: ["Active", "Inactive"], default: "Active" },
+    status: { type: String, enum: ["Active", "Inactive","Delete","Maintenance"], default: "Active" },
     capacity: { type: String },
     manager: { type: String },
     contactNumber: { type: String },

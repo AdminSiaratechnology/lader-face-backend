@@ -4,6 +4,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const ApiResponse = require('../utils/apiResponse');
 const User = require('../models/User');
+const { use } = require('../routes/authRoutes');
 
 const signToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
@@ -64,7 +65,7 @@ exports.register = asyncHandler(async (req, res) => {
   res.status(201).json(
     new ApiResponse(
       201,
-      { id: user._id },
+      user,
       "User registered successfully"
     )
   );
@@ -99,7 +100,7 @@ exports.updateUser = asyncHandler(async (req, res) => {
   res.status(200).json(
     new ApiResponse(
       200,
-      { id: user._id },
+     user,
       "User updated successfully"
     )
   );
@@ -112,6 +113,14 @@ exports.deleteUser=asyncHandler(async (req,res)=>{
   if (!user) throw new ApiError(404, "User not found");
   user.status="delete"
   user.save()
+ // Final response
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      { id: user._id },
+      "User deleted successfully"
+    )
+  );
 
 
 })
