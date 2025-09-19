@@ -10,11 +10,13 @@ const unitSchema = new mongoose.Schema({
   // ✅ Simple unit fields
   symbol: { type: String },          // like kg, L, pcs
   decimalPlaces: { type: Number },   // rounding ke liye
+  UQC:{type:String,required:true},
 
   // ✅ Compound unit fields
   firstUnit: { type: String },       // like kg
   conversion: { type: Number },      // like 1 kg = 12 pcs => conversion=12
   secondUnit: { type: String },      // like pcs
+
 
   status: { type: String, enum: ['Active', 'Inactive'], default: 'Active' },
 }, { timestamps: true });
