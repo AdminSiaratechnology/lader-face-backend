@@ -6,7 +6,13 @@ const ApiResponse = require('../utils/apiResponse');
 const User = require('../models/User');
 const { use } = require('../routes/authRoutes');
 
-const signToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+const signToken = (userId, clientAgent,role) => {
+  return jwt.sign(
+    { id: userId, clientAgent,role }, // payload me include karo
+    process.env.JWT_SECRET,
+    { expiresIn: "7d" }
+  );
+};
 
 // exports.register = asyncHandler(async (req, res) => {
 //   // const adminId = req?.user?.id;
@@ -127,15 +133,28 @@ exports.deleteUser=asyncHandler(async (req,res)=>{
 
 exports.login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
-  const user = await User.findOne({ email });
-  if (!user) throw new ApiError(401, 'Invalid credentials');
-  
-  const ok = await bcrypt.compare(password, user.password);
-  if (!ok) throw new ApiError(401, 'Invalid credentials');
-  
-  const token = signToken(user._id);
-  const safe = user.toObject();
-  delete safe.password;
-  
-  res.json(new ApiResponse(200, { token, user: safe }, "Login successful"));
+
+  if (!email || !password) {
+    throw new ApiError(400, "Email and password are required");
+  }
+
+  // Case-insensitive email search
+  const user = await User.findOne({ email: email.toLowerCase() });
+  if (!user) throw new ApiError(401, "Invalid credentials");
+
+  // Password check
+  const isMatch = await bcrypt.compare(password, user.password);
+  if (!isMatch) throw new ApiError(401, "Invalid credentials");
+
+  // JWT token generation
+  const token = signToken(user._id, user.clientAgent,user?.role);
+
+  // Remove sensitive info
+  const safeUser = user.toObject();
+  delete safeUser.password;
+  delete safeUser.__v;
+
+  res.status(200).json(
+    new ApiResponse(200, { token, user: safeUser }, "Login successful")
+  );
 });

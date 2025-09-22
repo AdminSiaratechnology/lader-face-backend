@@ -3,27 +3,31 @@ const Company = require('../models/Company');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const ApiResponse = require('../utils/apiResponse');
+const { generateUniqueId } = require('../utils/generate16DigiId');
 
 // 🟢 Create Customer
 exports.createCustomer = asyncHandler(async (req, res) => {
   const {
     customerName,
-    customerCode,
+    
+    
     emailAddress,
     phoneNumber,
-    company, // company reference
+    companyID, // company reference
     ...rest
   } = req.body;
 
-  if (!customerName || !customerCode) {
+  if (!customerName) {
     throw new ApiError(400, "Customer name and code are required");
   }
+  const clientId =req.user.clientAgent ;
 
   // Company check
-  const existingCompany = await Company.findById(company);
-  if (!existingCompany) {
-    throw new ApiError(404, "Company not found");
-  }
+  // const existingCompany = await Company.findById(companyID);
+  // if (!existingCompany) {
+  //   throw new ApiError(404, "Company not found");
+  // }
+
 
   let logoUrl = null;
   let registrationDocs = [];
@@ -32,6 +36,7 @@ exports.createCustomer = asyncHandler(async (req, res) => {
   if (req?.files?.['logo'] && req?.files?.['logo'][0]) {
     logoUrl = req.files['logo'][0].location;
   }
+  console.log(req.files,req.body,"req,files")
 
   // Registration docs files
   if (req?.files?.['registrationDocs']) {
@@ -41,16 +46,22 @@ exports.createCustomer = asyncHandler(async (req, res) => {
       fileName: file.originalname
     }));
   }
+  let code=await generateUniqueId(Customer,"code")
 
   const customer = await Customer.create({
     customerName,
-    customerCode,
+    code,
+    clientId,
     emailAddress,
     phoneNumber,
-    company,
+   
+   
+    companyID,
     ...rest,
     logo: logoUrl || "",
     registrationDocs: registrationDocs || [],
+    banks:JSON.parse(req.body.banks),
+    company:companyID
   });
 
   res
@@ -100,6 +111,23 @@ exports.getCustomersByCompany = asyncHandler(async (req, res) => {
   if (!companyId) throw new ApiError(400, "Company ID is required");
 
   const customers = await Customer.find({ company: companyId }).populate("company");
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, customers, "Customers fetched successfully"));
+});
+exports.getCustomersByClient = asyncHandler(async (req, res) => {
+  // const { companyId } = req.query;
+
+  const clientAgent =req.user.clientAgent ;
+  console.log(req,"req.userrrr")
+
+
+  
+
+  if (!clientAgent) throw new ApiError(400, "ClientId ID is required");
+
+  const customers = await Customer.find({ clientId: clientAgent });
 
   res
     .status(200)

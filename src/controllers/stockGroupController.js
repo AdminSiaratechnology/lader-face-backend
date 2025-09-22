@@ -6,21 +6,9 @@ const ApiResponse = require("../utils/apiResponse");
 const asyncHandler = require("../utils/asyncHandler");
 const User = require("../models/User");
 const { default: mongoose } = require("mongoose");
+const {generateUniqueId} =require("../utils/generate16DigiId")
 
-// ===== Helpers ===== //
-const generate16DigitId = () =>
-  (BigInt("0x" + crypto.randomBytes(8).toString("hex")) % (10n ** 16n))
-    .toString()
-    .padStart(16, "0");
 
-const generateUniqueStockGroupId = async () => {
-  let id, exists;
-  do {
-    id = generate16DigitId();
-    exists = await StockGroup.exists({ stockGroupId: id });
-  } while (exists);
-  return id;
-};
 
 const buildFilter = (query) => {
   const filter = {};
@@ -55,7 +43,7 @@ exports.createStockGroup = asyncHandler(async (req, res) => {
   const clientId = agentDetail.clientAgent;
 
   // Generate unique stockGroupId
-  const stockGroupId = await generateUniqueStockGroupId();
+  const stockGroupId = await generateUniqueId(StockGroup,"stockGroupId");
 
   // Create stock group
   const stockGroup = await StockGroup.create({

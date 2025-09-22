@@ -59,11 +59,17 @@ exports.deleteUnit = asyncHandler(async (req, res) => {
 
 // ✅ Get Units (by client & company)
 exports.getUnits = asyncHandler(async (req, res) => {
-  const { clientId, companyId } = req.query;
+  const { companyId } = req.query;
+ 
+  const userId = req.user.id;
+    const user = await User.findById(userId);
+    if (!user) throw new ApiError(404, "User not found");
+    let clientId=user.clientAgent
 
   const filter = {};
   if (clientId) filter.clientId = clientId;
   if (companyId) filter.companyId = companyId;
+
 
   const units = await Unit.find(filter);
 

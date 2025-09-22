@@ -11,6 +11,7 @@ exports.createCompany = asyncHandler(async (req, res) => {
     
   
   const userId = req.user.id;
+
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
   console.log("Logged in user:", user);
@@ -39,11 +40,14 @@ exports.createCompany = asyncHandler(async (req, res) => {
 if(user.role==="Client" || user.role==="Admin"){
   // Allow creating company
   console.log("banks:", JSON.parse(banks) || []);
+  let code=await generateUniqueId(Company,"code")
+  
 
 
   const company = await Company.create({
     namePrint,
     ...rest,
+    code:code,
     client: user.role === 'Client' ? userId : user.clientAgent,
     banks: JSON.parse(banks) || [],
     logo: logoUrl || "",

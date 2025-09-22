@@ -4,6 +4,7 @@ const ApiResponse = require("../utils/apiResponse");
 const ApiError = require("../utils/apiError");
 const { default: mongoose } = require("mongoose");
 const User = require("../models/User");
+const { generateUniqueId } = require("../utils/generate16DigiId");
 
 // ✅ Create Godown
 exports.createGodown = asyncHandler(async (req, res) => {
@@ -11,7 +12,7 @@ exports.createGodown = asyncHandler(async (req, res) => {
     address,
     capacity,
     city,
-    code,
+    
     company,
     contactNumber,
     country,
@@ -22,9 +23,10 @@ exports.createGodown = asyncHandler(async (req, res) => {
     state,
     status,
   } = req.body;
+  let code=await generateUniqueId(Godown,"code")
 
   // ✅ Required fields check
-  if (!company || !code || !name) {
+  if (!company || !name) {
     throw new ApiError(400, "Company, Code and Name are required");
   }
 

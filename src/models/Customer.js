@@ -1,7 +1,7 @@
-import mongoose, { Schema, Document } from "mongoose";
+const mongoose=require("mongoose")
 
 // Bank schema
-const BankSchema = new Schema({
+const BankSchema = new  mongoose.Schema({
   accountHolderName: { type: String, required: true },
   accountNumber: { type: String, required: true },
   ifscCode: { type: String, required: true },
@@ -12,19 +12,21 @@ const BankSchema = new Schema({
 });
 
 // Registration Document schema
-const RegistrationDocumentSchema = new Schema({
+const RegistrationDocumentSchema = new mongoose.Schema({
   type: { type: String, required: true },
   file: { type: String, required: true },
   fileName: { type: String, required: true },
 });
 
 // Customer schema
-const CustomerSchema = new Schema(
+const CustomerSchema = new mongoose.Schema(
   {
-    company: { type: Schema.Types.ObjectId, ref: "Company", required: true }, // reference to company
+    company: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true }, // reference to company
+    clientId:{type:mongoose.Schema.Types.ObjectId,ref:"User",required:true},
+    
 
     customerType: { type: String, required: true },
-    customerCode: { type: String, required: true, unique: true },
+    code: { type: String, required: true, unique: true },
     customerName: { type: String, required: true },
     shortName: { type: String },
     customerGroup: { type: String },
@@ -97,6 +99,7 @@ const CustomerSchema = new Schema(
     leadSource: { type: String },
     internalNotes: { type: String },
 
+
     allowPartialShipments: { type: Boolean, default: false },
     allowBackOrders: { type: Boolean, default: false },
     autoInvoice: { type: Boolean, default: false },
@@ -109,4 +112,4 @@ const CustomerSchema = new Schema(
   { timestamps: true }
 );
 
-export default mongoose.model("Customer", CustomerSchema);
+module.exports= mongoose.model("Customer", CustomerSchema);

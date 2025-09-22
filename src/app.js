@@ -12,6 +12,7 @@ const stockGroupRoutes = require('./routes/stockGroupRoutes');
 const unitRoutes = require('./routes/unitRoutes');
 const productRoutes = require('./routes/productRoutes');
 const userManagementRoute = require('./routes/userManagementRoute');
+const customerRoute=require("./routes/customerRoutes")
 
 
 
@@ -36,6 +37,7 @@ app.use("/api/stock-groups", stockGroupRoutes);
 app.use("/api/units", unitRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/user-management", userManagementRoute);
+app.use("/api/agent/customers",customerRoute)
 
 // Not found middleware (for invalid routes)
 app.use(notFound);
