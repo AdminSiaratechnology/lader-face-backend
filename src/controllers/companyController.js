@@ -5,11 +5,16 @@ const ApiResponse = require('../utils/apiResponse');
 const User = require('../models/User');
 
 exports.createCompany = asyncHandler(async (req, res) => {
+  console.log("Request Body:", req.body);
+  // res.status(200).json({ message: "Create Company - Not Implemented" });
+  try {
+    
+  
   const userId = req.user.id;
+
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
   console.log("Logged in user:", user);
-  // res.status(200).json({ message: "Create Company - Not Implemented" });
     const { namePrint, banks, ...rest } = req.body;
     if (!namePrint) throw new ApiError(400, 'Company name is required');
     
@@ -20,6 +25,7 @@ exports.createCompany = asyncHandler(async (req, res) => {
     if (req?.files?.['logo'] && req?.files?.['logo'][0]) {
         logoUrl = req.files['logo'][0].location;
     }
+    
    
 
   if (req?.files?.['registrationDocs']) {
@@ -33,14 +39,17 @@ exports.createCompany = asyncHandler(async (req, res) => {
 // res.send(req.body)
 if(user.role==="Client" || user.role==="Admin"){
   // Allow creating company
+  console.log("banks:", JSON.parse(banks) || []);
+  let code=await generateUniqueId(Company,"code")
+  
 
 
   const company = await Company.create({
     namePrint,
     ...rest,
+    code:code,
     client: user.role === 'Client' ? userId : user.clientAgent,
-    // banks: banks ? JSON.parse(banks) : [],
-    banks: banks,
+    banks: JSON.parse(banks) || [],
     logo: logoUrl || "",
     registrationDocs: registrationDocs || [],
   });
@@ -49,16 +58,21 @@ if(user.role==="Client" || user.role==="Admin"){
 } else {
   throw new ApiError(403, "Only clients and admins can create companies");
 }
-});
+} catch (error) {
+  console.error("Error creating company:", error);
+  res.status(500).json({ error: "Internal server error" });
+}}
+);
 
 // 🟢 Agent ke liye apne client ki saari companies laana
 exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
-  console.log("Headers:", req);
+  // console.log("Headers:", req);
   // res.status(200).json({ message: "Get Companies for Agent - Not Implemented" });
 
     const agentId = req.user.id; // maan lo user login hai aur req.user me agent ka data hai
     // 1. Agent ka detail nikaalo
-    console.log("Request User:", req.headers);
+    // console.log("Request User:", req.headers);
+    console.log("Agent ID from req.user:", agentId);
     const agent = await User.findById(agentId);
     
       // if (!agent || agent.role !== 'Agent') {
@@ -67,14 +81,15 @@ exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
         
 
   // 2. Agent ke parent (Client) ka ID lelo
-  const clientId = agent?.parent;
+  // res.status(200).json(agent);
+  const clientId = agent?.clientAgent;
   if (!clientId) {
     throw new ApiError(404, "Client not found for this agent");
   }
 
   // 3. Client ki saari companies nikaalo
   console.log("clientId:", clientId);
-  const companies = await Company.find({ client: clientId , isDeleted: false }); // 🟢 sirf active companies
+  const companies = await Company.find({ client: clientId ,  }); // 🟢 sirf active companies
 
   res.status(200).json(new ApiResponse(200, companies, "Companies fetched successfully"));
 });

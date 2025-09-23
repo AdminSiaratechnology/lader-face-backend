@@ -2,20 +2,35 @@ const Unit = require('../models/Unit');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiResponse = require('../utils/apiResponse');
 const ApiError = require('../utils/apiError');
+const User = require('../models/User');
 
 // ✅ Create Unit
 exports.createUnit = asyncHandler(async (req, res) => {
     // res.status(200).json({ message: "Create Unit - Not Implemented" });
-  const { clientId, companyId, name, type, symbol, decimalPlaces, firstUnit, conversion, secondUnit } = req.body;
+    const agentId=req.user.id;
+  const {  companyId, name, type, symbol, decimalPlaces, firstUnit, conversion, secondUnit,UQC } = req.body;
 
-  if (!clientId || !companyId || !name || !type) {
+  if ( !companyId || !name || !type) {
     throw new ApiError(400, "clientId, companyId, name and type are required");
+
   }
+  
+
+ 
+
+  // Sirf clientAgent field hi le aayenge
+  const agentDetail = await User.findById(agentId, { clientAgent: 1 });
+
+  if (!agentDetail || !agentDetail.clientAgent) {
+    throw new ApiError(403, "You are not permitted to perform this action");
+  }
+
+  const clientId = agentDetail.clientAgent;
 
   const unit = await Unit.create({
     clientId, companyId, name, type,
     symbol, decimalPlaces,
-    firstUnit, conversion, secondUnit
+    firstUnit, conversion, secondUnit,UQC
   });
 
   res.status(201).json(new ApiResponse(201, unit, "Unit created successfully"));
@@ -44,11 +59,17 @@ exports.deleteUnit = asyncHandler(async (req, res) => {
 
 // ✅ Get Units (by client & company)
 exports.getUnits = asyncHandler(async (req, res) => {
-  const { clientId, companyId } = req.query;
+  const { companyId } = req.query;
+ 
+  const userId = req.user.id;
+    const user = await User.findById(userId);
+    if (!user) throw new ApiError(404, "User not found");
+    let clientId=user.clientAgent
 
   const filter = {};
   if (clientId) filter.clientId = clientId;
   if (companyId) filter.companyId = companyId;
+
 
   const units = await Unit.find(filter);
 

@@ -37,6 +37,7 @@ const ProductSchema = new Schema({
   code: { type: String, required: true, unique: true },
   name: { type: String, required: true },
   partNo: { type: String },
+  status: { type: String, enum: ["Active", "Inactive","Delete"], default: "Active" },
 
   stockGroup: { type: Schema.Types.ObjectId, ref: 'StockGroup' },
   stockCategory: { type: Schema.Types.ObjectId, ref: 'StockCategory' },

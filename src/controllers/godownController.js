@@ -2,35 +2,155 @@ const Godown = require("../models/Godown");
 const asyncHandler = require("../utils/asyncHandler");
 const ApiResponse = require("../utils/apiResponse");
 const ApiError = require("../utils/apiError");
+const { default: mongoose } = require("mongoose");
+const User = require("../models/User");
+const { generateUniqueId } = require("../utils/generate16DigiId");
 
 // ✅ Create Godown
 exports.createGodown = asyncHandler(async (req, res) => {
-  const { company, client, code, name, ...rest } = req.body;
+  const {
+    address,
+    capacity,
+    city,
+    
+    company,
+    contactNumber,
+    country,
+    isPrimary,
+    manager,
+    name,
+    parent,
+    state,
+    status,
+  } = req.body;
+  let code=await generateUniqueId(Godown,"code")
 
-  if (!company || !client || !code || !name) {
-    throw new ApiError(400, "Company, Client, Code and Name are required");
+  // ✅ Required fields check
+  if (!company || !name) {
+    throw new ApiError(400, "Company, Code and Name are required");
   }
 
+  // ✅ Logged-in user check
+  const user = await User.findById(req.user.id).lean();
+  if (!user) throw new ApiError(404, "User not found");
+
+  // ✅ Extract client from user
+  const client = user.clientAgent;
+
+  // ✅ Create godown
   const godown = await Godown.create({
-    company,
-    client,
+    address,
+    capacity,
+    city,
     code,
+    company,
+    contactNumber,
+    country,
+    isPrimary,
+    manager,
     name,
-    ...rest,
+    parent,
+    state,
+    status,
+    client
   });
 
+  // ✅ Single response only
   res
     .status(201)
     .json(new ApiResponse(201, godown, "Godown created successfully"));
 });
+exports.updateGodown = asyncHandler(async (req, res) => {
+  const { id } = req.params; // Godown ka id URL se aayega
+  const updateData = req.body;
+
+  // ✅ Logged-in user check
+  const user = await User.findById(req.user.id).lean();
+  if (!user) throw new ApiError(404, "User not found");
+
+  // ✅ Ensure godown exists
+  const godown = await Godown.findById(id);
+  if (!godown) throw new ApiError(404, "Godown not found");
+
+  // ✅ Update only allowed fields (security ke liye)
+  const allowedFields = [
+    "address",
+    "capacity",
+    "city",
+    "code",
+    "company",
+    "contactNumber",
+    "country",
+    "isPrimary",
+    "manager",
+    "name",
+    "parent",
+    "state",
+    "status",
+  ];
+
+  const filteredData = {};
+  Object.keys(updateData).forEach((key) => {
+    if (allowedFields.includes(key)) {
+      filteredData[key] = updateData[key];
+    }
+  });
+
+  // ✅ Perform update
+  const updatedGodown = await Godown.findByIdAndUpdate(
+    id,
+    { $set: filteredData },
+    { new: true, runValidators: true }
+  ).lean();
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, updatedGodown, "Godown updated successfully"));
+});
+
 
 // ✅ Get all godowns
 exports.getGodowns = asyncHandler(async (req, res) => {
-  const godowns = await Godown.find()
-    .populate("company", "namePrint email")
-    .populate("client", "name email");
+  try {
+    // const userId = req.user.id;
+    const userId = "68c1503077fd742fa21575df"; // hardcoded for now
 
-  res.status(200).json(new ApiResponse(200, godowns, "Godowns fetched"));
+    const result = await User.aggregate([
+      {
+        $match: {
+          _id: new mongoose.Types.ObjectId(userId),
+        },
+      },
+      {
+        $lookup: {
+          from: "godowns",
+          localField: "clientAgent",
+          foreignField: "client",
+          as: "godowns",
+        },
+      },
+      {
+        $project: {
+          godowns: 1, // sirf godowns bhejna hai
+        },
+      },
+    ]);
+
+    // agar result empty ho to empty array bhejna
+    const godowns = result?.[0]?.godowns || [];
+
+    res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          { count: godowns.length, records: godowns },
+          godowns.length ? "Godowns fetched successfully" : "No godowns found"
+        )
+      );
+  } catch (error) {
+    throw new ApiError(500, error.message || "Internal server error");
+  }
 });
 
 // ✅ Get godown by ID
@@ -56,22 +176,38 @@ exports.getGodownsByCompany = asyncHandler(async (req, res) => {
   res.status(200).json(new ApiResponse(200, godowns, "Godowns fetched"));
 });
 
-// ✅ Update godown
-exports.updateGodown = asyncHandler(async (req, res) => {
-  const godown = await Godown.findByIdAndUpdate(req.params.id, req.body, {
-    new: true,
-  });
+// // ✅ Update godown
+// exports.updateGodown = asyncHandler(async (req, res) => {
+//   const godown = await Godown.findByIdAndUpdate(req.params.id, req.body, {
+//     new: true,
+//   });
 
-  if (!godown) throw new ApiError(404, "Godown not found");
+//   if (!godown) throw new ApiError(404, "Godown not found");
 
-  res.status(200).json(new ApiResponse(200, godown, "Godown updated"));
-});
+//   res.status(200).json(new ApiResponse(200, godown, "Godown updated"));
+// });
 
 // ✅ Delete godown
 exports.deleteGodown = asyncHandler(async (req, res) => {
-  const godown = await Godown.findByIdAndDelete(req.params.id);
+  const { id } = req.params;
 
+  // ✅ Logged-in user check
+  const user = await User.findById(req.user.id).lean();
+  if (!user) throw new ApiError(404, "User not found");
+
+  // ✅ Ensure godown exists
+  const godown = await Godown.findById(id);
   if (!godown) throw new ApiError(404, "Godown not found");
 
-  res.status(200).json(new ApiResponse(200, {}, "Godown deleted"));
+  // ✅ Soft delete (update status only)
+  const deletedGodown = await Godown.findByIdAndUpdate(
+    id,
+    { $set: { status: "Delete" } },
+    { new: true }
+  ).lean();
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, deletedGodown, "Godown deleted successfully"));
 });
+

@@ -14,7 +14,11 @@ const stockGroupSchema = new mongoose.Schema({
   },
   name: { type: String, required: true, trim: true },
   description: { type: String },
-  status: { type: String, enum: ["Active", "Inactive"], default: "Active" },
+  status: { type: String, enum: ["Active", "Inactive","Delete"], default: "Active" },
+  stockGroupId:{
+    type:String,
+    required:true
+  }
 }, { timestamps: true });
 
 module.exports = mongoose.model("StockGroup", stockGroupSchema);

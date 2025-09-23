@@ -11,77 +11,88 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const ApiResponse = require('../utils/apiResponse');
 
-// Helper to map uploaded files to image objects
-function mapUploadedImages(req) {
-  if (!req.files || !req.files.images) return [];
-  return req.files.images.map(f => {
-    const url = f.location || f.path || f.filename || null;
-    return {
-      angle: f.fieldname || f.originalname || '',
-      fileUrl: url,
-      previewUrl: url
-    };
-  });
-}
+const {generateUniqueId} =require("../utils/generate16DigiId")
 
-// Utility: safe parse (if string then JSON.parse, else return as is)
-function safeParse(value, fallback = undefined) {
-  if (!value) return fallback;
-  if (typeof value === 'string') {
-    try {
+
+
+
+
+// safeParse util (string ko JSON me parse kare)
+const safeParse = (value, fallback) => {
+  try {
+    if (typeof value === "string") {
       return JSON.parse(value);
-    } catch (e) {
-      return fallback;
     }
+    return value || fallback;
+  } catch (err) {
+    return fallback;
   }
-  return value;
-}
+};
 
-// CREATE product
 exports.createProduct = asyncHandler(async (req, res) => {
   const body = req.body;
+ 
+
+  console.log("req.body", req.body);
 
   // required fields
-  const required = ['clientId', 'companyId', 'code', 'name'];
+  const required = ["companyId", "code", "name"];
   for (const r of required) {
     if (!body[r]) throw new ApiError(400, `${r} is required`);
   }
 
   // validate refs
-  const [company, client] = await Promise.all([
+  const [company] = await Promise.all([
     Company.findById(body.companyId),
-    User.findById(body.clientId)
+    // future client check
   ]);
-  if (!company) throw new ApiError(404, 'Company not found');
-  if (!client) throw new ApiError(404, 'Client not found');
+  if (!company) throw new ApiError(404, "Company not found");
 
   if (body.stockGroup) {
     const sg = await StockGroup.findById(body.stockGroup);
-    if (!sg) throw new ApiError(404, 'StockGroup not found');
+    if (!sg) throw new ApiError(404, "StockGroup not found");
   }
   if (body.stockCategory) {
     const sc = await StockCategory.findById(body.stockCategory);
-    if (!sc) throw new ApiError(404, 'StockCategory not found');
+    if (!sc) throw new ApiError(404, "StockCategory not found");
   }
   if (body.unit) {
     const u = await Unit.findById(body.unit);
-    if (!u) throw new ApiError(404, 'Unit not found');
+    if (!u) throw new ApiError(404, "Unit not found");
   }
   if (body.defaultGodown) {
     const g = await Godown.findById(body.defaultGodown);
-    if (!g) throw new ApiError(404, 'Godown not found');
+    if (!g) throw new ApiError(404, "Godown not found");
   }
+
+  // validate user
+  const userId = req.user.id;
+  const user = await User.findById(userId);
+  if (!user) throw new ApiError(404, "User not found");
+  let clientId = user.clientAgent;
+  console.log("clientId", clientId);
+
+  // registration docs
+  let registrationDocs = [];
+  if (req?.files?.["registrationDocs"]) {
+    registrationDocs = req.files["registrationDocs"].map((file) => ({
+      type: req.body.docType || "Other",
+      file: file.location,
+      fileName: file.originalname,
+    }));
+  }
+  let code=await generateUniqueId(Product,"code")
 
   // Build product object
   const productObj = {
-    clientId: body.clientId,
+    clientId: clientId,
     companyId: body.companyId,
-    code: body.code,
+    code: code,
     name: body.name,
     partNo: body.partNo,
     stockGroup: body.stockGroup || null,
     stockCategory: body.stockCategory || null,
-    batch: body.batch === 'true' || body.batch === true || false,
+    batch: body.batch === "true" || body.batch === true || false,
     unit: body.unit || null,
     alternateUnit: body.alternateUnit || null,
     minimumQuantity: body.minimumQuantity || undefined,
@@ -92,18 +103,28 @@ exports.createProduct = asyncHandler(async (req, res) => {
     productType: body.productType || undefined,
     taxConfiguration: safeParse(body.taxConfiguration, {}),
     openingQuantities: safeParse(body.openingQuantities, []),
-    images: safeParse(body.images, []),
-    remarks: body.remarks || undefined
+    images: safeParse(body.images, []), // agar frontend se aaya ho
+    remarks: body.remarks || undefined,
+    status: body.status,
   };
+  console.log(req.body.productImageTypes,"producttypesssss")
+  const productImageTypes=JSON.parse(req.body.productImageTypes)
 
-  // images from upload
-  const uploadedImages = mapUploadedImages(req);
-  if (uploadedImages.length) {
+  // === Handle Product Images from AWS ===
+  if (req?.files?.["productImages"]) {
+    const uploadedImages = req.files["productImages"].map((file,index) => ({
+      angle: productImageTypes?.[index] || null,
+      fileUrl: file.location, // actual S3 url
+      previewUrl: file.location,
+    }));
     productObj.images = (productObj.images || []).concat(uploadedImages);
   }
+   
 
+  // create product
   const product = await Product.create(productObj);
-  res.status(201).json(new ApiResponse(201, product, 'Product created'));
+
+  res.status(201).json(new ApiResponse(201, product, "Product created"));
 });
 
 // UPDATE product
@@ -112,43 +133,74 @@ exports.updateProduct = asyncHandler(async (req, res) => {
   const body = req.body;
 
   const product = await Product.findById(id);
-  if (!product) throw new ApiError(404, 'Product not found');
+  if (!product) throw new ApiError(404, "Product not found");
 
-  // if code changed, ensure uniqueness
-  if (body.code && body.code !== product.code) {
-    const existing = await Product.findOne({ code: body.code });
-    if (existing) throw new ApiError(409, 'Product code already exists');
-  }
+  // // if code changed, ensure uniqueness
+  // if (body.code && body.code !== product.code) {
+  //   const existing = await Product.findOne({ code: body.code });
+  //   if (existing) throw new ApiError(409, "Product code already exists");
+  // }
 
+  console.log(req,"rrqqqqqbosyyyyy")
   // safe parse nested fields
   body.taxConfiguration = safeParse(body.taxConfiguration, product.taxConfiguration);
   body.openingQuantities = safeParse(body.openingQuantities, product.openingQuantities);
   body.images = safeParse(body.images, product.images);
 
-  // merge images if new uploads provided
-  const uploadedImages = mapUploadedImages(req);
-  if (uploadedImages.length) {
+  // === Handle Product Images from AWS in update also ===
+  const productImageTypes = safeParse(req.body.productImageTypes, []);
+  if (req?.files?.["productImages"]) {
+    const uploadedImages = req.files["productImages"].map((file, index) => ({
+      angle: productImageTypes?.[index] || null,
+      fileUrl: file.location,
+      previewUrl: file.location,
+    }));
     body.images = (body.images || []).concat(uploadedImages);
   }
 
   Object.assign(product, body);
   await product.save();
 
-  res.status(200).json(new ApiResponse(200, product, 'Product updated'));
+  res.status(200).json(new ApiResponse(200, product, "Product updated"));
 });
+
+
 
 // DELETE product
 exports.deleteProduct = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const product = await Product.findByIdAndDelete(id);
-  if (!product) throw new ApiError(404, 'Product not found');
-  res.status(200).json(new ApiResponse(200, null, 'Product deleted'));
+  // validate user
+  const userId = req?.user?.id;
+  const clientAgentId=req?.user?.clientAgent
+
+  const user = await User.findById(userId);
+  if (!user) throw new ApiError(404, "User not found");
+
+
+  
+if (!clientAgentId) throw new ApiError(403, "Invalid user");
+
+  // Find product and check ownership in one query
+  const product = await Product.findOneAndUpdate(
+    { _id: id, clientId: clientAgentId },
+    { status: "Delete" },
+    { new: true } // updated document return kare
+  );
+
+  if (!product)
+    throw new ApiError(404, "Product not found or you are not authorized");
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, product, "Product status updated to Deleted"));
 });
+
 
 // GET product by id
 exports.getProductById = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const product = await Product.findById(id)
+
+  const product = await Product.findOne({ _id: id, status: { $ne: "Delete" } })
     .populate('companyId', 'namePrint')
     .populate('clientId', 'name email')
     .populate('stockGroup', 'name')
@@ -157,9 +209,11 @@ exports.getProductById = asyncHandler(async (req, res) => {
     .populate('alternateUnit', 'name symbol')
     .populate('defaultGodown', 'name code');
 
-  if (!product) throw new ApiError(404, 'Product not found');
+  if (!product) throw new ApiError(404, 'Product not found or deleted');
+
   res.status(200).json(new ApiResponse(200, product));
 });
+
 
 // LIST / SEARCH products
 exports.listProducts = asyncHandler(async (req, res) => {
@@ -169,6 +223,7 @@ exports.listProducts = asyncHandler(async (req, res) => {
   if (clientId) filter.clientId = clientId;
   if (stockGroup) filter.stockGroup = stockGroup;
   if (stockCategory) filter.stockCategory = stockCategory;
+  filter.status={ $ne: "Delete" }
   if (q) filter.$or = [
     { name: new RegExp(q, 'i') },
     { code: new RegExp(q, 'i') },
@@ -185,5 +240,5 @@ exports.listProducts = asyncHandler(async (req, res) => {
     Product.countDocuments(filter)
   ]);
 
-  res.status(200).json(new ApiResponse(200, { items, total, page: Number(page), limit: Number(limit) }));
+  res.status(200).json(new ApiResponse(200, { items, total, page: Number(page), limit: Number(limit), status: { $ne: "Delete" }  }));
 });
