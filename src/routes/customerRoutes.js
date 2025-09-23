@@ -5,6 +5,8 @@ const {
   getCustomersByCompany,
   getCustomerById,
   getCustomersByClient,
+  deleteCustomer,
+  
 } = require("../controllers/coustomerController");
 const upload = require("../config/s3");
 
@@ -17,7 +19,10 @@ router.post("/",upload.fields([
   ]), createCustomer);
 
 // Update customer
-router.put("/:id", updateCustomer);
+router.put("/:id",upload.fields([
+   
+    { name: "registrationDocs", maxCount: 5 },
+  ]),  updateCustomer);
 
 // Get all customers by company
 router.get("/", getCustomersByClient);
@@ -26,5 +31,6 @@ router.get("/", getCustomersByClient);
 
 // Get customer by id
 router.get("/:id", getCustomerById);
+router.delete("/:id",deleteCustomer)
 
 module.exports = router;

@@ -4,6 +4,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const ApiResponse = require('../utils/apiResponse');
 const { generateUniqueId } = require('../utils/generate16DigiId');
+const { json } = require('express');
 
 // 🟢 Create Customer
 exports.createCustomer = asyncHandler(async (req, res) => {
@@ -36,7 +37,7 @@ exports.createCustomer = asyncHandler(async (req, res) => {
   if (req?.files?.['logo'] && req?.files?.['logo'][0]) {
     logoUrl = req.files['logo'][0].location;
   }
-  console.log(req.files,req.body,"req,files")
+  // console.log(req.files,req.body,"req,files")
 
   // Registration docs files
   if (req?.files?.['registrationDocs']) {
@@ -47,6 +48,7 @@ exports.createCustomer = asyncHandler(async (req, res) => {
     }));
   }
   let code=await generateUniqueId(Customer,"code")
+  console.log(JSON.parse(req.body.banks),"JSON.parse(req.body.banks)")
 
   const customer = await Customer.create({
     customerName,
@@ -84,6 +86,8 @@ exports.updateCustomer = asyncHandler(async (req, res) => {
     logoUrl = req.files['logo'][0].location;
   }
 
+  
+
   // Replace registration docs if new ones uploaded
   if (req?.files?.['registrationDocs']) {
     registrationDocs = req.files['registrationDocs'].map(file => ({
@@ -95,8 +99,9 @@ exports.updateCustomer = asyncHandler(async (req, res) => {
 
   const updatedCustomer = await Customer.findByIdAndUpdate(
     id,
-    { ...req.body, logo: logoUrl, registrationDocs },
-    { new: true }
+    { ...req.body, logo: logoUrl, registrationDocs,banks:JSON.parse(req.body.banks), },
+    { new: true },
+    
   );
 
   res
@@ -127,7 +132,7 @@ exports.getCustomersByClient = asyncHandler(async (req, res) => {
 
   if (!clientAgent) throw new ApiError(400, "ClientId ID is required");
 
-  const customers = await Customer.find({ clientId: clientAgent });
+  const customers = await Customer.find({ clientId: clientAgent,  status:{$ne:"Delete"}});
 
   res
     .status(200)
@@ -144,4 +149,37 @@ exports.getCustomerById = asyncHandler(async (req, res) => {
   res
     .status(200)
     .json(new ApiResponse(200, customer, "Customer fetched successfully"));
+});
+
+//Delete Customer
+
+exports.deleteCustomer = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  // check if id is passed
+  if (!id) {
+    throw new ApiError(400, "Customer ID is required");
+  }
+
+  // find customer
+  const customer = await Customer.findById(id);
+  if (!customer) {
+    throw new ApiError(404, "Customer not found");
+  }
+
+  // check permission
+  if (String(customer.clientId) !== String(req.user.clientAgent)) {
+    throw new ApiError(403, "You are not permitted to perform this action");
+  }
+
+  // soft delete
+  customer.status = "Delete";
+  await customer.save();
+
+  // send response
+  res.status(200).json({
+    success: true,
+    message: "Customer deleted successfully",
+    data: customer,
+  });
 });

@@ -13,6 +13,10 @@ const unitRoutes = require('./routes/unitRoutes');
 const productRoutes = require('./routes/productRoutes');
 const userManagementRoute = require('./routes/userManagementRoute');
 const customerRoute=require("./routes/customerRoutes")
+const vendorRoute=require("./routes/vendorRoute")
+const agentRoute=require("./routes/agentRoutes")
+const ladgerRoute=require("./routes/ladgerRoutes")
+
 
 
 
@@ -22,6 +26,7 @@ app.use(helmet());
 app.use(cors());
 app.use(express.json({limit: '50mb'}));
 app.use(express.urlencoded({limit: '50mb', extended: true }));
+
 app.get("/",(req,res)=>{
     res.send("API is working")
 })
@@ -38,6 +43,9 @@ app.use("/api/units", unitRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/user-management", userManagementRoute);
 app.use("/api/agent/customers",customerRoute)
+app.use("/api/agent/vendors",vendorRoute)
+app.use("/api/agent/agents",agentRoute)
+app.use("/api/agent/ledgers",ladgerRoute)
 
 // Not found middleware (for invalid routes)
 app.use(notFound);

@@ -1,7 +1,7 @@
-const mongoose=require("mongoose")
+const mongoose = require("mongoose");
 
 // Bank schema
-const BankSchema = new  mongoose.Schema({
+const BankSchema = new mongoose.Schema({
   accountHolderName: { type: String, required: true },
   accountNumber: { type: String, required: true },
   ifscCode: { type: String, required: true },
@@ -18,27 +18,26 @@ const RegistrationDocumentSchema = new mongoose.Schema({
   fileName: { type: String, required: true },
 });
 
-// Customer schema
-const CustomerSchema = new mongoose.Schema(
+// Vendor schema
+const VendorSchema = new mongoose.Schema(
   {
     company: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true }, // reference to company
-    clientId:{type:mongoose.Schema.Types.ObjectId,ref:"User",required:true},
-    
+    clientId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
 
-    customerType: { type: String, required: true },
+    vendorType: { type: String, required: true },
     code: { type: String, required: true, unique: true },
-    customerName: { type: String, required: true },
+    vendorName: { type: String, required: true },
     shortName: { type: String },
-    customerGroup: { type: String },
+    vendorGroup: { type: String },
     industryType: { type: String },
     territory: { type: String },
-    salesPerson: { type: String },
-    customerStatus: { type: String },
+    procurementPerson: { type: String },
+    vendorStatus: { type: String },
     companySize: { type: String },
-    status:{
-      type:String,
-      enum:["Active","Inactive","Delete"],
-      default:"Active"
+    status: {
+      type: String,
+      enum: ["Active", "Inactive", "Delete"],
+      default: "Active"
     },
 
     contactPerson: { type: String },
@@ -79,7 +78,7 @@ const CustomerSchema = new mongoose.Schema(
     msmeRegistration: { type: String },
     isTaxExempt: { type: Boolean, default: false },
     reverseCharge: { type: Boolean, default: false },
-    exportCustomer: { type: Boolean, default: false },
+    exportVendor: { type: Boolean, default: false },
 
     bankName: { type: String },
     branchName: { type: String },
@@ -100,10 +99,9 @@ const CustomerSchema = new mongoose.Schema(
     externalSystemId: { type: String },
     crmIntegration: { type: String },
     dataSource: { type: String },
-    customerPriority: { type: String },
+    vendorPriority: { type: String },
     leadSource: { type: String },
     internalNotes: { type: String },
-
 
     allowPartialShipments: { type: Boolean, default: false },
     allowBackOrders: { type: Boolean, default: false },
@@ -117,4 +115,4 @@ const CustomerSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-module.exports= mongoose.model("Customer", CustomerSchema);
+module.exports = mongoose.model("Vendor", VendorSchema);
