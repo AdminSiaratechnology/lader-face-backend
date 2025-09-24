@@ -66,33 +66,93 @@ if(user.role==="Client" || user.role==="Admin"){
 
 // 🟢 Agent ke liye apne client ki saari companies laana
 exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
-  // console.log("Headers:", req);
-  // res.status(200).json({ message: "Get Companies for Agent - Not Implemented" });
+  const agentId = req.user.id; 
+  console.log("Agent ID from req.user:", agentId);
 
-    const agentId = req.user.id; // maan lo user login hai aur req.user me agent ka data hai
-    // 1. Agent ka detail nikaalo
-    // console.log("Request User:", req.headers);
-    console.log("Agent ID from req.user:", agentId);
-    const agent = await User.findById(agentId);
-    
-      // if (!agent || agent.role !== 'Agent') {
-      //       throw new ApiError(403, "Only agents can access this resource");
-      //     }
-        
+  // 1. Agent nikaalo
+  const agent = await User.findById(agentId);
+  if (!agent) {
+    throw new ApiError(404, "Agent not found");
+  }
 
-  // 2. Agent ke parent (Client) ka ID lelo
-  // res.status(200).json(agent);
+  // 2. Client ID nikaalo
   const clientId = agent?.clientAgent;
   if (!clientId) {
     throw new ApiError(404, "Client not found for this agent");
   }
 
-  // 3. Client ki saari companies nikaalo
-  console.log("clientId:", clientId);
-  const companies = await Company.find({ client: clientId ,  }); // 🟢 sirf active companies
+  // 3. Query params lo
+  const { search, status, sortBy, sortOrder
+    , 
+    limit = 3, page = 1 
+  } = req.query;
+  console.log(req.query,"reqqqqqq")
+  console.log(search, status, sortBy, sortOrder,"fasdfafdasf",clientId)
+  
+  
 
-  res.status(200).json(new ApiResponse(200, companies, "Companies fetched successfully"));
+
+  let filter = { client: clientId };
+
+  // status filter
+  if (status && status !== "") {
+    filter.status = status;
+  }
+
+  // search filter
+  if (search && search.trim() !== "") {
+    const regex = new RegExp(search, "i"); // case-insensitive search
+    filter.$or = [
+      { namePrint: regex },
+      { nameStreet: regex },
+      { email: regex },
+      
+    ];
+  }
+
+  // sorting
+  let sort = {};
+  if (sortBy) {
+    let field = sortBy === "namePrint" ? "namePrint" : "createdAt";
+    let order = sortOrder === "desc" ? -1 : 1;
+    sort[field] = order;
+  } else {
+    sort = { createdAt: -1 }; // default latest first
+  }
+
+  // pagination
+  const perPage = parseInt(limit, 10);
+  const currentPage = parseInt(page, 10);
+  const skip = (currentPage - 1) * perPage;
+
+  console.log("Filter:", filter, "Sort:", sort, "Skip:", skip, "Limit:", perPage);
+
+  // 4. DB se companies nikaalo
+  const [companies, total] = await Promise.all([
+    Company.find(filter).sort(sort)
+    .skip(skip).limit(perPage)
+    ,
+    Company.countDocuments(filter),
+  ]);
+
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        companies,
+        pagination: {
+          total,
+          page: currentPage,
+          limit: perPage,
+          totalPages: Math.ceil(total / perPage),
+        },
+      },
+      "Companies fetched successfully"
+    )
+  );
 });
+
+
 
 //Assign salesman to company
 exports.assignSalesman = async (req, res) => {
