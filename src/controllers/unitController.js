@@ -59,19 +59,57 @@ exports.deleteUnit = asyncHandler(async (req, res) => {
 
 // ✅ Get Units (by client & company)
 exports.getUnits = asyncHandler(async (req, res) => {
-  const { companyId } = req.query;
- 
+  const { companyId, search, status, sortBy, sortOrder, limit = 10, page = 1 } = req.query;
+
   const userId = req.user.id;
-    const user = await User.findById(userId);
-    if (!user) throw new ApiError(404, "User not found");
-    let clientId=user.clientAgent
+  const user = await User.findById(userId);
+  if (!user) throw new ApiError(404, "User not found");
+
+  let clientId = user.clientAgent;
 
   const filter = {};
   if (clientId) filter.clientId = clientId;
   if (companyId) filter.companyId = companyId;
+  if (status && status !== "") filter.status = status;
 
+  // 🔍 Search support
+  if (search && search.trim() !== "") {
+    filter.$or = [
+      { name: { $regex: search, $options: "i" } },
+      { description: { $regex: search, $options: "i" } },
+    ];
+  }
 
-  const units = await Unit.find(filter);
+  // 📑 Pagination
+  const perPage = parseInt(limit, 10);
+  const currentPage = parseInt(page, 10);
+  const skip = (currentPage - 1) * perPage;
 
-  res.status(200).json(new ApiResponse(200, units, "Units fetched successfully"));
+  // ↕️ Sorting
+  const sortField = sortBy || "createdAt";
+  const sortDirection = sortOrder === "desc" ? -1 : 1;
+  const sortOptions = { [sortField]: sortDirection };
+
+  // Fetch records with pagination
+  const [units, total] = await Promise.all([
+    Unit.find(filter).sort(sortOptions).skip(skip).limit(perPage),
+    Unit.countDocuments(filter),
+  ]);
+
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        units,
+        pagination: {
+          total,
+          page: currentPage,
+          limit: perPage,
+          totalPages: Math.ceil(total / perPage),
+        },
+      },
+      units.length ? "Units fetched successfully" : "No Units found"
+    )
+  );
 });
+

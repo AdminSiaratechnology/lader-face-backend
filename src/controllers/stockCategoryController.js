@@ -44,17 +44,67 @@ exports.createStockCategory = asyncHandler(async (req, res) => {
   res.status(201).json(new ApiResponse(201, category, "Stock Category created successfully"));
 });
 
-// Get all categories (optional filter by companyId or stockGroupId)
 exports.getStockCategories = asyncHandler(async (req, res) => {
-  const { companyId, stockGroupId } = req.query;
+  
+  const { companyId, stockGroupId, search, status, sortBy, sortOrder, limit = 10, page = 1 } = req.query;
+
+  // filter object
   const filter = { status: { $ne: "Delete" } }; // soft delete filter
 
   if (companyId) filter.companyId = companyId;
   if (stockGroupId) filter.stockGroupId = stockGroupId;
+  if (status && status !== "") filter.status = status;
 
-  const categories = await StockCategory.find(filter).populate("stockGroupId", "name");
-  res.json(new ApiResponse(200, categories, "Stock Categories fetched"));
+  if (search && search.trim() !== "") {
+    const regex = new RegExp(search, "i"); // case-insensitive
+    filter.$or = [
+      { name: regex },
+      { description: regex }, // agar description field exist karta hai
+    ];
+  }
+
+  // sorting
+  let sort= {};
+  if (sortBy) {
+    let field = sortBy === "name" ? "name" : "createdAt";
+    let order = sortOrder === "desc" ? -1 : 1;
+    sort[field] = order;
+  } else {
+    sort = { createdAt: -1 }; // default latest first
+  }
+
+  // pagination
+  const perPage = parseInt(limit, 10);
+  const currentPage = parseInt(page, 10);
+  const skip = (currentPage - 1) * perPage;
+
+  // query with pagination
+  const [categories, total] = await Promise.all([
+    StockCategory.find(filter)
+      .populate("stockGroupId", "name")
+      .sort(sort)
+      .skip(skip)
+      .limit(perPage),
+    StockCategory.countDocuments(filter),
+  ]);
+
+  res.json(
+    new ApiResponse(
+      200,
+      {
+        categories,
+        pagination: {
+          total,
+          page: currentPage,
+          limit: perPage,
+          totalPages: Math.ceil(total / perPage),
+        },
+      },
+      "Stock Categories fetched successfully"
+    )
+  );
 });
+
 
 // Update Stock Category
 exports.updateStockCategory = asyncHandler(async (req, res) => {

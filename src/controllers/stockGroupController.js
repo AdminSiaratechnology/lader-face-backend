@@ -62,40 +62,78 @@ exports.createStockGroup = asyncHandler(async (req, res) => {
 // Get all
 exports.getStockGroups = asyncHandler(async (req, res) => {
   const userId = req.user.id;
+  const { search, status, sortBy, sortOrder, limit = 10, page = 1 } = req.query;
 
+  const perPage = parseInt(limit, 10);
+  const currentPage = parseInt(page, 10);
+  const skip = (currentPage - 1) * perPage;
+
+  // aggregation
   const result = await User.aggregate([
     {
-      $match: {
-        _id: new mongoose.Types.ObjectId(userId),
-      },
+      $match: { _id: new mongoose.Types.ObjectId(userId) },
     },
     {
       $lookup: {
-        from: "stockgroups",        // collection name
-        localField: "clientAgent",  // user ka field
-        foreignField: "clientId",   // stockgroup ka field
+        from: "stockgroups",
+        localField: "clientAgent",
+        foreignField: "clientId",
         as: "stockGroups",
         pipeline: [
+          { $match: { status: { $ne: "Delete" } } },
+          ...(status && status !== "" ? [{ $match: { status } }] : []),
+          ...(search && search.trim() !== ""
+            ? [
+                {
+                  $match: {
+                    $or: [
+                      { name: { $regex: search, $options: "i" } },
+                      { description: { $regex: search, $options: "i" } },
+                    ],
+                  },
+                },
+              ]
+            : []),
           {
-            $match: {
-              status: { $ne: "Delete" } // sirf non-deleted groups
-            }
-          }
-        ]
+            $sort: (() => {
+              let field = sortBy === "name" ? "name" : "createdAt";
+              let order = sortOrder === "desc" ? -1 : 1;
+              return { [field]: order };
+            })(),
+          },
+        ],
       },
     },
+    { $unwind: { path: "$stockGroups", preserveNullAndEmptyArrays: false } },
+    { $replaceRoot: { newRoot: "$stockGroups" } },
     {
-      $project: {
-        stockGroups: 1,
-        _id: 0,
+      $facet: {
+        records: [{ $skip: skip }, { $limit: perPage }],
+        totalCount: [{ $count: "count" }],
       },
     },
-  ], { maxTimeMS: 60000, allowDiskUse: true });
+  ]);
 
-  const stockGroups = result.length > 0 ? result[0].stockGroups : [];
+  const stockGroups = result?.[0]?.records || [];
+  const total = result?.[0]?.totalCount?.[0]?.count || 0;
 
-  res.json(new ApiResponse(200, stockGroups, "Stock Groups fetched"));
+  res.json(
+    new ApiResponse(
+      200,
+      {
+        stockGroups,
+        pagination: {
+          total,
+          page: currentPage,
+          limit: perPage,
+          totalPages: Math.ceil(total / perPage),
+        },
+      },
+      stockGroups.length ? "Stock Groups fetched successfully" : "No Stock Groups found"
+    )
+  );
 });
+
 
 
 // Update
