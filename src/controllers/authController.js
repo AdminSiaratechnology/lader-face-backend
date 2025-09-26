@@ -148,11 +148,13 @@ exports.login = asyncHandler(async (req, res) => {
 
   // JWT token generation
   const token = signToken(user._id, user.clientAgent,user?.role);
+  console.log(user)
 
   // Remove sensitive info
   const safeUser = user.toObject();
   delete safeUser.password;
   delete safeUser.__v;
+  safeUser.access=[...user.access]
 
   res.status(200).json(
     new ApiResponse(200, { token, user: safeUser }, "Login successful")

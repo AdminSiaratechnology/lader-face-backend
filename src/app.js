@@ -22,8 +22,20 @@ const ladgerRoute=require("./routes/ladgerRoutes")
 
 
 const app = express();
-app.use(helmet());
 app.use(cors());
+// const corsOptions = {
+//   origin: "http://localhost:5173",   // frontend URL
+//   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+//   allowedHeaders: ["Content-Type", "Authorization"],
+//   credentials: true
+// };
+
+// app.use(cors(corsOptions));
+
+// ✅ Handle preflight
+
+
+// app.use(helmet());
 app.use(express.json({limit: '50mb'}));
 app.use(express.urlencoded({limit: '50mb', extended: true }));
 

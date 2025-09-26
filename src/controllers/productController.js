@@ -217,28 +217,74 @@ exports.getProductById = asyncHandler(async (req, res) => {
 
 // LIST / SEARCH products
 exports.listProducts = asyncHandler(async (req, res) => {
-  const { companyId, clientId, stockGroup, stockCategory, q, page = 1, limit = 25 } = req.query;
+  const { 
+    search = "", 
+    status = "", 
+    sortBy = "createdAt", 
+    sortOrder = "desc", 
+    page = 1, 
+    limit = 25,
+    companyId, 
+    clientId, 
+    stockGroup, 
+    stockCategory
+  } = req.query;
+
   const filter = {};
+
   if (companyId) filter.companyId = companyId;
   if (clientId) filter.clientId = clientId;
   if (stockGroup) filter.stockGroup = stockGroup;
   if (stockCategory) filter.stockCategory = stockCategory;
-  filter.status={ $ne: "Delete" }
-  if (q) filter.$or = [
-    { name: new RegExp(q, 'i') },
-    { code: new RegExp(q, 'i') },
-    { partNo: new RegExp(q, 'i') }
-  ];
 
-  const skip = (Math.max(Number(page), 1) - 1) * Number(limit);
+  // ✅ Status filter (default: exclude Delete)
+  filter.status = status && status.trim() !== "" ? status : { $ne: "Delete" };
+
+  // 🔍 Search filter
+  if (search && search.trim() !== "") {
+    filter.$or = [
+      { name: { $regex: search, $options: "i" } },
+      { code: { $regex: search, $options: "i" } },
+      { partNo: { $regex: search, $options: "i" } },
+    ];
+  }
+
+  // 📑 Pagination setup
+  const perPage = parseInt(limit, 10);
+  const currentPage = Math.max(parseInt(page, 10), 1);
+  const skip = (currentPage - 1) * perPage;
+
+  // ↕️ Sorting
+  const sortDirection = sortOrder === "asc" ? 1 : -1;
+  const sortOptions = { [sortBy]: sortDirection };
+
+  // ✅ Fetch data & total count in parallel
   const [items, total] = await Promise.all([
     Product.find(filter)
-      .populate('stockGroup', 'name')
-      .populate('stockCategory', 'name')
-      .populate('unit', 'name symbol')
-      .skip(skip).limit(Number(limit)).sort({ createdAt: -1 }),
-    Product.countDocuments(filter)
+      .populate("stockGroup", "name")
+      .populate("stockCategory", "name")
+      .populate("unit", "name symbol")
+      .skip(skip)
+      .limit(perPage)
+      .sort(sortOptions),
+    Product.countDocuments(filter),
   ]);
 
-  res.status(200).json(new ApiResponse(200, { items, total, page: Number(page), limit: Number(limit), status: { $ne: "Delete" }  }));
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        items,
+        pagination: {
+          total,
+          page: currentPage,
+          limit: perPage,
+          totalPages: Math.ceil(total / perPage),
+        },
+      },
+      items.length ? "Products fetched successfully" : "No products found"
+    )
+  );
 });
+
+
