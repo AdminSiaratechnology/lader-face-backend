@@ -80,15 +80,14 @@ exports.updateCustomer = asyncHandler(async (req, res) => {
 
   let logoUrl = customer.logo;
   let registrationDocs = customer.registrationDocs;
+  let banks = customer.banks;
 
-  // Replace logo if new one uploaded
+  // ✅ Replace logo if new one uploaded
   if (req?.files?.['logo'] && req?.files?.['logo'][0]) {
     logoUrl = req.files['logo'][0].location;
   }
 
-  
-
-  // Replace registration docs if new ones uploaded
+  // ✅ Replace registration docs if new ones uploaded
   if (req?.files?.['registrationDocs']) {
     registrationDocs = req.files['registrationDocs'].map(file => ({
       type: req.body.docType || 'Other',
@@ -97,17 +96,41 @@ exports.updateCustomer = asyncHandler(async (req, res) => {
     }));
   }
 
+  // ✅ Prepare updateData
+  const updateData = { 
+    ...req.body, 
+    logo: logoUrl, 
+    registrationDocs 
+  };
+
+  // ✅ Remove password if not given
+  if (!req.body.password) {
+    delete updateData.password;
+  }
+  console.log(req,body)
+
+  // ✅ Safely parse banks
+  if (req.body.banks) {
+    try {
+      banks = typeof req.body.banks === "string" ? JSON.parse(req.body.banks) : req.body.banks;
+      updateData.banks = banks;
+    } catch (err) {
+      throw new ApiError(400, "Invalid banks data");
+    }
+  }
+
+  // ✅ Update using $set and skip validators for required fields
   const updatedCustomer = await Customer.findByIdAndUpdate(
     id,
-    { ...req.body, logo: logoUrl, registrationDocs,banks:JSON.parse(req.body.banks), },
-    { new: true },
-    
+    { $set: updateData },
+    { new: true, runValidators: false }
   );
 
   res
     .status(200)
     .json(new ApiResponse(200, updatedCustomer, "Customer updated successfully"));
 });
+
 
 // 🟢 Get All Customers (for a company)
 exports.getCustomersByCompany = asyncHandler(async (req, res) => {
