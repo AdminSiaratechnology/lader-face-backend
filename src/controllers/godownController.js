@@ -112,8 +112,24 @@ exports.updateGodown = asyncHandler(async (req, res) => {
 // ✅ Get all godowns
 exports.getGodowns = asyncHandler(async (req, res) => {
   try {
-    // const userId = req.user.id;
-    const userId = "68c1503077fd742fa21575df"; // hardcoded for now
+    const userId = req.user.id;
+    // const userId = "68c1503077fd742fa21575df"; // hardcoded for now
+
+    const { search, status, sortBy, sortOrder, limit = 3, page = 1 } = req.query;
+
+    const perPage = parseInt(limit, 10);
+    const currentPage = parseInt(page, 10);
+    const skip = (currentPage - 1) * perPage;
+
+    // sorting logic
+    let sort = {};
+    if (sortBy) {
+      let field = sortBy === "name" ? "name" : "createdAt"; // tumhare godown schema ke fields
+      let order = sortOrder === "desc" ? -1 : 1;
+      sort[field] = order;
+    } else {
+      sort = { createdAt: -1 };
+    }
 
     const result = await User.aggregate([
       {
@@ -130,28 +146,66 @@ exports.getGodowns = asyncHandler(async (req, res) => {
         },
       },
       {
-        $project: {
-          godowns: 1, // sirf godowns bhejna hai
+        $unwind: {
+          path: "$godowns",
+          preserveNullAndEmptyArrays: false,
+        },
+      },
+      {
+        $replaceRoot: { newRoot: "$godowns" }, // sirf godown document ban gaya
+      },
+      {
+        $match: {
+          ...(status ? { status } : {}),
+          ...(search
+            ? {
+                $or: [
+                  { name: { $regex: search, $options: "i" } },
+                  { location: { $regex: search, $options: "i" } },
+                ],
+              }
+            : {}),
+        },
+      },
+      {
+        $sort: sort,
+      },
+      {
+        $facet: {
+          records: [
+            { $skip: skip },
+            { $limit: perPage },
+          ],
+          totalCount: [
+            { $count: "count" },
+          ],
         },
       },
     ]);
 
-    // agar result empty ho to empty array bhejna
-    const godowns = result?.[0]?.godowns || [];
+    const records = result?.[0]?.records || [];
+    const total = result?.[0]?.totalCount?.[0]?.count || 0;
 
-    res
-      .status(200)
-      .json(
-        new ApiResponse(
-          200,
-          { count: godowns.length, records: godowns },
-          godowns.length ? "Godowns fetched successfully" : "No godowns found"
-        )
-      );
+    res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          records,
+          pagination: {
+            total,
+            page: currentPage,
+            limit: perPage,
+            totalPages: Math.ceil(total / perPage),
+          },
+        },
+        records.length ? "Godowns fetched successfully" : "No godowns found"
+      )
+    );
   } catch (error) {
     throw new ApiError(500, error.message || "Internal server error");
   }
 });
+
 
 // ✅ Get godown by ID
 exports.getGodownById = asyncHandler(async (req, res) => {

@@ -39,44 +39,83 @@ exports.getAllClientUsersWithCompany = asyncHandler(async (req, res) => {
   res.status(200).json(new ApiResponse(200, result, "Fetched successfully"));
 });
 exports.getAllClientUsers = asyncHandler(async (req, res) => {
-  let clientId = req.user.id; // Logged in user ID
-  const result = await User.aggregate(
-   [
-  {
-    $match: {
-      _id: new mongoose.Types.ObjectId(clientId)
-    }
-  },
-  {
-    $lookup: {
-      from: "users",
-      localField: "clientAgent",
-      foreignField: "clientAgent",
-      as: "users"
-    }
-  },
-  {
-    $addFields: {
-      users: {
-        $filter: {
-          input: "$users",
-          as: "u",
-          cond: { $ne: ["$$u.status", "delete"] } // 🔹 remove users where status = "delete"
-        }
-      }
-    }
-  },
-  {
-    $project: {
-      "users.password": 0
-    }
-  }
-]
+  const clientId = req.user.id; // Logged in user ID
+  const {
+    search = "",
+    role = "",
+    status = "",
+    sortBy = "name",
+    sortOrder = "asc",
+    page = 1,
+    limit = 10,
+  } = req.query;
 
-, {
-    maxTimeMS: 60000,
-    allowDiskUse: true
-  });
+  const perPage = parseInt(limit, 10);
+  const currentPage = Math.max(parseInt(page, 10), 1);
+  const skip = (currentPage - 1) * perPage;
 
-  res.status(200).json(new ApiResponse(200, result, "Fetched successfully"));
+  // aggregation
+  const result = await User.aggregate([
+    { $match: { _id: new mongoose.Types.ObjectId(clientId) } },
+    {
+      $lookup: {
+        from: "users",
+        localField: "clientAgent",
+        foreignField: "clientAgent",
+        as: "users",
+        pipeline: [
+          { $match: { status: { $ne: "delete" } } }, // remove deleted users
+          ...(status && status.trim() !== "" ? [{ $match: { status } }] : []),
+          ...(role && role.trim() !== "" ? [{ $match: { role: { $regex: role, $options: "i" } } }] : []),
+          ...(search && search.trim() !== ""
+            ? [
+                {
+                  $match: {
+                    $or: [
+                      { name: { $regex: search, $options: "i" } },
+                      { email: { $regex: search, $options: "i" } },
+                      { contactNumber: { $regex: search, $options: "i" } },
+                    ],
+                  },
+                },
+              ]
+            : []),
+          {
+            $sort: (() => {
+              const field = sortBy === "name" ? "name" : "createdAt";
+              const order = sortOrder === "desc" ? -1 : 1;
+              return { [field]: order };
+            })(),
+          },
+        ],
+      },
+    },
+    { $unwind: { path: "$users", preserveNullAndEmptyArrays: false } },
+    { $replaceRoot: { newRoot: "$users" } },
+    {
+      $facet: {
+        records: [{ $skip: skip }, { $limit: perPage }],
+        totalCount: [{ $count: "count" }],
+      },
+    },
+  ], { maxTimeMS: 60000, allowDiskUse: true });
+
+  const users = result?.[0]?.records || [];
+  const total = result?.[0]?.totalCount?.[0]?.count || 0;
+
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        users,
+        pagination: {
+          total,
+          page: currentPage,
+          limit: perPage,
+          totalPages: Math.ceil(total / perPage),
+        },
+      },
+      users.length ? "Users fetched successfully" : "No users found"
+    )
+  );
 });

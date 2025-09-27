@@ -84,33 +84,38 @@ exports.updateUser = asyncHandler(async (req, res) => {
   const user = await User.findById(id);
   if (!user) throw new ApiError(404, "User not found");
 
-  // Email uniqueness check
+  // ✅ Email uniqueness check
   if (updateData.email && updateData.email !== user.email) {
     const exists = await User.findOne({ email: updateData.email });
     if (exists) throw new ApiError(409, "Email already in use");
   }
 
-  // Handle password hashing if password is being updated
-  if (updateData.password) {
+  // ✅ Handle password hashing if password is being updated
+  if (updateData.password && updateData.password.trim()) {
     updateData.password = await bcrypt.hash(updateData.password, 10);
+  } else {
+    delete updateData.password; // Don't overwrite with empty
   }
 
-  // Update user with new data
-  Object.keys(updateData).forEach((key) => {
-    user[key] = updateData[key];
+  // ✅ Update fields safely
+  Object.entries(updateData).forEach(([key, value]) => {
+    if (value !== undefined) {
+      user[key] = value;
+    }
   });
 
   await user.save();
 
+  // ✅ Remove sensitive data before sending response
+  const userResponse = user.toObject();
+  delete userResponse.password;
+
   // Final response
   res.status(200).json(
-    new ApiResponse(
-      200,
-     user,
-      "User updated successfully"
-    )
+    new ApiResponse(200, userResponse, "User updated successfully")
   );
 });
+
 
 exports.deleteUser=asyncHandler(async (req,res)=>{
   const {id}=req.params;
@@ -148,11 +153,13 @@ exports.login = asyncHandler(async (req, res) => {
 
   // JWT token generation
   const token = signToken(user._id, user.clientAgent,user?.role);
+  console.log(user)
 
   // Remove sensitive info
   const safeUser = user.toObject();
   delete safeUser.password;
   delete safeUser.__v;
+  safeUser.access=[...user.access]
 
   res.status(200).json(
     new ApiResponse(200, { token, user: safeUser }, "Login successful")

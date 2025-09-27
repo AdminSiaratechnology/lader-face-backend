@@ -109,16 +109,63 @@ exports.getAgentsByCompany = asyncHandler(async (req, res) => {
 
 exports.getAgentsByClient = asyncHandler(async (req, res) => {
   const clientAgent = req.user.clientAgent;
-  console.log(req, "req.userrrr");
+  if (!clientAgent) throw new ApiError(400, "Client ID is required");
 
-  if (!clientAgent) throw new ApiError(400, "ClientId ID is required");
+  const {
+    search = "",
+    status = "",
+    sortBy = "name",
+    sortOrder = "asc",
+    page = 1,
+    limit = 10,
+  } = req.query;
 
-  const agents = await Agent.find({ clientId: clientAgent, status: { $ne: "Delete" } });
+  const perPage = parseInt(limit, 10);
+  const currentPage = Math.max(parseInt(page, 10), 1);
+  const skip = (currentPage - 1) * perPage;
 
-  res
-    .status(200)
-    .json(new ApiResponse(200, agents, "Agents fetched successfully"));
+  // Filter
+  const filter = { clientId: clientAgent, status: { $ne: "Delete" } };
+  if (status && status.trim() !== "") filter.status = status;
+
+  if (search && search.trim() !== "") {
+    filter.$or = [
+      { name: { $regex: search, $options: "i" } },
+      { email: { $regex: search, $options: "i" } },
+      { contactNumber: { $regex: search, $options: "i" } },
+    ];
+  }
+
+  // Sorting
+  const sortDirection = sortOrder === "asc" ? 1 : -1;
+  const sortOptions = { [sortBy]: sortDirection };
+
+  // Fetch data & total count
+  const [agents, total] = await Promise.all([
+    Agent.find(filter)
+      .sort(sortOptions)
+      .skip(skip)
+      .limit(perPage),
+    Agent.countDocuments(filter),
+  ]);
+
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        agents,
+        pagination: {
+          total,
+          page: currentPage,
+          limit: perPage,
+          totalPages: Math.ceil(total / perPage),
+        },
+      },
+      agents.length ? "Agents fetched successfully" : "No agents found"
+    )
+  );
 });
+
 
 // 🟢 Get Single Agent
 exports.getAgentById = asyncHandler(async (req, res) => {
