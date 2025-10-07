@@ -5,7 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "build": "vite build",         
+    "preview": "vite preview"
   },
   "keywords": [],
   "author": "",
@@ -21,7 +23,8 @@
     "mongoose": "^8.18.1",
     "morgan": "^1.10.1",
     "multer": "^2.0.2",
-    "multer-s3": "^3.0.1"
+    "multer-s3": "^3.0.1",
+    "puppeteer": "^24.23.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"
