@@ -22,19 +22,19 @@ const ladgerRoute=require("./routes/ladgerRoutes")
 
 
 const app = express();
-// app.use(cors());
-app.use(
-  cors({
-    origin: [
-      "http://localhost:5173",          // 🧑‍💻 Local dev
-      "http://192.168.1.7:5173",        // 🔗 Local network access
-      "https://ledgerface.netlify.app", // 🌐 Production
-      "https://ledgerface.vercel.app",  // 🧩 Another deployed version
-    ],
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
-    credentials: true,
-  })
-);
+app.use(cors());
+// app.use(
+//   cors({
+//     origin: [
+//       "http://localhost:5173",          // 🧑‍💻 Local dev
+//       "http://192.168.1.7:5173",        // 🔗 Local network access
+//       "https://ledgerface.netlify.app", // 🌐 Production
+//       "https://ledgerface.vercel.app",  // 🧩 Another deployed version
+//     ],
+//     methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+//     credentials: true,
+//   })
+// );
 // const corsOptions = {
 //   origin: "http://localhost:5173",   // frontend URL
 //   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],

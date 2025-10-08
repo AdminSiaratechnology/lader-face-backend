@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 
 
+
 const generate16DigitId = () =>
   (BigInt("0x" + crypto.randomBytes(8).toString("hex")) % (10n ** 16n))
     .toString()
@@ -8,6 +9,10 @@ const generate16DigitId = () =>
 
 
 const generateUniqueId = async (Model, field) => {
+  console.log("jioojjjj",field)
+  // return "1234"
+
+  
   let id, exists;
   do {
     id = generate16DigitId();
