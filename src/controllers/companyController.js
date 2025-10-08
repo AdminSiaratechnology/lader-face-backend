@@ -3,6 +3,9 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const ApiResponse = require('../utils/apiResponse');
 const User = require('../models/User');
+const {generateUniqueId}=require("../utils/generate16DigiId")
+
+const puppeteer = require("puppeteer");
 
 exports.createCompany = asyncHandler(async (req, res) => {
   console.log("Request Body:", req.body);
@@ -40,7 +43,11 @@ exports.createCompany = asyncHandler(async (req, res) => {
 if(user.role==="Client" || user.role==="Admin"){
   // Allow creating company
   console.log("banks:", JSON.parse(banks) || []);
+  console.log(generateUniqueId,"generateUniqueId")
+  
   let code=await generateUniqueId(Company,"code")
+  // console.log("jsdnfjbsjhd")
+  // let code="123456"
   
 
 
@@ -238,6 +245,8 @@ exports.updateCompany = asyncHandler(async (req, res) => {
       fileName: file.originalname,
     }));
   }
+  console.log(req,"req.banks")
+  req.banks= JSON.parse(req?.banks)
 
   const updatedCompany = await Company.findByIdAndUpdate(id, req.body, { new: true });
 
@@ -277,3 +286,191 @@ exports.deleteCompany = asyncHandler(async (req, res) => {
 
   res.status(200).json(new ApiResponse(200, null, "Company deleted successfully"));
 });
+
+exports.generateCompanyDocumentationPDF = asyncHandler(async (req, res) => {
+  const apiDocs = {
+    baseUrl: "http://localhost:8000/api",
+    authentication: {
+      type: "Bearer Token (JWT)",
+      header: "Authorization: Bearer <your_token>",
+    },
+    apis: [
+      {
+        title: "Create Company",
+        endpoint: "POST /company/create",
+        requestType: "multipart/form-data",
+        description:
+          "Send data as form-data. If you are uploading a logo or registration documents, include the files along with the respective fields.",
+        body: {
+          namePrint: "Global Tech Solutions Pvt Ltd",
+          nameStreet: "IT Park Road",
+          address1: "Plot 45, Phase 2",
+          address2: "Cyber Hub Building",
+          address3: "Opposite Metro Station",
+          city: "Bengaluru",
+          pincode: "560001",
+          state: "Karnataka",
+          country: "India",
+          telephone: "080-26543210",
+          mobile: "+91-9988776655",
+          email: "contact@globaltech.com",
+          gstNumber: "29AACCG1234L1Z9",
+          defaultCurrency: "INR",
+          banks: [
+            {
+              name: "State Bank of India",
+              accountNumber: "1122334455",
+              ifsc: "SBIN0007890",
+              branch: "MG Road, Bengaluru",
+            },
+          ],
+          logo: "(File Upload)",
+          registrationDocs: "(Multiple File Upload)",
+        },
+        response: {
+          statusCode: 201,
+          message: "Company created successfully",
+        },
+      },
+      {
+        title: "Get All Companies",
+        endpoint: "GET /company/all",
+        requestType: "application/json",
+        response: {
+          companies: [
+            {
+              _id: "68c1503077fd742fa21575df",
+              namePrint: "Global Tech Solutions Pvt Ltd",
+              city: "Bengaluru",
+            },
+          ],
+        },
+      },
+      {
+        title: "Get Company By ID",
+        endpoint: "GET /company/:id",
+        requestType: "application/json",
+        response: {
+          _id: "68c1503077fd742fa21575df",
+          namePrint: "Global Tech Solutions Pvt Ltd",
+          gstNumber: "29AACCG1234L1Z9",
+        },
+      },
+      {
+        title: "Update Company",
+        endpoint: "PUT /company/update/:id",
+        requestType: "multipart/form-data",
+        description:
+          "Use form-data for updating details, especially when updating the logo or registration documents.",
+        body: {
+          namePrint: "Updated Tech Pvt Ltd",
+          email: "info@updatedtech.com",
+        },
+        response: {
+          message: "Company updated successfully",
+        },
+      },
+      {
+        title: "Delete Company",
+        endpoint: "DELETE /company/:id",
+        requestType: "application/json",
+        response: {
+          message: "Company deleted successfully",
+        },
+      },
+    ],
+  };
+
+  const html = `
+    <html>
+      <head>
+        <title>Company API Documentation</title>
+        <style>
+          body { font-family: 'Arial', sans-serif; padding: 30px; color: #222; }
+          h1, h2 { color: #2a5d84; }
+          h1 { text-align: center; border-bottom: 2px solid #2a5d84; padding-bottom: 10px; }
+          .endpoint {
+            background: #f9f9f9;
+            border: 1px solid #ccc;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+          }
+          pre {
+            background: #1e1e1e;
+            color: #00ff90;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+          }
+          code { font-family: monospace; font-size: 14px; }
+        </style>
+      </head>
+      <body>
+        <h1>Company API Documentation</h1>
+
+        <h2>Base URL</h2>
+        <pre><code>${apiDocs.baseUrl}</code></pre>
+
+        <h2>Authentication</h2>
+        <pre><code>${JSON.stringify(apiDocs.authentication, null, 2)}</code></pre>
+
+        <h2>Endpoints</h2>
+        ${apiDocs.apis
+          .map(
+            (api) => `
+            <div class="endpoint">
+              <h3>${api.title}</h3>
+              <strong>Endpoint:</strong>
+              <pre><code>${api.endpoint}</code></pre>
+              <strong>Request Type:</strong>
+              <pre><code>${api.requestType}</code></pre>
+              ${
+                api.description
+                  ? `<p><strong>Description:</strong> ${api.description}</p>`
+                  : ""
+              }
+              ${
+                api.body
+                  ? `<strong>Request Body:</strong><pre><code>${JSON.stringify(
+                      api.body,
+                      null,
+                      2
+                    )}</code></pre>`
+                  : ""
+              }
+              <strong>Response:</strong>
+              <pre><code>${JSON.stringify(api.response, null, 2)}</code></pre>
+            </div>
+          `
+          )
+          .join("")}
+
+        <hr>
+        <p style="text-align:center; color:#777; font-size:12px;">
+          Generated on ${new Date().toLocaleString()}
+        </p>
+      </body>
+    </html>
+  `;
+
+  const browser = await puppeteer.launch({
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    headless: "new",
+  });
+  const page = await browser.newPage();
+  await page.setContent(html, { waitUntil: "networkidle0" });
+  const pdfBuffer = await page.pdf({
+    format: "A4",
+    printBackground: true,
+    margin: { top: "15mm", bottom: "15mm", left: "10mm", right: "10mm" },
+  });
+  await browser.close();
+
+  res.set({
+    "Content-Type": "application/pdf",
+    "Content-Disposition": 'attachment; filename="Company_API_Documentation.pdf"',
+  });
+  res.send(pdfBuffer);
+});
+
