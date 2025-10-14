@@ -35,6 +35,11 @@ const companySchema = new mongoose.Schema({
   msmeNumber: String,
   udyamNumber: String,
   defaultCurrency: String,
+  maintainGodown: { type: Boolean, default: false },
+  maintainBatch: { type: Boolean, default: false },
+  closingQuantityOrder: { type: Boolean, default: false },
+  negativeOrder: { type: Boolean, default: false },
+
   banks: [bankSchema],
   logo: { type: String, default: null },
   notes: String,

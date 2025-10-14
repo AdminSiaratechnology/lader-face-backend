@@ -81,13 +81,13 @@ exports.createProduct = asyncHandler(async (req, res) => {
       fileName: file.originalname,
     }));
   }
-  let code=await generateUniqueId(Product,"code")
+  // let code=await generateUniqueId(Product,"code")
 
   // Build product object
   const productObj = {
     clientId: clientId,
     companyId: body.companyId,
-    code: code,
+    code: body.code,
     name: body.name,
     partNo: body.partNo,
     stockGroup: body.stockGroup || null,
