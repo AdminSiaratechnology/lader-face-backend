@@ -16,6 +16,7 @@ const customerRoute=require("./routes/customerRoutes")
 const vendorRoute=require("./routes/vendorRoute")
 const agentRoute=require("./routes/agentRoutes")
 const ladgerRoute=require("./routes/ladgerRoutes")
+const stockItemRoutes=require("./routes/stockItem.routes")
 
 
 
@@ -54,6 +55,10 @@ app.use(express.urlencoded({limit: '50mb', extended: true }));
 app.get("/",(req,res)=>{
     res.send("API is working")
 })
+// app.post("/api/stock-items/create",(req,res)=>{
+//     console.log("Stock items endpoint hit",req.body);
+//     res.send("API is working")
+// })
 // Routes
 
 app.use('/api/auth', authRoutes);
@@ -70,6 +75,8 @@ app.use("/api/agent/customers",customerRoute)
 app.use("/api/agent/vendors",vendorRoute)
 app.use("/api/agent/agents",agentRoute)
 app.use("/api/agent/ledgers",ladgerRoute)
+app.use("/api/stock-items",stockItemRoutes)
+
 
 // Not found middleware (for invalid routes)
 app.use(notFound);

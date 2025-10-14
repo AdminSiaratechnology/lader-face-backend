@@ -8,6 +8,7 @@ const { generateUniqueId } = require("../utils/generate16DigiId");
 
 // ✅ Create Godown
 exports.createGodown = asyncHandler(async (req, res) => {
+  console.log("Request Body:", req.body); // Debugging line to check incoming data
   const {
     address,
     capacity,
