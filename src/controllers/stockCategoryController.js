@@ -24,12 +24,12 @@ exports.createStockCategory = asyncHandler(async (req, res) => {
   }
 
   // Logged-in user check
-  const agentDetail = await User.findById(agentId, { clientAgent: 1 });
-  if (!agentDetail || !agentDetail.clientAgent) {
+  const agentDetail = await User.findById(agentId, { clientID: 1 });
+  if (!agentDetail || !agentDetail.clientID) {
     throw new ApiError(403, "You are not permitted to perform this action");
   }
 
-  const clientId = agentDetail.clientAgent;
+  const clientId = agentDetail.clientID;
 
   // Create category
   const category = await StockCategory.create({

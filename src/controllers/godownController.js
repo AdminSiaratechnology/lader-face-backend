@@ -36,7 +36,7 @@ exports.createGodown = asyncHandler(async (req, res) => {
   if (!user) throw new ApiError(404, "User not found");
 
   // ✅ Extract client from user
-  const client = user.clientAgent;
+  const client = user.clientID;
 
   // ✅ Create godown
   const godown = await Godown.create({
@@ -141,7 +141,7 @@ exports.getGodowns = asyncHandler(async (req, res) => {
       {
         $lookup: {
           from: "godowns",
-          localField: "clientAgent",
+          localField: "clientID",
           foreignField: "client",
           as: "godowns",
         },

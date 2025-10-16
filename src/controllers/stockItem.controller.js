@@ -17,7 +17,7 @@ module.exports.createStockItems = asyncHandler(async (req, res) => {
   if (!StockItems || !Array.isArray(StockItems)) {
     throw new ApiError(400, "StockItems must be a valid array");
   }
-  const clientId = req.user.clientAgent;
+  const clientId = req.user.clientID;
   if (!clientId) throw new ApiError(404, "User not found");
   
 
@@ -81,10 +81,10 @@ module.exports.getAllClientStockItems = asyncHandler(async (req, res) => {
   if (!user) throw new ApiError(404, "User not found");
 
   const stockItems = await StockItem.find({
-    clientId: req.user.clientAgent
+    clientId: req.user.clientID
     // isDeleted: false,
   }).sort({ createdAt: -1 });
-  console.log("Fetched stock items:", stockItems, req.user.clientAgent);
+  console.log("Fetched stock items:", stockItems, req.user.clientID);
 
   res
     .status(200)
@@ -108,7 +108,7 @@ module.exports.getStockItemByCode = asyncHandler(async (req, res) => {
 // ✅ Update Stock Item
 module.exports.updateStockItem = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const clientId = req.user.clientAgent;
+  const clientId = req.user.clientID;
 
   if (!clientId) throw new ApiError(404, "User not found");
 

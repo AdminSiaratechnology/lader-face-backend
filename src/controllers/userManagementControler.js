@@ -15,14 +15,14 @@ exports.getAllClientUsersWithCompany = asyncHandler(async (req, res) => {
       $lookup: {
         from: 'users',
         localField: '_id',
-        foreignField: 'clientAgent',
+        foreignField: 'clientID',
         as: 'users'
       }
     },
     {
       $lookup: {
         from: 'companies',
-        localField: 'clientAgent', // 🔹 changed from clientAgent
+        localField: 'clientID',
         foreignField: 'client',
         as: 'companies'
       }
@@ -60,8 +60,8 @@ exports.getAllClientUsers = asyncHandler(async (req, res) => {
     {
       $lookup: {
         from: "users",
-        localField: "clientAgent",
-        foreignField: "clientAgent",
+        localField: "clientID",
+        foreignField: "clientID",
         as: "users",
         pipeline: [
           { $match: { status: { $ne: "delete" } } }, // remove deleted users

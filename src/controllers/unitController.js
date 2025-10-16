@@ -18,14 +18,14 @@ exports.createUnit = asyncHandler(async (req, res) => {
 
  
 
-  // Sirf clientAgent field hi le aayenge
-  const agentDetail = await User.findById(agentId, { clientAgent: 1 });
+  // Sirf clientID field hi le aayenge
+  const agentDetail = await User.findById(agentId, { clientID: 1 });
 
-  if (!agentDetail || !agentDetail.clientAgent) {
+  if (!agentDetail || !agentDetail.clientID) {
     throw new ApiError(403, "You are not permitted to perform this action");
   }
 
-  const clientId = agentDetail.clientAgent;
+  const clientId = agentDetail.clientID;
 
   const unit = await Unit.create({
     clientId, companyId, name, type,
@@ -65,7 +65,7 @@ exports.getUnits = asyncHandler(async (req, res) => {
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
 
-  let clientId = user.clientAgent;
+  let clientId = user.clientID;
 
   const filter = {};
   if (clientId) filter.clientId = clientId;
