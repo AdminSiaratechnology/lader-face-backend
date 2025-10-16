@@ -19,7 +19,10 @@ exports.createAgent = asyncHandler(async (req, res) => {
   if (!agentName) {
     throw new ApiError(400, "Agent name and code are required");
   }
-  const clientId = req.user.clientAgent;
+  const clientId = req.user.clientID;
+  if (!clientId) {
+    throw new ApiError(400, "Client ID is required from token");
+  }
 
   let logoUrl = null;
   let registrationDocs = [];
@@ -108,8 +111,8 @@ exports.getAgentsByCompany = asyncHandler(async (req, res) => {
 });
 
 exports.getAgentsByClient = asyncHandler(async (req, res) => {
-  const clientAgent = req.user.clientAgent;
-  if (!clientAgent) throw new ApiError(400, "Client ID is required");
+  const clientId = req.user.clientID;
+  if (!clientId) throw new ApiError(400, "Client ID is required");
 
   const {
     search = "",
@@ -125,7 +128,7 @@ exports.getAgentsByClient = asyncHandler(async (req, res) => {
   const skip = (currentPage - 1) * perPage;
 
   // Filter
-  const filter = { clientId: clientAgent, status: { $ne: "Delete" } };
+  const filter = { clientId: clientId, status: { $ne: "Delete" } };
   if (status && status.trim() !== "") filter.status = status;
 
   if (search && search.trim() !== "") {
@@ -195,7 +198,7 @@ exports.deleteAgent = asyncHandler(async (req, res) => {
   }
 
   // check permission
-  if (String(agent.clientId) !== String(req.user.clientAgent)) {
+  if (String(agent.clientId) !== String(req.user.clientID)) {
     throw new ApiError(403, "You are not permitted to perform this action");
   }
 

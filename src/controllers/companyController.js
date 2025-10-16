@@ -55,7 +55,7 @@ if(user.role==="Client" || user.role==="Admin"){
     namePrint,
     ...rest,
     code:code,
-    client: user.role === 'Client' ? userId : user.clientAgent,
+    client: user.role === 'Client' ? userId : user.clientID,
     banks: JSON.parse(banks) || [],
     logo: logoUrl || "",
     registrationDocs: registrationDocs || [],
@@ -83,7 +83,7 @@ exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
   }
 
   // 2. Client ID nikaalo
-  const clientId = agent?.clientAgent;
+  const clientId = req.user.clientID;
   if (!clientId) {
     throw new ApiError(404, "Client not found for this agent");
   }

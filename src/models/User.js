@@ -50,7 +50,7 @@ const userSchema = new mongoose.Schema({
   },
 
   parent: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  clientAgent: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  clientID: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company' },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 

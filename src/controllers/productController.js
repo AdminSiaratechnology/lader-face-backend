@@ -69,7 +69,7 @@ exports.createProduct = asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
-  let clientId = user.clientAgent;
+  let clientId = user.clientID;
   console.log("clientId", clientId);
 
   // registration docs
@@ -171,18 +171,18 @@ exports.deleteProduct = asyncHandler(async (req, res) => {
   const { id } = req.params;
   // validate user
   const userId = req?.user?.id;
-  const clientAgentId=req?.user?.clientAgent
+  const clientID = req?.user?.clientID;
 
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
 
 
   
-if (!clientAgentId) throw new ApiError(403, "Invalid user");
+if (!clientID) throw new ApiError(403, "Invalid user");
 
   // Find product and check ownership in one query
   const product = await Product.findOneAndUpdate(
-    { _id: id, clientId: clientAgentId },
+    { _id: id, clientId: clientID },
     { status: "Delete" },
     { new: true } // updated document return kare
   );

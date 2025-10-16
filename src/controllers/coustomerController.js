@@ -21,7 +21,7 @@ exports.createCustomer = asyncHandler(async (req, res) => {
   if (!customerName) {
     throw new ApiError(400, "Customer name and code are required");
   }
-  const clientId =req.user.clientAgent ;
+  const clientId = req.user.clientID;
 
   // Company check
   // const existingCompany = await Company.findById(companyID);
@@ -145,8 +145,8 @@ exports.getCustomersByCompany = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, customers, "Customers fetched successfully"));
 });
 exports.getCustomersByClient = asyncHandler(async (req, res) => {
-  const clientAgent = req.user.clientAgent;
-  if (!clientAgent) throw new ApiError(400, "Client ID is required");
+  const clientID = req.user.clientID;
+  if (!clientID) throw new ApiError(400, "Client ID is required");
 
   const {
     search = "",
@@ -162,7 +162,7 @@ exports.getCustomersByClient = asyncHandler(async (req, res) => {
   const skip = (currentPage - 1) * perPage;
 
   // Filter
-  const filter = { clientId: clientAgent, status: { $ne: "Delete" } };
+  const filter = { clientId: clientID, status: { $ne: "Delete" } };
   if (status && status.trim() !== "") filter.status = status;
 
   if (search && search.trim() !== "") {
@@ -233,7 +233,7 @@ exports.deleteCustomer = asyncHandler(async (req, res) => {
   }
 
   // check permission
-  if (String(customer.clientId) !== String(req.user.clientAgent)) {
+  if (String(customer.clientId) !== String(req.user.clientID)) {
     throw new ApiError(403, "You are not permitted to perform this action");
   }
 

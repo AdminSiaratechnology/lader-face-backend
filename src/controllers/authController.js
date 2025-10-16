@@ -6,9 +6,9 @@ const ApiResponse = require('../utils/apiResponse');
 const User = require('../models/User');
 const { use } = require('../routes/authRoutes');
 
-const signToken = (userId, clientAgent,role) => {
+const signToken = (userId, clientID,role) => {
   return jwt.sign(
-    { id: userId, clientAgent,role }, // payload me include karo
+    { id: userId, clientID,role }, // payload me include karo
     process.env.JWT_SECRET,
     { expiresIn: "7d" }
   );
@@ -39,8 +39,9 @@ const signToken = (userId, clientAgent,role) => {
 // });
 exports.register = asyncHandler(async (req, res) => {
   const adminId = req.user.id; // Hardcoded admin (later tu req.user se lega)
+  console.log("Admin ID from req.user:", req.user);
 
-  const { name, email, password, role, subRole, company, createdBy, parent, clientAgent } = req.body;
+  const { name, email, password, role, subRole, company, createdBy, parent, clientID } = req.body;
   console.log(req.body);
 
   // Required fields check
@@ -62,7 +63,8 @@ exports.register = asyncHandler(async (req, res) => {
   const user = await User.create({
     ...req.body,
     password: hash,
-    clientAgent: creatorInfo?.clientAgent || null,
+    // clientID: creatorInfo?.clientID || null,
+    clientID: adminId || null,
     createdBy: creatorInfo?._id,
     parent: creatorInfo?._id,
   });
@@ -152,8 +154,8 @@ exports.login = asyncHandler(async (req, res) => {
   if (!isMatch) throw new ApiError(401, "Invalid credentials");
 
   // JWT token generation
-  const token = signToken(user._id, user.clientAgent,user?.role);
-  console.log(user)
+  const token = signToken(user._id, user.clientID,user?.role);
+  console.log(user),"userrrrrrrrrrrrrrrrr"
 
   // Remove sensitive info
   const safeUser = user.toObject();

@@ -33,14 +33,14 @@ exports.createStockGroup = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Company ID and name are required");
   }
 
-  // Sirf clientAgent field hi le aayenge
-  const agentDetail = await User.findById(agentId, { clientAgent: 1 });
+  // Sirf clientID field hi le aayenge
+  const agentDetail = await User.findById(agentId, { clientID: 1 });
 
-  if (!agentDetail || !agentDetail.clientAgent) {
+  if (!agentDetail || !agentDetail.clientID) {
     throw new ApiError(403, "You are not permitted to perform this action");
   }
 
-  const clientId = agentDetail.clientAgent;
+  const clientId = agentDetail.clientID;
 
   // Generate unique stockGroupId
   const stockGroupId = await generateUniqueId(StockGroup,"stockGroupId");
@@ -76,7 +76,7 @@ exports.getStockGroups = asyncHandler(async (req, res) => {
     {
       $lookup: {
         from: "stockgroups",
-        localField: "clientAgent",
+        localField: "clientID",
         foreignField: "clientId",
         as: "stockGroups",
         pipeline: [
@@ -146,10 +146,10 @@ exports.updateStockGroup = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Company ID and name are required");
   }
 
-  // Sirf clientAgent field hi le aayenge
-  const agentDetail = await User.findById(agentId, { clientAgent: 1 });
+  // Sirf clientID field hi le aayenge
+  const agentDetail = await User.findById(agentId, { clientID: 1 });
 
-  if (!agentDetail || !agentDetail.clientAgent) {
+  if (!agentDetail || !agentDetail.clientID) {
     throw new ApiError(403, "You are not permitted to perform this action");
   }
   const updated = ensureFound(
@@ -164,10 +164,10 @@ exports.deleteStockGroup = asyncHandler(async (req, res) => {
   const agentId = req.user.id;
   const { id } = req.params;
 
-  // Sirf clientAgent field hi le aayenge
-  const agentDetail = await User.findById(agentId, { clientAgent: 1 });
+  // Sirf clientID field hi le aayenge
+  const agentDetail = await User.findById(agentId, { clientID: 1 });
 
-  if (!agentDetail || !agentDetail.clientAgent) {
+  if (!agentDetail || !agentDetail.clientID) {
     throw new ApiError(403, "You are not permitted to perform this action");
   }
 
