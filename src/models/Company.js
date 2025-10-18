@@ -34,6 +34,7 @@ const companySchema = new mongoose.Schema({
   gstNumber: String,
   panNumber: String,
   tanNumber: String,
+  vatNumber:String,
   msmeNumber: String,
   udyamNumber: String,
   defaultCurrency: String,
@@ -42,11 +43,19 @@ const companySchema = new mongoose.Schema({
   maintainBatch: { type: Boolean, default: false },
   closingQuantityOrder: { type: Boolean, default: false },
   negativeOrder: { type: Boolean, default: false },
+    status: {
+      type: String,
+      enum: ["active", "inactive", "delete"],
+      default: "active"
+    },
 
   banks: [bankSchema],
   logo: { type: String, default: null },
   notes: String,
   registrationDocs: [registrationDocSchema],
+    bookStartingDate: { type: Date, default: Date.now },
+  financialDate: { type: Date, default: Date.now },
+ 
 
   client: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   isDeleted: { type: Boolean, default: false },
