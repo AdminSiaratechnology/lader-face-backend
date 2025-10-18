@@ -24,7 +24,10 @@ router.get('/agent/companies/pdf', companyController.generateCompanyDocumentatio
 router.post('/assign-salesman', companyController.assignSalesman);
 router.post('/set-access', companyController.setAccess);
 router.get('/get-access', companyController.getAccess);
-router.put('/update/:id', companyController.updateCompany);
+router.put('/update/:id',upload.fields([
+    { name: "logo", maxCount: 1 },
+    { name: "registrationDocs", maxCount: 5 },
+  ]), companyController.updateCompany);
 router.delete('/delete/:id', companyController.deleteCompany);
 
 module.exports = router;

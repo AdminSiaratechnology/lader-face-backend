@@ -5,8 +5,8 @@ const ApiError = require("../utils/apiError");
 const ApiResponse = require("../utils/apiResponse");
 const asyncHandler = require("../utils/asyncHandler");
 const User = require("../models/User");
-const { default: mongoose } = require("mongoose");
 const {generateUniqueId} =require("../utils/generate16DigiId")
+const mongoose=require("mongoose")
 
 
 
@@ -52,6 +52,15 @@ exports.createStockGroup = asyncHandler(async (req, res) => {
     stockGroupId,
     name,
     description,
+    createdBy: agentId,
+    auditLogs: [
+      {
+        action: "create",
+        performedBy: agentId ? new mongoose.Types.ObjectId(agentId) : null,
+        timestamp: new Date(),
+        details: "Stock Group created",
+      },
+    ],
   });
 
   res
@@ -138,26 +147,59 @@ exports.getStockGroups = asyncHandler(async (req, res) => {
 
 // Update
 exports.updateStockGroup = asyncHandler(async (req, res) => {
-    const agentId = req.user.id;
+  const agentId = req.user.id;
   const { companyId, name, description } = req.body;
 
-  // Required field check
+  // ✅ Required field check
   if (!companyId || !name) {
     throw new ApiError(400, "Company ID and name are required");
   }
 
-  // Sirf clientID field hi le aayenge
+  // ✅ Agent permission check
   const agentDetail = await User.findById(agentId, { clientID: 1 });
-
   if (!agentDetail || !agentDetail.clientID) {
     throw new ApiError(403, "You are not permitted to perform this action");
   }
-  const updated = ensureFound(
-    await StockGroup.findByIdAndUpdate(req.params.id, req.body, { new: true }),
-    "Stock Group not found"
-  );
-  res.json(new ApiResponse(200, updated, "Stock Group updated"));
+
+  // ✅ Find existing StockGroup
+  const stockGroup = await StockGroup.findById(req.params.id);
+  if (!stockGroup) throw new ApiError(404, "Stock Group not found");
+
+  // ✅ Allowed fields for update
+  const allowedFields = ["companyId", "name", "description"];
+  const updateData = {};
+  Object.keys(req.body || {}).forEach(key => {
+    if (allowedFields.includes(key)) updateData[key] = req.body[key];
+  });
+
+  // ✅ Track changes for audit log
+  const oldData = stockGroup.toObject();
+  const changes = {};
+  Object.keys(updateData).forEach(key => {
+    if (JSON.stringify(oldData[key]) !== JSON.stringify(updateData[key])) {
+      changes[key] = { from: oldData[key], to: updateData[key] };
+    }
+  });
+
+  // ✅ Apply updates
+  Object.assign(stockGroup, updateData);
+
+  // ✅ Audit log
+  if (!stockGroup.auditLogs) stockGroup.auditLogs = [];
+  stockGroup.auditLogs.push({
+    action: "update",
+    performedBy: agentId,
+    details: "Stock Group updated",
+    changes,
+    timestamp: new Date()
+  });
+
+  // ✅ Save
+  await stockGroup.save();
+
+  res.json(new ApiResponse(200, stockGroup, "Stock Group updated successfully"));
 });
+
 
 // Delete
 exports.deleteStockGroup = asyncHandler(async (req, res) => {
@@ -179,6 +221,12 @@ exports.deleteStockGroup = asyncHandler(async (req, res) => {
 
   // Soft delete update
   stock.status = "Delete";
+     stock.auditLogs.push({
+              action: "delete",
+              performedBy: new mongoose.Types.ObjectId(req.user.id),
+              timestamp: new Date(),
+              details: "Stock Group marked as deleted",
+            });
   await stock.save();
 
   res.json(new ApiResponse(200, stock, "Stock Group deleted successfully"));

@@ -4,7 +4,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const ApiResponse = require('../utils/apiResponse');
 const { generateUniqueId } = require('../utils/generate16DigiId');
-const { json } = require('express');
+const mongoose = require('mongoose');
 
 // 🟢 Create Vendor
 exports.createVendor = asyncHandler(async (req, res) => {
@@ -20,6 +20,7 @@ exports.createVendor = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Vendor name and code are required");
   }
   const clientId = req.user.clientID;
+  const adminId = req?.user?.id;
 
   // Company check
   // const existingCompany = await Company.findById(companyID);
@@ -58,7 +59,16 @@ exports.createVendor = asyncHandler(async (req, res) => {
     logo: logoUrl || "",
     registrationDocs: registrationDocs || [],
     banks: JSON.parse(req.body.banks),
-    company: companyID
+    company: companyID,
+        createdBy: adminId,
+             auditLogs: [
+                  {
+                    action: "create",
+                    performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+                    timestamp: new Date(),
+                    details: "vendor created",
+                  },
+                ],
   });
 
   res
@@ -70,18 +80,20 @@ exports.createVendor = asyncHandler(async (req, res) => {
 exports.updateVendor = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
+  // ✅ Step 1: Find existing vendor
   const vendor = await Vendor.findById(id);
   if (!vendor) throw new ApiError(404, "Vendor not found");
 
   let logoUrl = vendor.logo;
   let registrationDocs = vendor.registrationDocs;
+  let banks = vendor.banks;
 
-  // Replace logo if new one uploaded
+  // ✅ Step 2: Replace logo if new one uploaded
   if (req?.files?.['logo'] && req?.files?.['logo'][0]) {
     logoUrl = req.files['logo'][0].location;
   }
 
-  // Replace registration docs if new ones uploaded
+  // ✅ Step 3: Replace registration docs if new ones uploaded
   if (req?.files?.['registrationDocs']) {
     registrationDocs = req.files['registrationDocs'].map(file => ({
       type: req.body.docType || 'Other',
@@ -90,16 +102,60 @@ exports.updateVendor = asyncHandler(async (req, res) => {
     }));
   }
 
-  const updatedVendor = await Vendor.findByIdAndUpdate(
-    id,
-    { ...req.body, logo: logoUrl, registrationDocs, banks: JSON.parse(req.body.banks) },
-    { new: true }
-  );
+  // ✅ Step 4: Prepare updateData
+  const updateData = {
+    ...req.body,
+    logo: logoUrl,
+    registrationDocs,
+  };
+
+  // ✅ Step 5: Safely parse banks
+  if (req.body.banks) {
+    try {
+      banks = typeof req.body.banks === "string" ? JSON.parse(req.body.banks) : req.body.banks;
+      updateData.banks = banks;
+    } catch (err) {
+      throw new ApiError(400, "Invalid banks data");
+    }
+  }
+
+  // ✅ Step 6: Track field changes before update
+  const oldData = vendor.toObject();
+  const changes = {};
+
+  Object.keys(updateData).forEach((key) => {
+    if (JSON.stringify(oldData[key]) !== JSON.stringify(updateData[key])) {
+      changes[key] = { from: oldData[key], to: updateData[key] };
+    }
+  });
+
+  // ✅ Step 7: Prevent auditLogs overwrite
+  if (updateData.auditLogs) {
+    delete updateData.auditLogs;
+  }
+
+  // ✅ Step 8: Apply updates safely
+  for (const key in updateData) {
+    vendor[key] = updateData[key];
+  }
+
+  // ✅ Step 9: Push new audit log entry
+  vendor.auditLogs.push({
+    action: "update",
+    performedBy: req.user?.id || null,
+    details: "Vendor updated successfully",
+    changes,
+  });
+
+  // ✅ Step 10: Save vendor document
+  await vendor.save();
 
   res
     .status(200)
-    .json(new ApiResponse(200, updatedVendor, "Vendor updated successfully"));
+    .json(new ApiResponse(200, vendor, "Vendor updated successfully"));
 });
+
+
 
 // 🟢 Get All Vendors (for a company)
 exports.getVendorsByCompany = asyncHandler(async (req, res) => {
@@ -208,6 +264,13 @@ exports.deleteVendor = asyncHandler(async (req, res) => {
 
   // soft delete
   vendor.status = "Delete";
+   vendor.auditLogs.push({
+          action: "delete",
+          performedBy: new mongoose.Types.ObjectId(req.user.id),
+          timestamp: new Date(),
+          details: "Vendor marked as deleted",
+        });
+  
   await vendor.save();
 
   // send response

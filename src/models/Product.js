@@ -1,6 +1,7 @@
 // src/models/Product.js
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
+const auditLogSchema = require("../middlewares/auditLogSchema");
 
 // TaxConfiguration sub-schema
 const TaxConfigurationSchema = new Schema({
@@ -61,7 +62,10 @@ const ProductSchema = new Schema({
 
   images: [ProductImageSchema],
 
-  remarks: { type: String }
+  remarks: { type: String },
+  
+  createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
+  auditLogs: [auditLogSchema],
 
 }, { timestamps: true });
 
