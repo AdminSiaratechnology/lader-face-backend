@@ -39,6 +39,15 @@ exports.createStockCategory = asyncHandler(async (req, res) => {
     name,
     description,
     status: "Active",
+    createdBy: agentId,
+    auditLogs: [
+      {
+        action: "create",
+        performedBy: agentId ? new mongoose.Types.ObjectId(agentId) : null,
+        timestamp: new Date(),
+        details: "Stock Category created",
+      },
+    ],
   });
 
   res.status(201).json(new ApiResponse(201, category, "Stock Category created successfully"));
@@ -109,10 +118,46 @@ exports.getStockCategories = asyncHandler(async (req, res) => {
 // Update Stock Category
 exports.updateStockCategory = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const updated = await StockCategory.findByIdAndUpdate(id, req.body, { new: true });
-  ensureFound(updated, "Stock Category not found");
-  res.json(new ApiResponse(200, updated, "Stock Category updated"));
+
+  // ✅ Find existing StockCategory
+  const stockCategory = await StockCategory.findById(id);
+  if (!stockCategory) throw new ApiError(404, "Stock Category not found");
+
+  // ✅ Allowed fields for update
+  const allowedFields = ["companyId", "name", "description"];
+  const updateData = {};
+  Object.keys(req.body || {}).forEach(key => {
+    if (allowedFields.includes(key)) updateData[key] = req.body[key];
+  });
+
+  // ✅ Track changes for audit log
+  const oldData = stockCategory.toObject();
+  const changes = {};
+  Object.keys(updateData).forEach(key => {
+    if (JSON.stringify(oldData[key]) !== JSON.stringify(updateData[key])) {
+      changes[key] = { from: oldData[key], to: updateData[key] };
+    }
+  });
+
+  // ✅ Apply updates
+  Object.assign(stockCategory, updateData);
+
+  // ✅ Audit log
+  if (!stockCategory.auditLogs) stockCategory.auditLogs = [];
+  stockCategory.auditLogs.push({
+    action: "update",
+    performedBy: req.user?.id || null,
+    details: "Stock Category updated",
+    changes,
+    timestamp: new Date()
+  });
+
+  // ✅ Save
+  await stockCategory.save();
+
+  res.json(new ApiResponse(200, stockCategory, "Stock Category updated successfully"));
 });
+
 
 // Delete Stock Category (Soft delete → status: "Delete")
 exports.deleteStockCategory = asyncHandler(async (req, res) => {
@@ -121,6 +166,13 @@ exports.deleteStockCategory = asyncHandler(async (req, res) => {
   ensureFound(category, "Stock Category not found");
 
   category.status = "Delete";
+  const agentId = req.user.id;
+  category.auditLogs.push({
+    action: "delete",
+    performedBy: agentId ? new mongoose.Types.ObjectId(agentId) : null,
+    timestamp: new Date(),
+    details: "Stock Category deleted",
+  });
   await category.save();
 
   res.json(new ApiResponse(200, category, "Stock Category deleted successfully"));

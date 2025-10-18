@@ -6,6 +6,7 @@ const {
   getCustomerById,
   getCustomersByClient,
   deleteCustomer,
+  createBulkCustomers
   
 } = require("../controllers/coustomerController");
 const upload = require("../config/s3");
@@ -17,6 +18,9 @@ router.post("/",upload.fields([
    
     { name: "registrationDocs", maxCount: 5 },
   ]), createCustomer);
+
+  //bulk create customers
+  router.post("/bulk", createBulkCustomers);
 
 // Update customer
 router.put("/:id",upload.fields([

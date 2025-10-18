@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const auditLogSchema = require("../middlewares/auditLogSchema");
 
 // Bank schema
 const BankSchema = new mongoose.Schema({
@@ -96,6 +97,8 @@ const AgentSchema = new mongoose.Schema(
     notes: { type: String },
 
     registrationDocs: [RegistrationDocumentSchema], // embedded documents
+    auditLogs: [auditLogSchema],
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
 
     performanceRating: { type: Number, default: 0 },
     activeContracts: { type: Number, default: 0 }

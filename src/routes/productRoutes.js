@@ -17,6 +17,7 @@ router.put('/:id', upload.fields([
    
     { name: "productImages", maxCount: 5 },
   ]), productController.updateProduct);         // update (form-data allowed)
+router.post('/bulk', productController.createBulkProducts); // bulk create
 router.delete('/:id', productController.deleteProduct);      // delete
 router.get('/:id', productController.getProductById);        // get by id
 router.get('/', productController.listProducts);             // list / filter

@@ -53,7 +53,15 @@ exports.createGodown = asyncHandler(async (req, res) => {
     parent,
     state,
     status,
-    client
+    client,
+    createdBy: req?.user?.id,
+    auditLogs: [
+      {
+        action: "create",
+        performedBy: new mongoose.Types.ObjectId(req.user.id),
+        timestamp: new Date(),
+      },
+    ],
   });
 
   // ✅ Single response only
@@ -62,18 +70,17 @@ exports.createGodown = asyncHandler(async (req, res) => {
     .json(new ApiResponse(201, godown, "Godown created successfully"));
 });
 exports.updateGodown = asyncHandler(async (req, res) => {
-  const { id } = req.params; // Godown ka id URL se aayega
-  const updateData = req.body;
+  const { id } = req.params;
+  if (!id) throw new ApiError(400, "Godown ID is required");
 
-  // ✅ Logged-in user check
-  const user = await User.findById(req.user.id).lean();
+  const user = await User.findById(req.user.id);
   if (!user) throw new ApiError(404, "User not found");
 
-  // ✅ Ensure godown exists
   const godown = await Godown.findById(id);
   if (!godown) throw new ApiError(404, "Godown not found");
 
-  // ✅ Update only allowed fields (security ke liye)
+  console.log("Godown before update:", godown);
+
   const allowedFields = [
     "address",
     "capacity",
@@ -90,24 +97,43 @@ exports.updateGodown = asyncHandler(async (req, res) => {
     "status",
   ];
 
-  const filteredData = {};
-  Object.keys(updateData).forEach((key) => {
-    if (allowedFields.includes(key)) {
-      filteredData[key] = updateData[key];
+  const body = req.body || {}; // safeguard
+  const updateData = {};
+  Object.keys(body).forEach(key => {
+    if (allowedFields.includes(key)) updateData[key] = body[key];
+  });
+
+  // Track changes for audit log
+  const oldData = godown.toObject();
+  const changes = {};
+  Object.keys(updateData).forEach(key => {
+    if (JSON.stringify(oldData[key]) !== JSON.stringify(updateData[key])) {
+      changes[key] = { from: oldData[key], to: updateData[key] };
     }
   });
 
-  // ✅ Perform update
-  const updatedGodown = await Godown.findByIdAndUpdate(
-    id,
-    { $set: filteredData },
-    { new: true, runValidators: true }
-  ).lean();
+  // Apply updates
+  Object.assign(godown, updateData);
+  console.log("Godown before save:", godown);
 
-  res
-    .status(200)
-    .json(new ApiResponse(200, updatedGodown, "Godown updated successfully"));
+  // Audit log
+  if (!godown.auditLogs) godown.auditLogs = [];
+  godown.auditLogs.push({
+    action: "update",
+    performedBy: req.user.id,
+    details: "Godown updated",
+    changes,
+    timestamp: new Date()
+  });
+  console.log("Godown after update:", godown);
+
+  await godown.save();
+
+  res.status(200).json(new ApiResponse(200, godown, "Godown updated successfully"));
 });
+
+
+
 
 
 // ✅ Get all godowns
@@ -246,21 +272,32 @@ exports.getGodownsByCompany = asyncHandler(async (req, res) => {
 exports.deleteGodown = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  // ✅ Logged-in user check
-  const user = await User.findById(req.user.id).lean();
+  // ✅ 1️⃣ Logged-in user check
+  const user = await User.findById(req.user.id);
   if (!user) throw new ApiError(404, "User not found");
 
-  // ✅ Ensure godown exists
+  // ✅ 2️⃣ Ensure godown exists
   const godown = await Godown.findById(id);
   if (!godown) throw new ApiError(404, "Godown not found");
 
-  // ✅ Soft delete (update status only)
-  const deletedGodown = await Godown.findByIdAndUpdate(
-    id,
-    { $set: { status: "Delete" } },
-    { new: true }
-  ).lean();
+  // ✅ 3️⃣ Track changes for audit log
+  const oldStatus = godown.status;
+  godown.status = "Delete"; // Soft delete
 
+  // ✅ 4️⃣ Push audit log
+  if (!godown.auditLogs) godown.auditLogs = [];
+  godown.auditLogs.push({
+    action: "delete",
+    performedBy: req.user.id,
+    details: `Godown "${godown.name}" deleted`,
+    changes: { status: { from: oldStatus, to: "Delete" } },
+    timestamp: new Date(),
+  });
+
+  // ✅ 5️⃣ Save document
+  const deletedGodown = await godown.save();
+
+  // ✅ 6️⃣ Send response
   res
     .status(200)
     .json(new ApiResponse(200, deletedGodown, "Godown deleted successfully"));

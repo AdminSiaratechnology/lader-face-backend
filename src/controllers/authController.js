@@ -1,170 +1,184 @@
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const asyncHandler = require('../utils/asyncHandler');
-const ApiError = require('../utils/apiError');
-const ApiResponse = require('../utils/apiResponse');
-const User = require('../models/User');
-const { use } = require('../routes/authRoutes');
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const asyncHandler = require("../utils/asyncHandler");
+const ApiError = require("../utils/apiError");
+const ApiResponse = require("../utils/apiResponse");
+const User = require("../models/User");
+const mongoose = require("mongoose");
 
-const signToken = (userId, clientID,role) => {
+// 🔐 Token Generator
+const signToken = (userId, clientID, role) => {
   return jwt.sign(
-    { id: userId, clientID,role }, // payload me include karo
+    { id: userId, clientID, role },
     process.env.JWT_SECRET,
     { expiresIn: "7d" }
   );
 };
 
-// exports.register = asyncHandler(async (req, res) => {
-//   // const adminId = req?.user?.id;
-//   const adminId = "68c90c0349eef6537230452c";
-//   // res.status(200).json({ adminId, message: "Register Controller is working" });
-//   // console.log("Admin ID from req.user:", adminId);
-//   const { name, email, password, role, subRole, company, createdBy , parent, clientAgent ,} = req.body;
-//   console.log(req.body);
-//   if (!name || !email || !password || !role) throw new ApiError(400, 'Missing fields');
-  
-//   const exists = await User.findOne({ email });
-//   // console.log(adminId);
-//   const creatorInfo = await User.findById(adminId);
-
-//   // console.log("Creator Info:", creatorInfo);
-//   // res.status(200).json({ creatorInfo, message: "Register Controller is working" });
-//   if (exists) throw new ApiError(409, 'Email already in use');
-  
-//   const hash = await bcrypt.hash(password, 10);
-//   res.status(200).json({ password: hash, clientAgent: creatorInfo?.clientAgent || null, createdBy: creatorInfo?._id, parent: creatorInfo?._id, message: "Register Controller is working" });
-//   const user = await User.create({ ...req.body, password: hash, clientAgent: creatorInfo?.clientAgent || null, createdBy: creatorInfo?._id, parent: creatorInfo?._id });
-
-//   res.status(201).json(new ApiResponse(201, { id: user._id }, "User registered successfully"));
-// });
+// ✅ REGISTER USER
 exports.register = asyncHandler(async (req, res) => {
-  const adminId = req.user.id; // Hardcoded admin (later tu req.user se lega)
-  console.log("Admin ID from req.user:", req.user);
+  const adminId = req?.user?.id;
+  const { name, email, password, role } = req.body;
 
-  const { name, email, password, role, subRole, company, createdBy, parent, clientID } = req.body;
-  console.log(req.body);
-
-  // Required fields check
   if (!name || !email || !password || !role) {
-    throw new ApiError(400, "Missing fields");
+    throw new ApiError(400, "Missing required fields");
   }
 
-  // Check if user already exists
-  const exists = await User.findOne({ email });
+  const exists = await User.findOne({ email: email.toLowerCase() });
   if (exists) throw new ApiError(409, "Email already in use");
 
-  // Find creator info
   const creatorInfo = await User.findById(adminId);
-
-  // Hash password
   const hash = await bcrypt.hash(password, 10);
 
-  // Create new user
   const user = await User.create({
     ...req.body,
+    email: email.toLowerCase(),
     password: hash,
-    // clientID: creatorInfo?.clientID || null,
-    clientID: adminId || null,
-    createdBy: creatorInfo?._id,
-    parent: creatorInfo?._id,
+    clientID: creatorInfo?.clientID || adminId,
+    createdBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+    parent: creatorInfo?._id || null,
+    lastLogin: new Date(),
+    auditLogs: [
+      {
+        action: "create",
+        performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+        timestamp: new Date(),
+        details: "User created",
+      },
+    ],
   });
 
-  // Final response
-  res.status(201).json(
-    new ApiResponse(
-      201,
-      user,
-      "User registered successfully"
-    )
-  );
+  const userResponse = user.toObject();
+  delete userResponse.password;
+
+  res
+    .status(201)
+    .json(new ApiResponse(201, userResponse, "User registered successfully"));
 });
+
+// ✅ UPDATE USER
 exports.updateUser = asyncHandler(async (req, res) => {
-  const { id } = req.params; // userId to update
+  const { id } = req.params;
   const updateData = { ...req.body };
 
-  // Check if user exists
   const user = await User.findById(id);
   if (!user) throw new ApiError(404, "User not found");
 
-  // ✅ Email uniqueness check
+  // Email uniqueness check
   if (updateData.email && updateData.email !== user.email) {
-    const exists = await User.findOne({ email: updateData.email });
+    const exists = await User.findOne({ email: updateData.email.toLowerCase() });
     if (exists) throw new ApiError(409, "Email already in use");
+    updateData.email = updateData.email.toLowerCase();
   }
 
-  // ✅ Handle password hashing if password is being updated
+  // Password hashing if updated
   if (updateData.password && updateData.password.trim()) {
     updateData.password = await bcrypt.hash(updateData.password, 10);
   } else {
-    delete updateData.password; // Don't overwrite with empty
+    delete updateData.password;
   }
 
-  // ✅ Update fields safely
+  // Store old data before update
+  const oldData = user.toObject();
+
+  // Apply updates safely
   Object.entries(updateData).forEach(([key, value]) => {
-    if (value !== undefined) {
+    // Ignore system fields that should not be updated
+    if (["createdBy", "createdAt", "_id","password"].includes(key)) return;
+
+    // Convert to ObjectId if schema expects it
+    if (["parent", "clientID", "company"].includes(key) && value) {
+      user[key] = new mongoose.Types.ObjectId(value);
+    } else {
       user[key] = value;
     }
   });
 
+  // Track changed fields for audit logs
+  const changes = {};
+  for (const key in updateData) {
+    if (["createdBy", "createdAt", "_id"].includes(key)) continue;
+    if (String(oldData?.[key]) !== String(updateData?.[key])) {
+      changes[key] = { from: oldData?.[key], to: updateData?.[key] };
+    }
+  }
+
+  // Add audit log entry
+  user.auditLogs.push({
+    action: "update",
+    performedBy: new mongoose.Types.ObjectId(req.user.id),
+    timestamp: new Date(),
+    details: "User updated",
+    changes,
+  });
+
   await user.save();
 
-  // ✅ Remove sensitive data before sending response
   const userResponse = user.toObject();
   delete userResponse.password;
 
-  // Final response
-  res.status(200).json(
-    new ApiResponse(200, userResponse, "User updated successfully")
-  );
+  res
+    .status(200)
+    .json(new ApiResponse(200, userResponse, "User updated successfully"));
 });
 
 
-exports.deleteUser=asyncHandler(async (req,res)=>{
-  const {id}=req.params;
-  // Check if user exists
+// ✅ DELETE USER (soft delete)
+exports.deleteUser = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
   const user = await User.findById(id);
   if (!user) throw new ApiError(404, "User not found");
-  user.status="delete"
-  user.save()
- // Final response
-  res.status(200).json(
-    new ApiResponse(
-      200,
-      { id: user._id },
-      "User deleted successfully"
-    )
-  );
 
+  user.status = "delete";
 
-})
+  // Log delete action
+  user.auditLogs.push({
+    action: "delete",
+    performedBy: new mongoose.Types.ObjectId(req.user.id),
+    timestamp: new Date(),
+    details: "User marked as deleted",
+  });
 
+  await user.save();
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, { id: user._id }, "User deleted successfully"));
+});
+
+// ✅ LOGIN USER
 exports.login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
-  if (!email || !password) {
+  if (!email || !password)
     throw new ApiError(400, "Email and password are required");
-  }
 
-  // Case-insensitive email search
   const user = await User.findOne({ email: email.toLowerCase() });
   if (!user) throw new ApiError(401, "Invalid credentials");
 
-  // Password check
   const isMatch = await bcrypt.compare(password, user.password);
   if (!isMatch) throw new ApiError(401, "Invalid credentials");
 
-  // JWT token generation
-  const token = signToken(user._id, user.clientID,user?.role);
-  console.log(user),"userrrrrrrrrrrrrrrrr"
+  const token = signToken(user._id, user.clientID, user.role);
 
-  // Remove sensitive info
   const safeUser = user.toObject();
   delete safeUser.password;
   delete safeUser.__v;
-  safeUser.access=[...user.access]
+  safeUser.access = [...(user.access || [])];
+
+  // Update last login + log it
+  user.lastLogin = new Date();
+  user.auditLogs.push({
+    action: "login",
+    performedBy: new mongoose.Types.ObjectId(user._id),
+    timestamp: new Date(),
+    details: "User logged in",
+  });
+
+  await user.save();
 
   res.status(200).json(
     new ApiResponse(200, { token, user: safeUser }, "Login successful")
   );
 });
-

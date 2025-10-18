@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const auditLogSchema = require("../middlewares/auditLogSchema");
 
 const unitSchema = new mongoose.Schema({
   clientId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, // kis client ka unit hai
@@ -16,9 +17,9 @@ const unitSchema = new mongoose.Schema({
   firstUnit: { type: String },       // like kg
   conversion: { type: Number },      // like 1 kg = 12 pcs => conversion=12
   secondUnit: { type: String },      // like pcs
-
-
-  status: { type: String, enum: ['Active', 'Inactive'], default: 'Active' },
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  auditLogs: [auditLogSchema],
+  status: { type: String, enum: ['Active', 'Inactive', "Deleted"], default: 'Active' },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Unit', unitSchema);

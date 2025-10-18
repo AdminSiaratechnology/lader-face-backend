@@ -5,6 +5,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const ApiResponse = require('../utils/apiResponse');
 const { generateUniqueId } = require('../utils/generate16DigiId');
+const mongoose = require('mongoose');
 
 
 // 🟢 Create Ledger
@@ -51,7 +52,16 @@ exports.createLedger = asyncHandler(async (req, res) => {
     logo: logoUrl || "",
     registrationDocs: registrationDocs || [],
     banks: JSON.parse(req.body.banks),
-    company: companyID
+    company: companyID,
+    createdBy: req?.user?.id,
+    auditLogs: [
+      {
+        action: "create",
+        performedBy: new mongoose.Types.ObjectId(req.user.id),
+        timestamp: new Date(),
+        details: "Ledger created",
+      },
+    ],
   });
 
   res
@@ -63,36 +73,84 @@ exports.createLedger = asyncHandler(async (req, res) => {
 exports.updateLedger = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
+  // ✅ Step 1: Find existing ledger
   const ledger = await Ledger.findById(id);
   if (!ledger) throw new ApiError(404, "Ledger not found");
 
   let logoUrl = ledger.logo;
   let registrationDocs = ledger.registrationDocs;
+  let banks = ledger.banks;
 
-  // Replace logo if new one uploaded
-  if (req?.files?.['logo'] && req?.files?.['logo'][0]) {
-    logoUrl = req.files['logo'][0].location;
+  // ✅ Step 2: Replace logo if new one uploaded
+  if (req?.files?.["logo"] && req?.files?.["logo"][0]) {
+    logoUrl = req.files["logo"][0].location;
   }
 
-  // Replace registration docs if new ones uploaded
-  if (req?.files?.['registrationDocs']) {
-    registrationDocs = req.files['registrationDocs'].map(file => ({
-      type: req.body.docType || 'Other',
+  // ✅ Step 3: Replace registration docs if new ones uploaded
+  if (req?.files?.["registrationDocs"]) {
+    registrationDocs = req.files["registrationDocs"].map((file) => ({
+      type: req.body.docType || "Other",
       file: file.location,
-      fileName: file.originalname
+      fileName: file.originalname,
     }));
   }
 
-  const updatedLedger = await Ledger.findByIdAndUpdate(
-    id,
-    { ...req.body, logo: logoUrl, registrationDocs, banks: JSON.parse(req.body.banks) },
-    { new: true }
-  );
+  // ✅ Step 4: Prepare updateData
+  const updateData = {
+    ...req.body,
+    logo: logoUrl,
+    registrationDocs,
+  };
+
+  // ✅ Step 5: Safely parse banks
+  if (req.body.banks) {
+    try {
+      banks =
+        typeof req.body.banks === "string"
+          ? JSON.parse(req.body.banks)
+          : req.body.banks;
+      updateData.banks = banks;
+    } catch (err) {
+      throw new ApiError(400, "Invalid banks data");
+    }
+  }
+
+  // ✅ Step 6: Track field changes before update
+  const oldData = ledger.toObject();
+  const changes = {};
+
+  Object.keys(updateData).forEach((key) => {
+    if (JSON.stringify(oldData[key]) !== JSON.stringify(updateData[key])) {
+      changes[key] = { from: oldData[key], to: updateData[key] };
+    }
+  });
+
+  // ✅ Step 7: Prevent auditLogs overwrite
+  if (updateData.auditLogs) {
+    delete updateData.auditLogs;
+  }
+
+  // ✅ Step 8: Apply updates safely
+  for (const key in updateData) {
+    ledger[key] = updateData[key];
+  }
+
+  // ✅ Step 9: Push new audit log entry
+  ledger.auditLogs.push({
+    action: "update",
+    performedBy: req.user?.id || null,
+    details: "Ledger updated successfully",
+    changes,
+  });
+
+  // ✅ Step 10: Save ledger document
+  await ledger.save();
 
   res
     .status(200)
-    .json(new ApiResponse(200, updatedLedger, "Ledger updated successfully"));
+    .json(new ApiResponse(200, ledger, "Ledger updated successfully"));
 });
+
 
 // 🟢 Get All Ledgers (for a company)
 exports.getLedgersByCompany = asyncHandler(async (req, res) => {
@@ -199,6 +257,12 @@ exports.deleteLedger = asyncHandler(async (req, res) => {
 
   // Soft delete
   ledger.status = "Delete";
+  ledger.auditLogs.push({
+              action: "delete",
+              performedBy: new mongoose.Types.ObjectId(req.user.id),
+              timestamp: new Date(),
+              details: "Ledger marked as deleted",
+            });
   await ledger.save();
 
   // Send response

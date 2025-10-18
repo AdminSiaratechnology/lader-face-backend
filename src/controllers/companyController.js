@@ -6,9 +6,11 @@ const User = require('../models/User');
 const {generateUniqueId}=require("../utils/generate16DigiId")
 
 const puppeteer = require("puppeteer");
+const mongoose = require('mongoose');
 
 exports.createCompany = asyncHandler(async (req, res) => {
   console.log("Request Body:", req.body);
+  const adminId = req?.user?.id;
   // res.status(200).json({ message: "Create Company - Not Implemented" });
   try {
     
@@ -59,6 +61,15 @@ if(user.role==="Client" || user.role==="Admin"){
     banks: JSON.parse(banks) || [],
     logo: logoUrl || "",
     registrationDocs: registrationDocs || [],
+    createdBy: userId,
+     auditLogs: [
+          {
+            action: "create",
+            performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+            timestamp: new Date(),
+            details: "company created",
+          },
+        ],
   });
 
   res.status(201).json(new ApiResponse(201, company, "Company created successfully"));
@@ -218,40 +229,81 @@ exports.getAccess = async (req, res) => {
 };
 
 exports.updateCompany = asyncHandler(async (req, res) => {
-
   const { id } = req.params;
-  const user = await User.findById(req.user.id);
 
+  // 1️⃣ Logged-in user check
+  const user = await User.findById(req.user.id);
   if (!user) throw new ApiError(404, "User not found");
 
+  // 2️⃣ Fetch company
   const company = await Company.findById(id);
   if (!company) throw new ApiError(404, "Company not found");
 
-  // 🔐 Ownership check
+  // 3️⃣ Ownership check
   if (user.role === "Client" && company.client.toString() !== user._id.toString()) {
     throw new ApiError(403, "You can only update your own companies");
   }
 
+  // 4️⃣ Prepare update data safely
+  const updateData = { ...req.body }; // shallow copy
+
   // Logo update
   if (req?.files?.["logo"] && req?.files?.["logo"][0]) {
-    req.body.logo = req.files["logo"][0].location;
+    updateData.logo = req.files["logo"][0].location;
   }
 
-  // Docs update
+  // Registration docs update
   if (req?.files?.["registrationDocs"]) {
-    req.body.registrationDocs = req.files["registrationDocs"].map((file) => ({
+    updateData.registrationDocs = req.files["registrationDocs"].map(file => ({
       type: req.body.docType || "Other",
       file: file.location,
       fileName: file.originalname,
     }));
   }
-  console.log(req,"req.banks")
-  req.banks= JSON.parse(req?.banks)
 
-  const updatedCompany = await Company.findByIdAndUpdate(id, req.body, { new: true });
+  // Banks parsing
+  if (req.body?.banks) {
+    try {
+      updateData.banks = JSON.parse(req.body.banks) || [];
+    } catch {
+      throw new ApiError(400, "Banks field must be a valid JSON array");
+    }
+  }
 
-  res.status(200).json(new ApiResponse(200, updatedCompany, "Company updated successfully"));
+  // 5️⃣ Track changes for audit log
+  const oldData = company.toObject();
+  const changes = {};
+  Object.keys(updateData).forEach(key => {
+    if (key === "auditLogs") return; // ✅ skip auditLogs in update
+    if (JSON.stringify(oldData[key]) !== JSON.stringify(updateData[key])) {
+      changes[key] = { from: oldData[key], to: updateData[key] };
+    }
+  });
+
+  // 6️⃣ Apply updates (excluding auditLogs)
+  Object.keys(updateData).forEach(key => {
+    if (key !== "auditLogs") company[key] = updateData[key];
+  });
+
+  // 7️⃣ Push audit log safely
+  if (!company.auditLogs) company.auditLogs = [];
+  company.auditLogs.push({
+    action: "update",
+    performedBy: new mongoose.Types.ObjectId(req.user.id),
+    timestamp: new Date(),
+    details: "Company updated",
+    changes,
+  });
+
+  // 8️⃣ Save company
+  await company.save();
+
+  // 9️⃣ Respond
+  res.status(200).json(new ApiResponse(200, company, "Company updated successfully"));
 });
+
+
+
 
 // Get Companies
 exports.getCompanies = asyncHandler(async (req, res) => {
@@ -282,7 +334,14 @@ exports.deleteCompany = asyncHandler(async (req, res) => {
   }
 
   company.isDeleted = true; // 🟢 Soft delete
+   company.auditLogs.push({
+      action: "delete",
+      performedBy: new mongoose.Types.ObjectId(req.user.id),
+      timestamp: new Date(),
+      details: "User marked as deleted",
+    });
   await company.save();
+  console.log("Company marked as deleted:", company);
 
   res.status(200).json(new ApiResponse(200, null, "Company deleted successfully"));
 });

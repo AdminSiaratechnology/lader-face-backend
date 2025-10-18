@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const auditLogSchema = require('../middlewares/auditLogSchema');
 
 const registrationDocSchema = new mongoose.Schema({
   type: { type: String, required: true },
@@ -12,6 +13,7 @@ const bankSchema = new mongoose.Schema({
   ifsc: String,
   branch: String
 }, { _id: false });
+
 
 const companySchema = new mongoose.Schema({
   namePrint: { type: String, required: true },
@@ -27,7 +29,7 @@ const companySchema = new mongoose.Schema({
   telephone: String,
   mobile: String,
   fax: String,
-  email: String,
+  email: { type: String , required: true , unique: true },
   website: String,
   gstNumber: String,
   panNumber: String,
@@ -35,6 +37,7 @@ const companySchema = new mongoose.Schema({
   msmeNumber: String,
   udyamNumber: String,
   defaultCurrency: String,
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   maintainGodown: { type: Boolean, default: false },
   maintainBatch: { type: Boolean, default: false },
   closingQuantityOrder: { type: Boolean, default: false },
@@ -47,6 +50,7 @@ const companySchema = new mongoose.Schema({
 
   client: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   isDeleted: { type: Boolean, default: false },
+ auditLogs: [auditLogSchema],
 }, { timestamps: true });
 
 module.exports = mongoose.model('Company', companySchema);

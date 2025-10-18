@@ -4,7 +4,36 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const ApiResponse = require('../utils/apiResponse');
 const { generateUniqueId } = require('../utils/generate16DigiId');
-const { json } = require('express');
+const mongoose = require('mongoose');
+const User = require('../models/User');
+
+
+// safe JSON parse
+const safeParse = (value, fallback) => {
+  try {
+    return typeof value === "string" ? JSON.parse(value) : value || fallback;
+  } catch {
+    return fallback;
+  }
+};
+const insertInBatches = async (data, batchSize = 1000) => {
+  let allInserted = [];
+  if (data.length === 0) return allInserted;
+
+  for (let i = 0; i < data.length; i += batchSize) {
+    const batch = data.slice(i, i + batchSize);
+    try {
+      const inserted = await Customer.insertMany(batch, { ordered: false });
+      allInserted = allInserted.concat(inserted);
+    } catch (err) {
+      console.error("⚠️ Partial insert error:", err.message);
+      // Continue inserting other batches
+    }
+  }
+
+  return allInserted;
+};
+
 
 // 🟢 Create Customer
 exports.createCustomer = asyncHandler(async (req, res) => {
@@ -22,6 +51,7 @@ exports.createCustomer = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Customer name and code are required");
   }
   const clientId = req.user.clientID;
+  const adminId = req?.user?.id;
 
   // Company check
   // const existingCompany = await Company.findById(companyID);
@@ -63,12 +93,97 @@ exports.createCustomer = asyncHandler(async (req, res) => {
     logo: logoUrl || "",
     registrationDocs: registrationDocs || [],
     banks:JSON.parse(req.body.banks),
-    company:companyID
+    company:companyID,
+     createdBy: adminId,
+         auditLogs: [
+              {
+                action: "create",
+                performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+                timestamp: new Date(),
+                details: "customer created",
+              },
+            ],
   });
 
   res
     .status(201)
     .json(new ApiResponse(201, customer, "Customer created successfully"));
+});
+// batch insert helper
+
+
+exports.createBulkCustomers = asyncHandler(async (req, res) => {
+  const { customers } = req.body;
+
+  if (!Array.isArray(customers) || customers.length === 0) {
+    throw new ApiError(400, "Customers array is required in body");
+  }
+
+  // ✅ Validate user
+  const userId = req.user.id;
+  const user = await User.findById(userId);
+  if (!user) throw new ApiError(404, "User not found");
+  const clientId = req.user.clientID;
+  // const clientId = "68e4c05943e6b05c02e8f951";
+
+  // ✅ Preload company IDs
+  const companies = await Company.find({}, "_id");
+  const validCompanyIds = new Set(companies.map((c) => String(c._id)));
+
+  const results = [];
+  const errors = [];
+
+  for (const [index, body] of customers.entries()) {
+    try {
+      // Required fields
+      if (!body.customerName || !body.company) {
+        throw new Error("customerName and company are required");
+      }
+      if (!validCompanyIds.has(String(body.company))) {
+        throw new Error("Invalid company ID");
+      }
+
+      const customerObj = {
+        ...body,
+        clientId,
+        createdBy: userId,
+        auditLogs: [
+          {
+            action: "create",
+            performedBy: new mongoose.Types.ObjectId(userId),
+            timestamp: new Date(),
+            details: "Bulk customer import",
+          },
+        ],
+      };
+
+      results.push(customerObj);
+    } catch (err) {
+      errors.push({
+        index,
+        customerName: body?.customerName,
+        code: body?.code,
+        error: err.message,
+      });
+    }
+  }
+
+  // ✅ Batch insert
+  const inserted = await insertInBatches(results, 1000);
+
+  res.status(201).json(
+    new ApiResponse(
+      201,
+      {
+        totalReceived: customers.length,
+        totalInserted: inserted.length,
+        totalFailed: errors.length,
+        insertedIds: inserted.map((c) => c._id),
+        errors,
+      },
+      "Bulk customer import completed successfully"
+    )
+  );
 });
 
 // 🟢 Update Customer
@@ -107,7 +222,6 @@ exports.updateCustomer = asyncHandler(async (req, res) => {
   if (!req.body.password) {
     delete updateData.password;
   }
-  console.log(req,body)
 
   // ✅ Safely parse banks
   if (req.body.banks) {
@@ -119,16 +233,39 @@ exports.updateCustomer = asyncHandler(async (req, res) => {
     }
   }
 
-  // ✅ Update using $set and skip validators for required fields
-  const updatedCustomer = await Customer.findByIdAndUpdate(
-    id,
-    { $set: updateData },
-    { new: true, runValidators: false }
-  );
+  // ✅ Track changes before update
+  const oldData = customer.toObject();
+  const changes = {};
+
+  Object.keys(updateData).forEach((key) => {
+    if (JSON.stringify(oldData[key]) !== JSON.stringify(updateData[key])) {
+      changes[key] = { from: oldData[key], to: updateData[key] };
+    }
+  });
+
+  // ✅ Prevent overwriting auditLogs
+  if (updateData.auditLogs) {
+    delete updateData.auditLogs;
+  }
+
+  // ✅ Apply updates safely
+  for (const key in updateData) {
+    customer[key] = updateData[key];
+  }
+
+  // ✅ Add audit log entry
+  customer.auditLogs.push({
+    action: "update",
+    performedBy: req.user?.id || null,
+    details: "Customer updated",
+    changes,
+  });
+
+  await customer.save();
 
   res
     .status(200)
-    .json(new ApiResponse(200, updatedCustomer, "Customer updated successfully"));
+    .json(new ApiResponse(200, customer, "Customer updated successfully"));
 });
 
 
@@ -162,7 +299,8 @@ exports.getCustomersByClient = asyncHandler(async (req, res) => {
   const skip = (currentPage - 1) * perPage;
 
   // Filter
-  const filter = { clientId: clientID, status: { $ne: "Delete" } };
+  // const filter = { clientId: clientID, status: { $ne: "Delete" } };
+  const filter = { clientId: clientID};
   if (status && status.trim() !== "") filter.status = status;
 
   if (search && search.trim() !== "") {
@@ -176,6 +314,7 @@ exports.getCustomersByClient = asyncHandler(async (req, res) => {
   // Sorting
   const sortDirection = sortOrder === "asc" ? 1 : -1;
   const sortOptions = { [sortBy]: sortDirection };
+  console.log(filter,"filter");
 
   // Fetch data & total count
   const [customers, total] = await Promise.all([
@@ -239,6 +378,12 @@ exports.deleteCustomer = asyncHandler(async (req, res) => {
 
   // soft delete
   customer.status = "Delete";
+   customer.auditLogs.push({
+        action: "delete",
+        performedBy: new mongoose.Types.ObjectId(req.user.id),
+        timestamp: new Date(),
+        details: "Customer marked as deleted",
+      });
   await customer.save();
 
   // send response

@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const auditLogSchema = require("../middlewares/auditLogSchema");
 
 const godownSchema = new mongoose.Schema(
   {
@@ -24,6 +25,9 @@ const godownSchema = new mongoose.Schema(
     capacity: { type: String },
     manager: { type: String },
     contactNumber: { type: String },
+    auditLogs: [auditLogSchema],
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    
   },
   { timestamps: true }
 );
