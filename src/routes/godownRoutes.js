@@ -11,13 +11,13 @@ const upload = require("../config/s3");
 router.post("/", upload.none(), godownController.createGodown);
 
 // Get All
-router.get("/", godownController.getGodowns);
+// router.get("/", godownController.getGodowns);
 
 // Get by ID
-router.get("/:id", godownController.getGodownById);
+// router.get("/:id", godownController.getGodownById);
 
 // Get by Company
-router.get("/company/:companyId", godownController.getGodownsByCompany);
+router.get("/:companyId", godownController.getGodownsByCompany);
 
 // Update
 router.put("/:id", godownController.updateGodown);

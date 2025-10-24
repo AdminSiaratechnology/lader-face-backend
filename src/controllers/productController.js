@@ -392,6 +392,84 @@ exports.listProducts = asyncHandler(async (req, res) => {
     )
   );
 });
+// LIST / SEARCH products
+exports.listProductsByCompanyId = asyncHandler(async (req, res) => {
+  console.log("hiiiii")
+  const { 
+    search = "", 
+    status = "", 
+    sortBy = "createdAt", 
+    sortOrder = "desc", 
+    page = 1, 
+    limit = 25,
+    
+    clientId, 
+    stockGroup, 
+    stockCategory,
+    
+
+  } = req.query;
+    const { companyId } = req.params;
+   if (!companyId) throw new ApiError(400, "Company ID is required");
+
+
+  const filter = {};
+
+  if (companyId) filter.companyId = companyId;
+  if (clientId) filter.clientId = clientId;
+  if (stockGroup) filter.stockGroup = stockGroup;
+  if (stockCategory) filter.stockCategory = stockCategory;
+
+  // ✅ Status filter (default: exclude Delete)
+  filter.status = status && status.trim() !== "" ? status : { $ne: "Delete" };
+
+  // 🔍 Search filter
+  if (search && search.trim() !== "") {
+    filter.$or = [
+      { name: { $regex: search, $options: "i" } },
+      { code: { $regex: search, $options: "i" } },
+      { partNo: { $regex: search, $options: "i" } },
+    
+    ];
+  }
+
+  // 📑 Pagination setup
+  const perPage = parseInt(limit, 10);
+  const currentPage = Math.max(parseInt(page, 10), 1);
+  const skip = (currentPage - 1) * perPage;
+
+  // ↕️ Sorting
+  const sortDirection = sortOrder === "asc" ? 1 : -1;
+  const sortOptions = { [sortBy]: sortDirection };
+
+  // ✅ Fetch data & total count in parallel
+  const [items, total] = await Promise.all([
+    Product.find(filter)
+      .populate("stockGroup", "name")
+      .populate("stockCategory", "name")
+      .populate("unit", "name symbol")
+      .skip(skip)
+      .limit(perPage)
+      .sort(sortOptions),
+    Product.countDocuments(filter),
+  ]);
+
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        items,
+        pagination: {
+          total,
+          page: currentPage,
+          limit: perPage,
+          totalPages: Math.ceil(total / perPage),
+        },
+      },
+      items.length ? "Products fetched successfully" : "No products found"
+    )
+  );
+});
 
 
 

@@ -271,15 +271,70 @@ exports.updateCustomer = asyncHandler(async (req, res) => {
 
 // 🟢 Get All Customers (for a company)
 exports.getCustomersByCompany = asyncHandler(async (req, res) => {
-  const { companyId } = req.query;
+  const clientID = req.user.clientID;
+  if (!clientID) throw new ApiError(400, "Client ID is required");
+   const  {companyId} = req.params;
+  if (!companyId) throw new ApiError(400, "company ID is required");
+  
 
-  if (!companyId) throw new ApiError(400, "Company ID is required");
+  const {
+    search = "",
+    status = "",
+    sortBy = "name",
+    sortOrder = "asc",
+    page = 1,
+    limit = 10,
+  } = req.query;
 
-  const customers = await Customer.find({ company: companyId }).populate("company");
+  const perPage = parseInt(limit, 10);
+  const currentPage = Math.max(parseInt(page, 10), 1);
+  const skip = (currentPage - 1) * perPage;
 
-  res
-    .status(200)
-    .json(new ApiResponse(200, customers, "Customers fetched successfully"));
+  // Filter
+  // const filter = { clientId: clientID, status: { $ne: "Delete" } };
+  console.log(companyId,"companyidddd")
+  const filter = { clientId: clientID,company:companyId};
+  if (status && status.trim() !== "") filter.status = status;
+  console.log(search,"search","getCustomersByCompany")
+
+  if (search && search.trim() !== "") {
+    filter.$or = [
+      { customerName: { $regex: search, $options: "i" } },
+      { emailAddress: { $regex: search, $options: "i" } },
+      { contactPerson: { $regex: search, $options: "i" } },
+    ];
+  }
+  console.log(filter,"filter",search)
+
+  // Sorting
+  const sortDirection = sortOrder === "asc" ? 1 : -1;
+  const sortOptions = { [sortBy]: sortDirection };
+  console.log(filter,"filter");
+
+  // Fetch data & total count
+  const [customers, total] = await Promise.all([
+    Customer.find(filter)
+      .sort(sortOptions)
+      .skip(skip)
+      .limit(perPage),
+    Customer.countDocuments(filter),
+  ]);
+
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        customers,
+        pagination: {
+          total,
+          page: currentPage,
+          limit: perPage,
+          totalPages: Math.ceil(total / perPage),
+        },
+      },
+      customers.length ? "Customers fetched successfully" : "No customers found"
+    )
+  );
 });
 exports.getCustomersByClient = asyncHandler(async (req, res) => {
   const clientID = req.user.clientID;
@@ -302,6 +357,7 @@ exports.getCustomersByClient = asyncHandler(async (req, res) => {
   // const filter = { clientId: clientID, status: { $ne: "Delete" } };
   const filter = { clientId: clientID};
   if (status && status.trim() !== "") filter.status = status;
+  console.log(search,"search")
 
   if (search && search.trim() !== "") {
     filter.$or = [
@@ -310,6 +366,7 @@ exports.getCustomersByClient = asyncHandler(async (req, res) => {
       { contactNumber: { $regex: search, $options: "i" } },
     ];
   }
+  console.log(filter,"filter")
 
   // Sorting
   const sortDirection = sortOrder === "asc" ? 1 : -1;

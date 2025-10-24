@@ -3,8 +3,64 @@ const Company = require('../models/Company');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const ApiResponse = require('../utils/apiResponse');
-const { generateUniqueId } = require('../utils/generate16DigiId');
+// const { generateUniqueId } = require('../utils/generate16DigiId');
 const mongoose = require('mongoose');
+
+
+// Generate unique 18-digit code using timestamp and index
+const generateUniqueId = (index) => {
+  const timestamp = Date.now();
+  const random = Math.floor(1000 + Math.random() * 9000); // 4-digit random number
+  return `${timestamp}${index.toString().padStart(4, '0')}${random}`.slice(-18); // 18-digit code
+};
+
+// Insert records in batches with robust error handling
+const insertInBatches = async (data, batchSize) => {
+  if (!data || !Array.isArray(data) || data.length === 0) {
+    console.error('No valid data to insert');
+    return [];
+  }
+
+  const results = [];
+  for (let i = 0; i < data.length; i += batchSize) {
+    const batch = data.slice(i, i + batchSize);
+    if (!batch || !Array.isArray(batch) || batch.length === 0) {
+      console.error(`Invalid batch at index ${i}`);
+      continue;
+    }
+
+    console.log(`Inserting batch of ${batch.length} records`);
+    try {
+      const inserted = await Vendor.insertMany(batch, { ordered: false });
+      if (inserted && Array.isArray(inserted)) {
+        results.push(...inserted);
+        console.log(`Inserted ${inserted.length} records in batch`);
+      } else {
+        console.error('No records inserted in batch');
+      }
+    } catch (error) {
+      if (error.name === 'MongoBulkWriteError' && error.code === 11000) {
+        const failedDocs = error.writeResult?.result?.writeErrors?.map(err => ({
+          code: err.op.code,
+          error: err.errmsg
+        })) || [];
+        const successfulDocs = batch.filter(doc => !failedDocs.some(f => f.code === doc.code));
+        results.push(...successfulDocs.map(doc => ({ ...doc, _id: doc._id || new mongoose.Types.ObjectId() })));
+        failedDocs.forEach(failed => {
+          console.error(`Failed to insert record with code ${failed.code}: ${failed.error}`);
+        });
+      } else {
+        console.error(`Batch insertion failed: ${error.message}`);
+      }
+    }
+  }
+
+  // Verify inserted records
+  const insertedIds = results.map(doc => doc._id);
+  const verifiedDocs = insertedIds.length > 0 ? await Vendor.find({ _id: { $in: insertedIds } }) : [];
+  console.log(`Verified ${verifiedDocs.length} records in database`);
+  return verifiedDocs;
+};
 
 // 🟢 Create Vendor
 exports.createVendor = asyncHandler(async (req, res) => {
@@ -74,6 +130,119 @@ exports.createVendor = asyncHandler(async (req, res) => {
   res
     .status(201)
     .json(new ApiResponse(201, vendor, "Vendor created successfully"));
+});
+
+exports.createBulkVendors = asyncHandler(async (req, res) => {
+  console.log("Processing vendors");
+  const { vendors } = req.body;
+
+  // Validate input
+  if (!Array.isArray(vendors) || vendors.length === 0) {
+    throw new ApiError(400, "Vendors array is required in body");
+  }
+
+  // Validate user
+  const userId = req.user.id;
+  const user = await User.findById(userId);
+  console.log(user, "user");
+  if (!user) throw new ApiError(404, "User not found");
+  const clientId = req.user.clientID;
+  if (!clientId) throw new ApiError(400, "Client ID is required from token");
+
+  // Preload company IDs
+  const companies = await Company.find({}, "_id");
+  const validCompanyIds = new Set(companies.map((c) => String(c._id)));
+
+  // Preload existing codes
+  const existingVendors = await Vendor.find({}, "code");
+  const existingCodes = new Set(existingVendors.map(vendor => vendor.code));
+
+  const results = [];
+  const errors = [];
+  const seenCodes = new Set();
+
+  // Process vendors
+  for (const [index, body] of vendors.entries()) {
+    try {
+      // Required fields
+      if (!body.vendorName || !body.companyID) {
+        throw new Error("vendorName and companyID are required");
+      }
+      if (!validCompanyIds.has(String(body.companyID))) {
+        throw new Error("Invalid company ID");
+      }
+
+      // Generate or validate code
+      let code = body.code;
+      if (!code) {
+        code = generateUniqueId(index); // Generate 18-digit code
+      } else {
+        // Check for duplicate code in the input batch
+        if (seenCodes.has(code)) {
+          throw new Error("Duplicate code within batch");
+        }
+        // Check for duplicate code in the database
+        if (existingCodes.has(code)) {
+          throw new Error("Code already exists in database");
+        }
+      }
+      seenCodes.add(code);
+
+      // Generate unique values for optional fields if not provided
+      const emailAddress = body.emailAddress || `${body.vendorName.replace(/\s+/g, '').toLowerCase()}${index}@gmail.com`;
+      const phoneNumber = body.phoneNumber || `+919${(973884720 + index).toString().padStart(9, '0')}`;
+
+      const vendorObj = {
+        _id: new mongoose.Types.ObjectId(), // Generate unique _id
+        vendorName: body.vendorName,
+        code,
+        clientId,
+        emailAddress,
+        phoneNumber,
+        companyID: body.companyID,
+        company: body.companyID,
+        createdBy: userId,
+        ...body, // Spread other fields from input
+        logo: "", // Skipped as per request
+        registrationDocs: [], // Skipped as per request
+        banks: body.banks ? JSON.parse(body.banks) : [], // Parse banks if provided
+        auditLogs: [
+          {
+            action: "create",
+            performedBy: new mongoose.Types.ObjectId(userId),
+            timestamp: new Date(),
+            details: "Bulk vendor import",
+          },
+        ],
+      };
+
+      results.push(vendorObj);
+    } catch (err) {
+      errors.push({
+        index,
+        vendorName: body?.vendorName,
+        code: body?.code,
+        error: err.message,
+      });
+    }
+  }
+
+  // Batch insert
+  const inserted = await insertInBatches(results, 1000);
+
+  res.status(201).json(
+    new ApiResponse(
+      201,
+      {
+        totalReceived: vendors.length,
+        totalInserted: inserted.length,
+        totalFailed: errors.length,
+        insertedIds: inserted.map((v) => v._id),
+        errors,
+      },
+      "Bulk vendor import completed successfully"
+    )
+  );
 });
 
 // 🟢 Update Vendor
@@ -159,15 +328,64 @@ exports.updateVendor = asyncHandler(async (req, res) => {
 
 // 🟢 Get All Vendors (for a company)
 exports.getVendorsByCompany = asyncHandler(async (req, res) => {
-  const { companyId } = req.query;
+  const clientID = req.user.clientID;
+  if (!clientID) throw new ApiError(400, "Client ID is required");
 
-  if (!companyId) throw new ApiError(400, "Company ID is required");
+  const {
+    search = "",
+    status = "",
+    sortBy = "name",
+    sortOrder = "asc",
+    page = 1,
+    limit = 10
+  } = req.query;
+     const { companyId } = req.params;
+   if (!companyId) throw new ApiError(400, "Company ID is required");
 
-  const vendors = await Vendor.find({ company: companyId }).populate("company");
+  const perPage = parseInt(limit, 10);
+  const currentPage = Math.max(parseInt(page, 10), 1);
+  const skip = (currentPage - 1) * perPage;
 
-  res
-    .status(200)
-    .json(new ApiResponse(200, vendors, "Vendors fetched successfully"));
+  // Filter
+  const filter = { clientId: clientID,company:companyId, status: { $ne: "Delete" } };
+  if (status && status.trim() !== "") filter.status = status;
+
+  if (search && search.trim() !== "") {
+    filter.$or = [
+      { name: { $regex: search, $options: "i" } },
+      { email: { $regex: search, $options: "i" } },
+      { contactNumber: { $regex: search, $options: "i" } },
+    ];
+  }
+
+  // Sorting
+  const sortDirection = sortOrder === "asc" ? 1 : -1;
+  const sortOptions = { [sortBy]: sortDirection };
+
+  // Fetch data & total count
+  const [vendors, total] = await Promise.all([
+    Vendor.find(filter)
+      .sort(sortOptions)
+      .skip(skip)
+      .limit(perPage),
+    Vendor.countDocuments(filter),
+  ]);
+
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        vendors,
+        pagination: {
+          total,
+          page: currentPage,
+          limit: perPage,
+          totalPages: Math.ceil(total / perPage),
+        },
+      },
+      vendors.length ? "Vendors fetched successfully" : "No vendors found"
+    )
+  );
 });
 
 exports.getVendorsByClient = asyncHandler(async (req, res) => {

@@ -8,7 +8,7 @@ const {
   deleteCustomer,
   createBulkCustomers
   
-} = require("../controllers/coustomerController");
+} = require("../controllers/customerController");
 const upload = require("../config/s3");
 
 const router = express.Router();
@@ -29,9 +29,9 @@ router.put("/:id",upload.fields([
   ]),  updateCustomer);
 
 // Get all customers by company
-router.get("/", getCustomersByClient);
+// router.get("/", getCustomersByClient);
 // // Get all customers by company
-// router.get("/", getCustomersByCompany);
+router.get("/:companyId", getCustomersByCompany);
 
 // Get customer by id
 router.get("/:id", getCustomerById);

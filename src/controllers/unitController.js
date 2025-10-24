@@ -5,6 +5,53 @@ const ApiError = require('../utils/apiError');
 const User = require('../models/User');
 const mongoose = require('mongoose');
 
+const insertInBatches = async (data, batchSize) => {
+  if (!data || !Array.isArray(data) || data.length === 0) {
+    console.error('No valid data to insert');
+    return [];
+  }
+
+  const results = [];
+  for (let i = 0; i < data.length; i += batchSize) {
+    const batch = data.slice(i, i + batchSize);
+    if (!batch || !Array.isArray(batch) || batch.length === 0) {
+      console.error(`Invalid batch at index ${i}`);
+      continue;
+    }
+
+    console.log(`Inserting batch of ${batch.length} records`);
+    try {
+      const inserted = await Unit.insertMany(batch, { ordered: false });
+      if (inserted && Array.isArray(inserted)) {
+        results.push(...inserted);
+        console.log(`Inserted ${inserted.length} records in batch`);
+      } else {
+        console.error('No records inserted in batch');
+      }
+    } catch (error) {
+      if (error.name === 'MongoBulkWriteError' && error.code === 11000) {
+        const failedDocs = error.writeResult?.result?.writeErrors?.map(err => ({
+          name: err.op.name,
+          error: err.errmsg
+        })) || [];
+        const successfulDocs = batch.filter(doc => !failedDocs.some(f => f.name === doc.name));
+        results.push(...successfulDocs.map(doc => ({ ...doc, _id: doc._id || new mongoose.Types.ObjectId() })));
+        failedDocs.forEach(failed => {
+          console.error(`Failed to insert record with name ${failed.name}: ${failed.error}`);
+        });
+      } else {
+        console.error(`Batch insertion failed: ${error.message}`);
+      }
+    }
+  }
+
+  // Verify inserted records
+  const insertedIds = results.map(doc => doc._id);
+  const verifiedDocs = insertedIds.length > 0 ? await Unit.find({ _id: { $in: insertedIds } }) : [];
+  console.log(`Verified ${verifiedDocs.length} records in database`);
+  return verifiedDocs;
+};
+
 // ✅ Create Unit
 exports.createUnit = asyncHandler(async (req, res) => {
     // res.status(200).json({ message: "Create Unit - Not Implemented" });
@@ -46,6 +93,104 @@ exports.createUnit = asyncHandler(async (req, res) => {
   });
 
   res.status(201).json(new ApiResponse(201, unit, "Unit created successfully"));
+});
+
+exports.createBulkUnits = asyncHandler(async (req, res) => {
+  console.log("Processing units", req.body);
+  const { units } = req.body;
+
+  // Validate input
+  if (!Array.isArray(units) || units.length === 0) {
+    throw new ApiError(400, "Units array is required in body");
+  }
+
+  // Validate user
+  const userId = req.user.id;
+  const user = await User.findById(userId, { clientID: 1 }).lean();
+  console.log(user, "user");
+  if (!user || !user.clientID) {
+    throw new ApiError(403, "You are not permitted to perform this action");
+  }
+  const clientId = user.clientID;
+
+  // Preload company IDs
+  const companies = await Company.find({}, "_id");
+  const validCompanyIds = new Set(companies.map((c) => String(c._id)));
+
+  const results = [];
+  const errors = [];
+
+  // Process units
+  for (const [index, body] of units.entries()) {
+    try {
+      // Required fields
+      if (!body.name || !body.companyId || !body.type) {
+        throw new Error("name, companyId, and type are required");
+      }
+      if (!validCompanyIds.has(String(body.companyId))) {
+        throw new Error("Invalid company ID");
+      }
+
+      // Generate unique values for optional fields if not provided
+      const symbol = body.symbol || body.name.charAt(0).toUpperCase();
+      const decimalPlaces = body.decimalPlaces || 0;
+      const firstUnit = body.firstUnit || "";
+      const conversion = body.conversion || 1;
+      const secondUnit = body.secondUnit || "";
+      const UQC = body.UQC || "";
+
+      const unitObj = {
+        _id: new mongoose.Types.ObjectId(), // Generate unique _id
+        clientId,
+        companyId: body.companyId,
+        name: body.name,
+        type: body.type,
+        symbol,
+        decimalPlaces,
+        firstUnit,
+        conversion,
+        secondUnit,
+        UQC,
+        createdBy: userId,
+        auditLogs: [
+          {
+            action: "create",
+            performedBy: new mongoose.Types.ObjectId(userId),
+            timestamp: new Date(),
+            details: "Bulk unit import",
+          },
+        ],
+      };
+
+      results.push(unitObj);
+    } catch (err) {
+      errors.push({
+        index,
+        name: body?.name,
+        error: err.message,
+      });
+    }
+  }
+
+  // Log prepared results
+  console.log(`Prepared ${results.length} valid units for insertion`);
+
+  // Batch insert
+  const inserted = await insertInBatches(results, 1000);
+
+  res.status(201).json(
+    new ApiResponse(
+      201,
+      {
+        totalReceived: units.length,
+        totalInserted: inserted.length,
+        totalFailed: errors.length,
+        insertedIds: inserted.map((u) => u._id),
+        errors,
+      },
+      "Bulk unit import completed successfully"
+    )
+  );
 });
 
 // ✅ Update Unit

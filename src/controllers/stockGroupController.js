@@ -5,8 +5,64 @@ const ApiError = require("../utils/apiError");
 const ApiResponse = require("../utils/apiResponse");
 const asyncHandler = require("../utils/asyncHandler");
 const User = require("../models/User");
-const {generateUniqueId} =require("../utils/generate16DigiId")
+// const {generateUniqueId} =require("../utils/generate16DigiId")
 const mongoose=require("mongoose")
+
+
+// Generate unique 18-digit code using timestamp and index
+const generateUniqueId = (index) => {
+  const timestamp = Date.now();
+  const random = Math.floor(1000 + Math.random() * 9000); // 4-digit random number
+  return `${timestamp}${index.toString().padStart(4, '0')}${random}`.slice(-18); // 18-digit code
+};
+
+// Insert records in batches with robust error handling
+const insertInBatches = async (data, batchSize) => {
+  if (!data || !Array.isArray(data) || data.length === 0) {
+    console.error('No valid data to insert');
+    return [];
+  }
+
+  const results = [];
+  for (let i = 0; i < data.length; i += batchSize) {
+    const batch = data.slice(i, i + batchSize);
+    if (!batch || !Array.isArray(batch) || batch.length === 0) {
+      console.error(`Invalid batch at index ${i}`);
+      continue;
+    }
+
+    console.log(`Inserting batch of ${batch.length} records`);
+    try {
+      const inserted = await StockGroup.insertMany(batch, { ordered: false });
+      if (inserted && Array.isArray(inserted)) {
+        results.push(...inserted);
+        console.log(`Inserted ${inserted.length} records in batch`);
+      } else {
+        console.error('No records inserted in batch');
+      }
+    } catch (error) {
+      if (error.name === 'MongoBulkWriteError' && error.code === 11000) {
+        const failedDocs = error.writeResult?.result?.writeErrors?.map(err => ({
+          code: err.op.stockGroupId,
+          error: err.errmsg
+        })) || [];
+        const successfulDocs = batch.filter(doc => !failedDocs.some(f => f.code === doc.stockGroupId));
+        results.push(...successfulDocs.map(doc => ({ ...doc, _id: doc._id || new mongoose.Types.ObjectId() })));
+        failedDocs.forEach(failed => {
+          console.error(`Failed to insert record with stockGroupId ${failed.code}: ${failed.error}`);
+        });
+      } else {
+        console.error(`Batch insertion failed: ${error.message}`);
+      }
+    }
+  }
+
+  // Verify inserted records
+  const insertedIds = results.map(doc => doc._id);
+  const verifiedDocs = insertedIds.length > 0 ? await StockGroup.find({ _id: { $in: insertedIds } }) : [];
+  console.log(`Verified ${verifiedDocs.length} records in database`);
+  return verifiedDocs;
+};
 
 
 
@@ -68,6 +124,116 @@ exports.createStockGroup = asyncHandler(async (req, res) => {
     .json(new ApiResponse(201, stockGroup, "Stock Group created successfully"));
 });
 
+exports.createBulkStockGroups = asyncHandler(async (req, res) => {
+  console.log("Processing stock groups", req.body);
+  const { stockGroups } = req.body;
+
+  // Validate input
+  if (!Array.isArray(stockGroups) || stockGroups.length === 0) {
+    throw new ApiError(400, "StockGroups array is required in body");
+  }
+
+  // Validate user
+  const userId = req.user.id;
+  const user = await User.findById(userId, { clientID: 1 }).lean();
+  console.log(user, "user");
+  if (!user || !user.clientID) {
+    throw new ApiError(403, "You are not permitted to perform this action");
+  }
+  const clientId = user.clientID;
+
+  // Preload company IDs
+  const companies = await Company.find({}, "_id");
+  const validCompanyIds = new Set(companies.map((c) => String(c._id)));
+
+  // Preload existing stock group IDs
+  const existingStockGroups = await StockGroup.find({}, "stockGroupId");
+  const existingCodes = new Set(existingStockGroups.map(stockGroup => stockGroup.stockGroupId));
+
+  const results = [];
+  const errors = [];
+  const seenCodes = new Set();
+
+  // Process stock groups
+  for (const [index, body] of stockGroups.entries()) {
+    try {
+      // Required fields
+      if (!body.name || !body.companyId) {
+        throw new Error("name and companyId are required");
+      }
+      if (!validCompanyIds.has(String(body.companyId))) {
+        throw new Error("Invalid company ID");
+      }
+
+      // Generate or validate stockGroupId
+      let stockGroupId = body.stockGroupId;
+      if (!stockGroupId) {
+        stockGroupId = generateUniqueId(index); // Generate 18-digit code
+      } else {
+        // Check for duplicate stockGroupId in the input batch
+        if (seenCodes.has(stockGroupId)) {
+          throw new Error("Duplicate stockGroupId within batch");
+        }
+        // Check for duplicate stockGroupId in the database
+        if (existingCodes.has(stockGroupId)) {
+          throw new Error("StockGroupId already exists in database");
+        }
+      }
+      seenCodes.add(stockGroupId);
+
+      // Generate unique values for optional fields if not provided
+      const description = body.description || `Stock Group ${index + 1}`;
+
+      const stockGroupObj = {
+        _id: new mongoose.Types.ObjectId(), // Generate unique _id
+        clientId,
+        companyId: body.companyId,
+        stockGroupId,
+        name: body.name,
+        description,
+        createdBy: userId,
+        auditLogs: [
+          {
+            action: "create",
+            performedBy: new mongoose.Types.ObjectId(userId),
+            timestamp: new Date(),
+            details: "Bulk stock group import",
+          },
+        ],
+      };
+
+      results.push(stockGroupObj);
+    } catch (err) {
+      errors.push({
+        index,
+        name: body?.name,
+        stockGroupId: body?.stockGroupId,
+        error: err.message,
+      });
+    }
+  }
+
+  // Log prepared results
+  console.log(`Prepared ${results.length} valid stock groups for insertion`);
+
+  // Batch insert
+  const inserted = await insertInBatches(results, 1000);
+
+  res.status(201).json(
+    new ApiResponse(
+      201,
+      {
+        totalReceived: stockGroups.length,
+        totalInserted: inserted.length,
+        totalFailed: errors.length,
+        insertedIds: inserted.map((sg) => sg._id),
+        errors,
+      },
+      "Bulk stock group import completed successfully"
+    )
+  );
+});
+
 // Get all
 exports.getStockGroups = asyncHandler(async (req, res) => {
   const userId = req.user.id;
@@ -76,6 +242,7 @@ exports.getStockGroups = asyncHandler(async (req, res) => {
   const perPage = parseInt(limit, 10);
   const currentPage = parseInt(page, 10);
   const skip = (currentPage - 1) * perPage;
+  
 
   // aggregation
   const result = await User.aggregate([
@@ -122,6 +289,92 @@ exports.getStockGroups = asyncHandler(async (req, res) => {
       },
     },
   ]);
+
+  const stockGroups = result?.[0]?.records || [];
+  const total = result?.[0]?.totalCount?.[0]?.count || 0;
+
+  res.json(
+    new ApiResponse(
+      200,
+      {
+        stockGroups,
+        pagination: {
+          total,
+          page: currentPage,
+          limit: perPage,
+          totalPages: Math.ceil(total / perPage),
+        },
+      },
+      stockGroups.length ? "Stock Groups fetched successfully" : "No Stock Groups found"
+    )
+  );
+});
+exports.getStockGroupsByCompany = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const { search, status, sortBy, sortOrder, limit = 10, page = 1 } = req.query;
+  const {companyId}=req.params;
+  if(!companyId) throw new ApiError(400,"company id required")
+
+  const perPage = parseInt(limit, 10);
+  const currentPage = parseInt(page, 10);
+  const skip = (currentPage - 1) * perPage;
+  console.log(companyId,"companyid")
+  
+
+  // aggregation
+const result = await User.aggregate([
+  {
+    $match: { _id: new mongoose.Types.ObjectId(userId) },
+  },
+  {
+    $lookup: {
+      from: "stockgroups",
+      localField: "clientID",
+      foreignField: "clientId",
+      as: "stockGroups",
+      pipeline: [
+        {
+          $match: {
+            status: { $ne: "Delete" },
+            ...(companyId
+              ? { companyId: new mongoose.Types.ObjectId(companyId) } // ✅ only add if valid
+              : {}),
+          },
+        },
+        ...(status && status !== "" ? [{ $match: { status } }] : []),
+        ...(search && search.trim() !== ""
+          ? [
+              {
+                $match: {
+                  $or: [
+                    { name: { $regex: search, $options: "i" } },
+                    { description: { $regex: search, $options: "i" } },
+                  ],
+                },
+              },
+            ]
+          : []),
+        {
+          $sort: (() => {
+            const field = sortBy === "name" ? "name" : "createdAt";
+            const order = sortOrder === "desc" ? -1 : 1;
+            return { [field]: order };
+          })(),
+        },
+      ],
+    },
+  },
+  { $unwind: { path: "$stockGroups", preserveNullAndEmptyArrays: false } },
+  { $replaceRoot: { newRoot: "$stockGroups" } },
+  {
+    $facet: {
+      records: [{ $skip: skip }, { $limit: perPage }],
+      totalCount: [{ $count: "count" }],
+    },
+  },
+]);
+
+
 
   const stockGroups = result?.[0]?.records || [];
   const total = result?.[0]?.totalCount?.[0]?.count || 0;

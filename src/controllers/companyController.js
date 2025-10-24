@@ -3,13 +3,41 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const ApiResponse = require('../utils/apiResponse');
 const User = require('../models/User');
-const {generateUniqueId}=require("../utils/generate16DigiId")
+const {generate6DigitId}=require("../utils/newgenerate16DigiId")
 
 const puppeteer = require("puppeteer");
 const mongoose = require('mongoose');
+const generateUniqueCodeInMemory = (existingSet) => {
+  let code;
+  do {
+    code = generate6DigitId();
+  } while (existingSet.has(code));
+  existingSet.add(code);
+  return code;
+};
+
+// Utility function for batch inserts
+async function insertInBatches(Model, docs, batchSize = 1000) {
+  const inserted = [];
+  for (let i = 0; i < docs.length; i += batchSize) {
+    const batch = docs.slice(i, i + batchSize);
+    try {
+      const batchInserted = await Model.insertMany(batch, { ordered: false });
+      inserted.push(...batchInserted);
+    } catch (insertError) {
+      if (insertError.writeErrors) {
+        insertError.writeErrors.forEach(e => {
+          console.error('Document failed:', e.errmsg, e.getOperation());
+        });
+      }
+    }
+  }
+  return inserted;
+}
+
 
 exports.createCompany = asyncHandler(async (req, res) => {
-  console.log("Request Body:", req.body);
+  // console.log("Request Body:", req.body);
   const adminId = req?.user?.id;
   // res.status(200).json({ message: "Create Company - Not Implemented" });
   try {
@@ -19,13 +47,13 @@ exports.createCompany = asyncHandler(async (req, res) => {
 
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
-  console.log("Logged in user:", user);
+  // console.log("Logged in user:", user);
     const { namePrint, banks, ...rest } = req.body;
     if (!namePrint) throw new ApiError(400, 'Company name is required');
     
     let logoUrl = null;
     let registrationDocs = [];
-    console.log("Request Files:", req.files);
+    // console.log("Request Files:", req.files);
     
     if (req?.files?.['logo'] && req?.files?.['logo'][0]) {
         logoUrl = req.files['logo'][0].location;
@@ -44,8 +72,8 @@ exports.createCompany = asyncHandler(async (req, res) => {
 // res.send(req.body)
 if(user.role==="Client" || user.role==="Admin"){
   // Allow creating company
-  console.log("banks:", JSON.parse(banks) || []);
-  console.log(generateUniqueId,"generateUniqueId")
+  // console.log("banks:", JSON.parse(banks) || []);
+  // console.log(generateUniqueId,"generateUniqueId")
   
   let code=await generateUniqueId(Company,"code")
   // console.log("jsdnfjbsjhd")
@@ -81,11 +109,90 @@ if(user.role==="Client" || user.role==="Admin"){
   res.status(500).json({ error: "Internal server error" });
 }}
 );
+exports.createBulkCompanies = asyncHandler(async (req, res) => {
+  const { companies } = req.body;
+
+  if (!Array.isArray(companies) || companies.length === 0) {
+    throw new ApiError(400, "Companies array is required in body");
+  }
+
+  // Validate user
+  const userId = req.user.id;
+  const user = await User.findById(userId);
+  if (!user) throw new ApiError(404, "User not found");
+  if (!["Client", "Admin"].includes(user.role)) {
+    throw new ApiError(403, "Only clients and admins can create companies");
+  }
+  const clientId = user.role === 'Client' ? userId : user.clientID;
+  if (!clientId) throw new ApiError(400, "Client ID is required from token");
+
+  // Preload existing codes
+  const existingCompanies = await Company.find({}, "code");
+  const existingCodes = new Set(existingCompanies.map(c => c.code));
+
+  const results = [];
+  const errors = [];
+
+  // Preprocess companies
+  for (const [index, body] of companies.entries()) {
+    try {
+      if (!body.namePrint) throw new Error("namePrint is required");
+
+      // Generate or validate unique code
+      const code = body.code || generateUniqueCodeInMemory(existingCodes);
+
+      const banks = JSON.parse(body.banks || '[]');
+
+      const companyObj = {
+        ...body,
+        code,
+        client: new mongoose.Types.ObjectId(clientId),
+        banks,
+        logo: "",
+        registrationDocs: [],
+        createdBy: new mongoose.Types.ObjectId(userId),
+        auditLogs: [{
+          action: "create",
+          performedBy: new mongoose.Types.ObjectId(userId),
+          timestamp: new Date(),
+          details: "Bulk company import",
+        }],
+      };
+
+      results.push(companyObj);
+    } catch (err) {
+      errors.push({
+        index,
+        namePrint: body?.namePrint,
+        code: body?.code,
+        error: err.message,
+      });
+    }
+  }
+
+  // Batch insert
+  const inserted = await insertInBatches(Company, results, 1000);
+
+  res.status(201).json(
+    new ApiResponse(
+      201,
+      {
+        totalReceived: companies.length,
+        totalInserted: inserted.length,
+        totalFailed: errors.length,
+        insertedIds: inserted.map(c => c._id),
+        errors,
+      },
+      "Bulk company import completed successfully"
+    )
+  );
+});
+
 
 // 🟢 Agent ke liye apne client ki saari companies laana
 exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
   const agentId = req.user.id; 
-  console.log("Agent ID from req.user:", agentId);
+  // console.log("Agent ID from req.user:", agentId);
 
   // 1. Agent nikaalo
   const agent = await User.findById(agentId);
@@ -104,8 +211,9 @@ exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
     , 
     limit = 3, page = 1 
   } = req.query;
-  console.log(req.query,"reqqqqqq")
-  console.log(search, status, sortBy, sortOrder,"fasdfafdasf",clientId)
+  // console.log(req.query,"reqqqqqq")
+  // console.log(search, status, sortBy, sortOrder,"fasdfafdasf",clientId)
+  // console.log(clientId,"id")
   
   
 
@@ -143,7 +251,7 @@ exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
   const currentPage = parseInt(page, 10);
   const skip = (currentPage - 1) * perPage;
 
-  console.log("Filter:", filter, "Sort:", sort, "Skip:", skip, "Limit:", perPage);
+  // console.log("Filter:", filter, "Sort:", sort, "Skip:", skip, "Limit:", perPage);
 
   // 4. DB se companies nikaalo
   const [companies, total] = await Promise.all([
@@ -319,7 +427,7 @@ exports.getCompanies = asyncHandler(async (req, res) => {
 
 // Delete Company (Soft Delete)
 exports.deleteCompany = asyncHandler(async (req, res) => {
-  console.log("Delete Company Request Params:", req.params);
+  // console.log("Delete Company Request Params:", req.params);
   const { id } = req.params;
   const user = await User.findById(req.user.id);
 
@@ -341,7 +449,7 @@ exports.deleteCompany = asyncHandler(async (req, res) => {
       details: "User marked as deleted",
     });
   await company.save();
-  console.log("Company marked as deleted:", company);
+  // console.log("Company marked as deleted:", company);
 
   res.status(200).json(new ApiResponse(200, null, "Company deleted successfully"));
 });
