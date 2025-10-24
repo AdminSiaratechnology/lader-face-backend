@@ -5,7 +5,8 @@ const mongoose = require('mongoose');
 const ApiError = require('../utils/apiError');
 
 exports.getAllClientUsersWithCompany = asyncHandler(async (req, res) => {
-  const clientId = req.user.id; // Logged in user ID
+  console.log(req.user)
+  const clientId = req.user.clientID; // Logged in user ID
      const { companyId } = req.params;
    if (!companyId) throw new ApiError(400, "Company ID is required");
 
