@@ -14,12 +14,18 @@ router.post(
   ]),
   companyController.createCompany
 );
+router.post(
+  "/bulk",
+  
+  companyController.createBulkCompanies
+);
 
 
 // router.get('/agent/companies', (req,res)=>{
 //     res.send("Company Route is working")
 // });
 router.get('/agent/companies', companyController.getCompaniesForAgent);
+router.get('/agent/companies/:companyId', companyController.getCompanies);
 router.get('/agent/companies/pdf', companyController.generateCompanyDocumentationPDF);
 router.post('/assign-salesman', companyController.assignSalesman);
 router.post('/set-access', companyController.setAccess);

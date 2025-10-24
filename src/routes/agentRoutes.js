@@ -6,6 +6,7 @@ const {
   getAgentById,
   getAgentsByClient,
   deleteAgent,
+  createBulkAgents
   
 } = require("../controllers/agentController");
 const upload = require("../config/s3");
@@ -17,6 +18,7 @@ router.post("/",upload.fields([
    
     { name: "registrationDocs", maxCount: 5 },
   ]), createAgent);
+  router.post("/bulk", createBulkAgents);
 
 // Update agent
 router.put("/:id",upload.fields([
@@ -25,9 +27,9 @@ router.put("/:id",upload.fields([
   ]),  updateAgent);
 
 // Get all agents by company
-router.get("/", getAgentsByClient);
+// router.get("/", getAgentsByClient);
 // // Get all agents by company
-// router.get("/", getAgentsByCompany);
+router.get("/:companyId", getAgentsByCompany);
 
 // Get agent by id
 router.get("/:id", getAgentById);

@@ -7,5 +7,6 @@ router.post('/', unitController.createUnit);
 router.put('/:id', unitController.updateUnit);
 router.delete('/:id', unitController.deleteUnit);
 router.get('/', unitController.getUnits);
+router.get('/:companyId', unitController.getUnitsByCompanyId);
 
 module.exports = router;

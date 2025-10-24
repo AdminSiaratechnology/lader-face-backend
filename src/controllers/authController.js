@@ -55,6 +55,47 @@ exports.register = asyncHandler(async (req, res) => {
     .status(201)
     .json(new ApiResponse(201, userResponse, "User registered successfully"));
 });
+// ✅ REGISTER USER
+exports.registerInside = asyncHandler(async (req, res) => {
+  const adminId = req?.user?.id;
+  const { name, email, password, role } = req.body;
+
+  if (!name || !email || !password || !role) {
+    throw new ApiError(400, "Missing required fields");
+  }
+
+  const exists = await User.findOne({ email: email.toLowerCase() });
+  if (exists) throw new ApiError(409, "Email already in use");
+
+  const creatorInfo = await User.findById(adminId);
+  const hash = await bcrypt.hash(password, 10);
+
+  const user = await User.create({
+    ...req.body,
+    email: email.toLowerCase(),
+    password: hash,
+    clientID: null,
+    createdBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+    parent: creatorInfo?._id || null,
+    lastLogin: new Date(),
+    auditLogs: [
+      {
+        action: "create",
+        performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+        timestamp: new Date(),
+        details: "User created",
+      },
+    ],
+  });
+
+  const userResponse = user.toObject();
+  delete userResponse.password;
+
+  res
+    .status(201)
+    .json(new ApiResponse(201, userResponse, "User registered successfully"));
+});
+
 
 // ✅ UPDATE USER
 exports.updateUser = asyncHandler(async (req, res) => {

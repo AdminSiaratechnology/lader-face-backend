@@ -1,6 +1,7 @@
 const express = require("express");
 const {
   createVendor,
+  createBulkVendors,
   updateVendor,
   getVendorsByCompany,
   getVendorById,
@@ -18,6 +19,8 @@ router.post("/",upload.fields([
     { name: "registrationDocs", maxCount: 5 },
   ]), createVendor);
 
+  router.post("/", createBulkVendors);
+
 // Update vendor
 router.put("/:id",upload.fields([
    
@@ -25,7 +28,10 @@ router.put("/:id",upload.fields([
   ]),  updateVendor);
 
 // Get all vendors by company
-router.get("/", getVendorsByClient);
+// router.get("/", getVendorsByClient);
+// router.get("/", getVendorsByCompany);
+router.get("/:companyId", getVendorsByCompany);
+
 // // Get all vendors by company
 // router.get("/", getVendorsByCompany);
 

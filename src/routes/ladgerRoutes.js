@@ -6,7 +6,8 @@ const {
   getLedgerById,
   getLedgersByClient,
   getLedgersByCompany,
-  deleteLedger
+  deleteLedger,
+  createBulkLedgers
   
 } = require("../controllers/ladgerController");
 const upload = require("../config/s3");
@@ -18,6 +19,7 @@ router.post("/",upload.fields([
    
     { name: "registrationDocs", maxCount: 5 },
   ]), createLedger);
+  router.post("/bulk", createBulkLedgers);
 
 // Update agent
 router.put("/:id",upload.fields([
@@ -26,7 +28,8 @@ router.put("/:id",upload.fields([
   ]),  updateLedger);
 
 // Get all agents by company
-router.get("/", getLedgersByClient);
+router.get("/:companyId", getLedgersByCompany);
+// router.get("/", getLedgersByClient);
 // // Get all agents by company
 // router.get("/", getAgentsByCompany);
 
