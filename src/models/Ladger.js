@@ -44,7 +44,7 @@ const LedgerSchema = new mongoose.Schema(
     designation: { type: String },
     phoneNumber: { type: String },
     mobileNumber: { type: String },
-    emailAddress: { type: String },
+    emailAddress: { type: String ,unique:true,required:true},
     faxNumber: { type: String },
 
     addressLine1: { type: String },

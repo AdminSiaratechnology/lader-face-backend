@@ -26,7 +26,7 @@ router.post(
 // });
 router.get('/agent/companies', companyController.getCompaniesForAgent);
 router.get('/agent/companies/:companyId', companyController.getCompanies);
-router.get('/agent/companies/pdf', companyController.generateCompanyDocumentationPDF);
+router.get('/agent/companies/doc/pdf', companyController.generateCompanyDocumentationPDF);
 router.post('/assign-salesman', companyController.assignSalesman);
 router.post('/set-access', companyController.setAccess);
 router.get('/get-access', companyController.getAccess);
