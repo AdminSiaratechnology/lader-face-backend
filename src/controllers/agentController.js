@@ -12,7 +12,7 @@ const generateUniqueId = (index) => {
   const random = Math.floor(1000 + Math.random() * 9000); // 4-digit random number
   return `${timestamp}${index.toString().padStart(4, '0')}${random}`.slice(-18); // 18-digit code to match input length
 };
-
+console.log(generateUniqueId(1))
 // Insert records in batches with robust error handling
 const insertInBatches = async (data, batchSize) => {
   if (!data || !Array.isArray(data) || data.length === 0) {
