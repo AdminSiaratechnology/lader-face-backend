@@ -4,9 +4,11 @@ const ApiError = require('../utils/apiError');
 const ApiResponse = require('../utils/apiResponse');
 const User = require('../models/User');
 const {generate6DigitId}=require("../utils/newgenerate16DigiId")
+const {generate6DigitUniqueId} = require("../utils/generate6DigitUniqueId")
 
 const puppeteer = require("puppeteer");
 const mongoose = require('mongoose');
+
 const generateUniqueCodeInMemory = (existingSet) => {
   let code;
   do {
@@ -36,11 +38,15 @@ async function insertInBatches(Model, docs, batchSize = 1000) {
 }
 
 
+// Backend changes - createCompany
 exports.createCompany = asyncHandler(async (req, res) => {
-  // console.log("Request Body:", req.body);
+  console.log("Request Body:", req.user);
   const adminId = req?.user?.id;
+  const clientId=req.user.clientID
+  
   // res.status(200).json({ message: "Create Company - Not Implemented" });
   try {
+
     
   
   const userId = req.user.id;
@@ -58,16 +64,24 @@ exports.createCompany = asyncHandler(async (req, res) => {
     if (req?.files?.['logo'] && req?.files?.['logo'][0]) {
         logoUrl = req.files['logo'][0].location;
     }
+    console.log(req.files,"req.files")
     
-   
+    let registrationDocTypes;
+    try {
+      registrationDocTypes = JSON.parse(req.body.registrationDocTypes || '[]');
+    } catch (e) {
+      console.error('Failed to parse registrationDocTypes:', e);
+      registrationDocTypes = [];
+    }
 
-  if (req?.files?.['registrationDocs']) {
-    registrationDocs = req?.files['registrationDocs'].map(file => ({
-      type: req.body.docType || 'Other',
-      file: file.location,
-      fileName: file.originalname
-    }));
-  }
+    if (req?.files?.['registrationDocs']) {
+      registrationDocs = req?.files['registrationDocs'].map((file, index) => ({
+        type: registrationDocTypes[index] || 'Other',
+        file: file.location,
+        fileName: file.originalname
+      }));
+    }
+    
 //    res.send("Create Company Controller is working")
 // res.send(req.body)
 if(user.role==="Client" || user.role==="Admin"){
@@ -75,9 +89,15 @@ if(user.role==="Client" || user.role==="Admin"){
   // console.log("banks:", JSON.parse(banks) || []);
   // console.log(generateUniqueId,"generateUniqueId")
   
-  let code=await generateUniqueId(Company,"code")
+  let code=await generate6DigitUniqueId(Company,"code")
   // console.log("jsdnfjbsjhd")
   // let code="123456"
+  const isExistWithName=await Company.find({client:clientId,namePrint})
+  console.log(isExistWithName.length,"req.user,")
+
+
+   if (isExistWithName && 0<isExistWithName.length)  throw new ApiError(409, "Company name already in use");
+
   
 
 
@@ -105,8 +125,8 @@ if(user.role==="Client" || user.role==="Admin"){
   throw new ApiError(403, "Only clients and admins can create companies");
 }
 } catch (error) {
-  console.error("Error creating company:", error);
-  res.status(500).json({ error: "Internal server error" });
+  console.log("Error creating company:", error);
+  res.status(500).json({ error: error.message});
 }}
 );
 exports.createBulkCompanies = asyncHandler(async (req, res) => {
@@ -218,7 +238,7 @@ exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
   
 
 
-  let filter = { client: clientId };
+  let filter = { client: clientId,isDeleted:false };
 
   // status filter
   if (status && status !== "") {
@@ -336,6 +356,7 @@ exports.getAccess = async (req, res) => {
   }
 };
 
+// Backend changes - updateCompany
 exports.updateCompany = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
@@ -359,15 +380,33 @@ exports.updateCompany = asyncHandler(async (req, res) => {
   if (req?.files?.["logo"] && req?.files?.["logo"][0]) {
     updateData.logo = req.files["logo"][0].location;
   }
+  console.log(req?.files,"req?.files?.",req.body.registrationDocTypes,"req.body.registrationDocTypes)")
+  
+  let registrationDocTypes;
+  try {
+    registrationDocTypes = JSON.parse(req.body.registrationDocTypes || '[]');
+  } catch (e) {
+    console.error('Failed to parse registrationDocTypes:', e);
+    registrationDocTypes = [];
+  }
 
-  // Registration docs update
+  // Registration docs update - merge with existing
   if (req?.files?.["registrationDocs"]) {
-    updateData.registrationDocs = req.files["registrationDocs"].map(file => ({
-      type: req.body.docType || "Other",
+    const newDocs = req.files["registrationDocs"].map((file, index) => ({
+      type: registrationDocTypes[index] || "Other",
       file: file.location,
       fileName: file.originalname,
     }));
+
+    // Filter out existing docs with types that are being updated
+    const existingDocs = (company.registrationDocs || []).filter(
+      (doc) => !registrationDocTypes.includes(doc.type)
+    );
+
+    // Replace matching types with new docs, append others
+    updateData.registrationDocs = [...existingDocs, ...newDocs];
   }
+  // If no new files, existing docs remain unchanged
 
   // Banks parsing
   if (req.body?.banks) {
@@ -409,7 +448,6 @@ exports.updateCompany = asyncHandler(async (req, res) => {
   // 9️⃣ Respond
   res.status(200).json(new ApiResponse(200, company, "Company updated successfully"));
 });
-
 
 
 
@@ -639,5 +677,24 @@ exports.generateCompanyDocumentationPDF = asyncHandler(async (req, res) => {
     "Content-Disposition": 'attachment; filename="Company_API_Documentation.pdf"',
   });
   res.send(pdfBuffer);
+});
+
+
+exports.deleteCompaniesByClientId = asyncHandler(async (req, res) => {
+  const { clientId } = req.user.clientID; // e.g., /delete-companies/:clientId
+
+  if (!clientId) {
+    return res.status(400).json({ message: "Client ID is required" });
+  }
+
+  const result = await Company.deleteMany({client: clientId });
+
+  if (result.deletedCount === 0) {
+    return res.status(404).json({ message: "No companies found for this client ID" });
+  }
+
+  res.status(200).json({
+    message: `${result.deletedCount} companies deleted successfully`,
+  });
 });
 

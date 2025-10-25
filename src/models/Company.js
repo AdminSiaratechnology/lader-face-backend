@@ -8,10 +8,15 @@ const registrationDocSchema = new mongoose.Schema({
 }, { _id: false });
 
 const bankSchema = new mongoose.Schema({
-  name: String,
+  
+   accountHolderName: String,
   accountNumber: String,
-  ifsc: String,
-  branch: String
+  ifscCode: String,
+  swiftCode: String,
+  micrNumber: String,
+  bankName: String,
+  branch: String,
+
 }, { _id: false });
 
 
