@@ -13,6 +13,8 @@ const ApiResponse = require('../utils/apiResponse');
 
 const {generateUniqueId} =require("../utils/generate16DigiId")
 const mongoose = require('mongoose');
+const   {createAuditLog}=require("../utils/createAuditLog")
+
 // ✅ Batch insert helper
 const insertInBatches = async (data, batchSize = 1000) => {
   let allInserted = [];
@@ -154,6 +156,24 @@ exports.createProduct = asyncHandler(async (req, res) => {
 
   // create product
   const product = await Product.create(productObj);
+  let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+  
+  console.log(ipAddress, "ipaddress");
+    await createAuditLog({
+    module: "Product",
+    action: "create",
+    performedBy: req.user.id,
+    referenceId: product._id,
+    clientId:req.user.clientID,
+    details: "Product created successfully",
+    ipAddress,
+  });
 
   res.status(201).json(new ApiResponse(201, product, "Product created"));
 });
@@ -248,6 +268,23 @@ exports.updateProduct = asyncHandler(async (req, res) => {
 
   // ✅ Save product
   await product.save();
+   let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+  await createAuditLog({
+    module: "Product",
+    action: "update",
+    performedBy: req.user.id,
+    referenceId: product._id,
+    clientId: req.user.clientID,
+    details: "Product updated successfully",
+    changes,
+    ipAddress,
+  });
 
   res.status(200).json(new ApiResponse(200, product, "Product updated"));
 });
@@ -294,6 +331,24 @@ exports.deleteProduct = asyncHandler(async (req, res) => {
 
   // ✅ Step 6: Save product
   await product.save();
+
+let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+    await createAuditLog({
+    module: "Product",
+    action: "delete",
+    performedBy: req.user.id,
+    referenceId: product._id,
+    clientId: req.user.clientID,
+    details: "product marked as deleted",
+    ipAddress,
+  });
+
 
   res
     .status(200)

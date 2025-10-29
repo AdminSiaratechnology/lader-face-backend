@@ -5,6 +5,7 @@ const ApiError = require('../utils/apiError');
 const ApiResponse = require('../utils/apiResponse');
 // const { generateUniqueId } = require('../utils/generate16DigiId');
 const mongoose = require('mongoose');
+const   {createAuditLog}=require("../utils/createAuditLog")
 
 
 // Generate unique 18-digit code using timestamp and index
@@ -125,6 +126,25 @@ exports.createVendor = asyncHandler(async (req, res) => {
                     details: "vendor created",
                   },
                 ],
+  });
+
+  let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+  
+  console.log(ipAddress, "ipaddress");
+    await createAuditLog({
+    module: "Vendor",
+    action: "create",
+    performedBy: req.user.id,
+    referenceId: vendor._id,
+    clientId,
+    details: "vendor created successfully",
+    ipAddress,
   });
 
   res
@@ -319,6 +339,24 @@ exports.updateVendor = asyncHandler(async (req, res) => {
   // ✅ Step 10: Save vendor document
   await vendor.save();
 
+   let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+  await createAuditLog({
+    module: "Vendor",
+    action: "update",
+    performedBy: req.user.id,
+    referenceId: vendor._id,
+    clientId: req.user.clientID,
+    details: "vendor updated successfully",
+    changes,
+    ipAddress,
+  });
+
   res
     .status(200)
     .json(new ApiResponse(200, vendor, "Vendor updated successfully"));
@@ -490,6 +528,23 @@ exports.deleteVendor = asyncHandler(async (req, res) => {
         });
   
   await vendor.save();
+  let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+    await createAuditLog({
+    module: "Vendor",
+    action: "delete",
+    performedBy: req.user.id,
+    referenceId: vendor._id,
+    clientId: req.user.clientID,
+    details: "vendor marked as deleted",
+    ipAddress,
+  });
+
 
   // send response
   res.status(200).json({

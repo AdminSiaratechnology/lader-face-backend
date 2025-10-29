@@ -1,25 +1,22 @@
 const mongoose = require("mongoose");
 const auditLogSchema = require("../middlewares/auditLogSchema");
 // Permission schema
+// Permission schema
 const permissionSchema = new mongoose.Schema({
   create: { type: Boolean, default: false },
   read: { type: Boolean, default: false },
   update: { type: Boolean, default: false },
   delete: { type: Boolean, default: false },
   extra: [{ type: String }],
-   changes: { type: Object, default: {} },
+  changes: { type: Object, default: {} },
 }, { _id: false });
 
-// Company Access Schema
+// Company Access Schema - FIXED: Using Mixed type instead of Map
 const accessSchema = new mongoose.Schema({
   company: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true },
   modules: {
-    type: Map,
-    of: {
-      type: Map,
-      of: permissionSchema,
-    },
-    default: {},
+    type: mongoose.Schema.Types.Mixed,  // ✅ Changed from Map to Mixed
+    default: {}
   },
 }, { _id: false });
 

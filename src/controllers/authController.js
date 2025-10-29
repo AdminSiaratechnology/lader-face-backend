@@ -5,6 +5,7 @@ const ApiError = require("../utils/apiError");
 const ApiResponse = require("../utils/apiResponse");
 const User = require("../models/User");
 const mongoose = require("mongoose");
+const   {createAuditLog}=require("../utils/createAuditLog")
 
 // 🔐 Token Generator
 const signToken = (userId, clientID, role) => {
@@ -19,6 +20,9 @@ const signToken = (userId, clientID, role) => {
 exports.register = asyncHandler(async (req, res) => {
   const adminId = req?.user?.id;
   const { name, email, password, role } = req.body;
+  console.log(req.body,"req.bopdy")
+  let access=structuredClone(req.body.access)
+   
 
   if (!name || !email || !password || !role) {
     throw new ApiError(400, "Missing required fields");
@@ -29,6 +33,7 @@ exports.register = asyncHandler(async (req, res) => {
 
   const creatorInfo = await User.findById(adminId);
   const hash = await bcrypt.hash(password, 10);
+  
 
   const user = await User.create({
     ...req.body,
@@ -38,6 +43,7 @@ exports.register = asyncHandler(async (req, res) => {
     createdBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
     parent: creatorInfo?._id || null,
     lastLogin: new Date(),
+    access:access,
     auditLogs: [
       {
         action: "create",
@@ -46,6 +52,7 @@ exports.register = asyncHandler(async (req, res) => {
         details: "User created",
       },
     ],
+    
   });
 
   const userResponse = user.toObject();
@@ -59,6 +66,8 @@ exports.register = asyncHandler(async (req, res) => {
 exports.registerInside = asyncHandler(async (req, res) => {
   const adminId = req?.user?.id;
   const { name, email, password, role } = req.body;
+  let access=structuredClone(req.body.access)
+  console.log(access,"access")
 
   if (!name || !email || !password || !role) {
     throw new ApiError(400, "Missing required fields");
@@ -69,6 +78,7 @@ exports.registerInside = asyncHandler(async (req, res) => {
 
   const creatorInfo = await User.findById(adminId);
   const hash = await bcrypt.hash(password, 10);
+  
 
   const user = await User.create({
     ...req.body,
@@ -78,6 +88,7 @@ exports.registerInside = asyncHandler(async (req, res) => {
     createdBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
     parent: creatorInfo?._id || null,
     lastLogin: new Date(),
+    access:structuredClone(req.body.access),
     auditLogs: [
       {
         action: "create",
@@ -90,6 +101,24 @@ exports.registerInside = asyncHandler(async (req, res) => {
 
   const userResponse = user.toObject();
   delete userResponse.password;
+  let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+  
+  console.log(ipAddress, "ipaddress");
+    await createAuditLog({
+    module: "User",
+    action: "create",
+    performedBy: req.user.id,
+    referenceId: user._id,
+    clientId:req.user.clientID,
+    details: "User created successfully",
+    ipAddress,
+  });
 
   res
     .status(201)
@@ -157,6 +186,23 @@ exports.updateUser = asyncHandler(async (req, res) => {
 
   const userResponse = user.toObject();
   delete userResponse.password;
+   let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+  await createAuditLog({
+    module: "User",
+    action: "update",
+    performedBy: req.user.id,
+    referenceId: user._id,
+    clientId: req.user.clientID,
+    details: "User updated successfully",
+    changes,
+    ipAddress,
+  });
 
   res
     .status(200)
@@ -182,6 +228,22 @@ exports.deleteUser = asyncHandler(async (req, res) => {
   });
 
   await user.save();
+  let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+    await createAuditLog({
+    module: "User",
+    action: "delete",
+    performedBy: req.user.id,
+    referenceId: user._id,
+    clientId: req.user.clientID,
+    details: "User marked as deleted",
+    ipAddress,
+  });
 
   res
     .status(200)

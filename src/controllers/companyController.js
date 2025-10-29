@@ -8,6 +8,7 @@ const {generate6DigitUniqueId} = require("../utils/generate6DigitUniqueId")
 
 const puppeteer = require("puppeteer");
 const mongoose = require('mongoose');
+const   {createAuditLog}=require("../utils/createAuditLog")
 
 const generateUniqueCodeInMemory = (existingSet) => {
   let code;
@@ -118,6 +119,26 @@ if(user.role==="Client" || user.role==="Admin"){
             details: "company created",
           },
         ],
+  });
+
+
+let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+  
+  console.log(ipAddress, "ipaddress");
+    await createAuditLog({
+    module: "Company",
+    action: "create",
+    performedBy: req.user.id,
+    referenceId: company._id,
+    clientId:req.user.clientID,
+    details: "comapny created successfully",
+    ipAddress,
   });
 
   res.status(201).json(new ApiResponse(201, company, "Company created successfully"));
@@ -445,6 +466,24 @@ exports.updateCompany = asyncHandler(async (req, res) => {
   // 8️⃣ Save company
   await company.save();
 
+   let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+  await createAuditLog({
+    module: "Company",
+    action: "update",
+    performedBy: req.user.id,
+    referenceId: company._id,
+    clientId: req.user.clientID,
+    details: "Company updated successfully",
+    changes,
+    ipAddress,
+  });
+
   // 9️⃣ Respond
   res.status(200).json(new ApiResponse(200, company, "Company updated successfully"));
 });
@@ -459,6 +498,8 @@ exports.getCompanies = asyncHandler(async (req, res) => {
   if (clientId) filter.client = clientId;
 
   const companies = await Company.find(filter);
+  const newcompanies={companies:[...companies]}
+
 
   res.status(200).json(new ApiResponse(200, companies, "Companies fetched successfully"));
 });
@@ -488,6 +529,24 @@ exports.deleteCompany = asyncHandler(async (req, res) => {
     });
   await company.save();
   // console.log("Company marked as deleted:", company);
+
+
+  let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+    await createAuditLog({
+    module: "Company",
+    action: "delete",
+    performedBy: req.user.id,
+    referenceId: company._id,
+    clientId: req.user.clientID,
+    details: "comapny marked as deleted",
+    ipAddress,
+  });
 
   res.status(200).json(new ApiResponse(200, null, "Company deleted successfully"));
 });

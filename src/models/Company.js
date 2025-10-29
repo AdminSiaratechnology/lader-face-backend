@@ -2,9 +2,9 @@ const mongoose = require('mongoose');
 const auditLogSchema = require('../middlewares/auditLogSchema');
 
 const registrationDocSchema = new mongoose.Schema({
-  type: { type: String, required: true },
-  file: { type: String, required: true },
-  fileName: { type: String, required: true }
+  type: { type: String },
+  file: { type: String },
+  fileName: { type: String}
 }, { _id: false });
 
 const bankSchema = new mongoose.Schema({
@@ -67,4 +67,4 @@ const companySchema = new mongoose.Schema({
  auditLogs: [auditLogSchema],
 }, { timestamps: true });
 
-module.exports = mongoose.model('Company', companySchema);
+module.exports = mongoose.model('Company', companySchema); 

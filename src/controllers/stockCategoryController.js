@@ -6,6 +6,7 @@ const ApiResponse = require("../utils/apiResponse");
 const asyncHandler = require("../utils/asyncHandler");
 const User = require("../models/User");
 const { default: mongoose } = require("mongoose");
+const   {createAuditLog}=require("../utils/createAuditLog")
 
 // ===== Helpers ===== //
 const ensureFound = (doc, message = "Resource not found") => {
@@ -94,6 +95,25 @@ exports.createStockCategory = asyncHandler(async (req, res) => {
         details: "Stock Category created",
       },
     ],
+  });
+
+  let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+  
+  console.log(ipAddress, "ipaddress");
+    await createAuditLog({
+    module: "StockCategory",
+    action: "create",
+    performedBy: req.user.id,
+    referenceId: customer._id,
+    clientId:req.user.clientID,
+    details: "Stock Category created successfully",
+    ipAddress,
   });
 
   res.status(201).json(new ApiResponse(201, category, "Stock Category created successfully"));
@@ -360,6 +380,24 @@ exports.updateStockCategory = asyncHandler(async (req, res) => {
   // ✅ Save
   await stockCategory.save();
 
+   let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+  await createAuditLog({
+    module: "StockCategory",
+    action: "update",
+    performedBy: req.user.id,
+    referenceId: stockCategory._id,
+    clientId: req.user.clientID,
+    details: "Stock Category updated successfully",
+    changes,
+    ipAddress,
+  });
+
   res.json(new ApiResponse(200, stockCategory, "Stock Category updated successfully"));
 });
 
@@ -379,6 +417,23 @@ exports.deleteStockCategory = asyncHandler(async (req, res) => {
     details: "Stock Category deleted",
   });
   await category.save();
+  let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+    await createAuditLog({
+    module: "StockCategory",
+    action: "delete",
+    performedBy: req.user.id,
+    referenceId: category._id,
+    clientId: req.user.clientID,
+    details: "stockCategory marked as deleted",
+    ipAddress,
+  });
+
 
   res.json(new ApiResponse(200, category, "Stock Category deleted successfully"));
 });

@@ -6,6 +6,7 @@ const ApiError = require('../utils/apiError');
 const ApiResponse = require('../utils/apiResponse');
 // const { generateUniqueId } = require('../utils/generate16DigiId');
 const mongoose = require('mongoose');
+const   {createAuditLog}=require("../utils/createAuditLog")
 
 // Generate unique 18-digit code using timestamp and index
 const generateUniqueId = (index) => {
@@ -117,6 +118,24 @@ exports.createLedger = asyncHandler(async (req, res) => {
         details: "Ledger created",
       },
     ],
+  });
+  let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+  
+  console.log(ipAddress, "ipaddress");
+    await createAuditLog({
+    module: "Ledger",
+    action: "create",
+    performedBy: req.user.id,
+    referenceId: ledger._id,
+    clientId,
+    details: "ledger created successfully",
+    ipAddress,
   });
 
   res
@@ -316,6 +335,23 @@ exports.updateLedger = asyncHandler(async (req, res) => {
 
   // ✅ Step 10: Save ledger document
   await ledger.save();
+   let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+  await createAuditLog({
+    module: "Ledger",
+    action: "update",
+    performedBy: req.user.id,
+    referenceId: ledger._id,
+    clientId: req.user.clientID,
+    details: "ledger updated successfully",
+    changes,
+    ipAddress,
+  });
 
   res
     .status(200)
@@ -484,6 +520,23 @@ exports.deleteLedger = asyncHandler(async (req, res) => {
               details: "Ledger marked as deleted",
             });
   await ledger.save();
+  let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+    await createAuditLog({
+    module: "Ledger",
+    action: "delete",
+    performedBy: req.user.id,
+    referenceId: ledger._id,
+    clientId: req.user.clientID,
+    details: "ledger marked as deleted",
+    ipAddress,
+  });
+
 
   // Send response
   res.status(200).json({
