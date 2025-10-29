@@ -4,75 +4,128 @@ const User = require('../models/User');
 const mongoose = require('mongoose');
 const ApiError = require('../utils/apiError');
 
-exports.getAllClientUsersWithCompany = asyncHandler(async (req, res) => {
- const clientId = req.user.clientID; // Logged-in user's client ID
- const { companyId } = req.params;
+exports.getAllClientUsersWithCompany = asyncHandler(async (req, res) => { 
+const clientId = req.user.clientID; // Logged-in user's client ID 
+const { companyId } = req.params; 
+if (!companyId) throw new ApiError(400, "Company ID is required"); 
+const { 
+search = "", 
+role = "", 
+status = "", 
+sortBy = "name", 
+sortOrder = "asc", 
+page = 1, 
+limit = 10, 
+} = req.query; 
+const perPage = parseInt(limit, 10); 
+const currentPage = Math.max(parseInt(page, 10), 1); 
+const skip = (currentPage - 1) * perPage; 
+// ✅ Prepare match conditions 
+const matchStage = { 
+clientID: new mongoose.Types.ObjectId(clientId), 
+company: new mongoose.Types.ObjectId(companyId), 
+status: { $ne: "delete" }, // exclude deleted 
+}; 
+if (status && status.trim() !== "") { 
+matchStage.status = status; 
+} 
+if (role && role.trim() !== "") { 
+matchStage.role = { $regex: role, $options: "i" }; 
+} 
+if (search && search.trim() !== "") { 
+matchStage.$or = [ 
+{ name: { $regex: search, $options: "i" } }, 
+{ email: { $regex: search, $options: "i" } }, 
+{ contactNumber: { $regex: search, $options: "i" } }, 
+]; 
+} 
+// ✅ Sorting 
+const sortField = sortBy === "name" ? "name" : "createdAt"; 
+const sortOrderValue = sortOrder === "desc" ? -1 : 1; 
+// ✅ Aggregation without lookup (no duplicates) 
+const result = await User.aggregate([ 
+  { $match: matchStage }, 
+  { $sort: { [sortField]: sortOrderValue } }, 
  
-  if (!companyId) throw new ApiError(400, "Company ID is required");
-const {
-  search = "",
-  role = "",
-  status = "",
-  sortBy = "name",
-  sortOrder = "asc",
-  page = 1,
-  limit = 10,
- } = req.query;
-  const perPage = parseInt(limit, 10);
- const currentPage = Math.max(parseInt(page, 10), 1);
- const skip = (currentPage - 1) * perPage;
- // ✅ Prepare match conditions
- const matchStage = {
-  clientID: new mongoose.Types.ObjectId(clientId),
-  company: new mongoose.Types.ObjectId(companyId),
-  status: { $ne: "delete" }, // exclude deleted
- };
-if (status && status.trim() !== "") {
-  matchStage.status = status;
- }
- if (role && role.trim() !== "") {
-  matchStage.role = { $regex: role, $options: "i" };
- }
- if (search && search.trim() !== "") {
-  matchStage.$or = [
-   { name: { $regex: search, $options: "i" } },
-   { email: { $regex: search, $options: "i" } },
-   { contactNumber: { $regex: search, $options: "i" } },
-  ];
- }
- // ✅ Sorting
- const sortField = sortBy === "name" ? "name" : "createdAt";
- const sortOrderValue = sortOrder === "desc" ? -1 : 1;
-  // ✅ Aggregation without lookup (no duplicates)
- const result = await User.aggregate([
-  { $match: matchStage },
-  { $sort: { [sortField]: sortOrderValue } },
-  {
-   $facet: {
-    records: [{ $skip: skip }, { $limit: perPage }],
-    totalCount: [{ $count: "count" }],
-   },
-  },
- ]);
-  const users = result?.[0]?.records || [];
- const total = result?.[0]?.totalCount?.[0]?.count || 0;
-
- return res.status(200).json(
-  new ApiResponse(
-   200,
-   {
-    users,
-    pagination: {
-     total,
-     page: currentPage,
-     limit: perPage,
-     totalPages: Math.ceil(total / perPage),
-    },
-   },
-   users.length ? "Users fetched successfully" : "No users found"
-  )
- );
+  // ✅ Lookup company names only 
+  { 
+    $lookup: { 
+      from: "companies", 
+      localField: "access.company", 
+      foreignField: "_id", 
+      as: "accessCompanies", 
+      pipeline: [ 
+        { $project: { namePrint: 1 } } // only fetch name 
+      ] 
+    } 
+  }, 
+ 
+  // ✅ Merge only company name into access 
+  { 
+    $addFields: { 
+      access: { 
+        $map: { 
+          input: "$access", 
+          as: "acc", 
+          in: { 
+            $mergeObjects: [ 
+              "$$acc", 
+              { 
+                company: { 
+                  $arrayElemAt: [ 
+                    { 
+                      $map: { 
+                        input: { 
+                          $filter: { 
+                            input: "$accessCompanies", 
+                            as: "acomp", 
+                            cond: { $eq: ["$$acomp._id", "$$acc.company"] } 
+                          } 
+                        }, 
+                        as: "c", 
+                        in: { _id: "$$c._id", namePrint: "$$c.namePrint" } 
+                      } 
+                    }, 
+                    0 
+                  ] 
+                } 
+              } 
+            ] 
+          } 
+        } 
+      } 
+    } 
+  }, 
+ 
+  { $project: { accessCompanies: 0 } }, 
+ 
+  { 
+    $facet: { 
+      records: [{ $skip: skip }, { $limit: perPage }], 
+      totalCount: [{ $count: "count" }] 
+    } 
+  } 
+]); 
+ 
+const users = result?.[0]?.records || []; 
+const total = result?.[0]?.totalCount?.[0]?.count || 0; 
+return res.status(200).json( 
+new ApiResponse( 
+200, 
+{ 
+users, 
+pagination: { 
+total, 
+page: currentPage, 
+limit: perPage, 
+totalPages: Math.ceil(total / perPage), 
+}, 
+}, 
+users.length ? "Users fetched successfully" : "No users found" 
+) 
+); 
 });
+
 
 exports.getAllClientUsers = asyncHandler(async (req, res) => {
   const clientId = req.user.id; // Logged in user ID

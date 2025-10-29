@@ -4,10 +4,11 @@ const ApiResponse = require("../utils/apiResponse");
 const ApiError = require("../utils/apiError");
 const { default: mongoose } = require("mongoose");
 const User = require("../models/User");
-// const { generateUniqueId } = require("../utils/generate16DigiId");
+const { generateUniqueId } = require("../utils/generate16DigiId");
+const   {createAuditLog}=require("../utils/createAuditLog")
 
 // Generate unique 18-digit code using timestamp and index
-const generateUniqueId = (index) => {
+const generateUniqueIdBulk = (index) => {
   const timestamp = Date.now();
   const random = Math.floor(1000 + Math.random() * 9000); // 4-digit random number
   return `${timestamp}${index.toString().padStart(4, '0')}${random}`.slice(-18); // 18-digit code
@@ -119,6 +120,24 @@ exports.createGodown = asyncHandler(async (req, res) => {
       },
     ],
   });
+  let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+  
+  console.log(ipAddress, "ipaddress");
+    await createAuditLog({
+    module: "Godown",
+    action: "create",
+    performedBy: req.user.id,
+    referenceId: godown._id,
+    clientId:req.user.clientID,
+    details: "godown created successfully",
+    ipAddress,
+  });
 
   // ✅ Single response only
   res
@@ -169,7 +188,7 @@ exports.createBulkGodowns = asyncHandler(async (req, res) => {
       // Generate or validate code
       let code = body.code;
       if (!code) {
-        code = generateUniqueId(index); // Generate 18-digit code
+        code = generateUniqueIdBulk(index); // Generate 18-digit code
       } else {
         // Check for duplicate code in the input batch
         if (seenCodes.has(code)) {
@@ -307,6 +326,25 @@ exports.updateGodown = asyncHandler(async (req, res) => {
   console.log("Godown after update:", godown);
 
   await godown.save();
+
+
+ let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+  await createAuditLog({
+    module: "Godown",
+    action: "update",
+    performedBy: req.user.id,
+    referenceId: godown._id,
+    clientId: req.user.clientID,
+    details: "godown updated successfully",
+    changes,
+    ipAddress,
+  });
 
   res.status(200).json(new ApiResponse(200, godown, "Godown updated successfully"));
 });
@@ -566,6 +604,23 @@ exports.deleteGodown = asyncHandler(async (req, res) => {
 
   // ✅ 5️⃣ Save document
   const deletedGodown = await godown.save();
+
+  let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+    await createAuditLog({
+    module: "Godown",
+    action: "delete",
+    performedBy: req.user.id,
+    referenceId: godown._id,
+    clientId: req.user.clientID,
+    details: "godown marked as deleted",
+    ipAddress,
+  });
 
   // ✅ 6️⃣ Send response
   res

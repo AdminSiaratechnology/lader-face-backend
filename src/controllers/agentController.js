@@ -6,6 +6,7 @@ const ApiResponse = require('../utils/apiResponse');
 // const { generateUniqueId } = require('../utils/generate16DigiId');
 const mongoose = require('mongoose');
 const User=require("../models/User")
+const   {createAuditLog}=require("../utils/createAuditLog")
 // Generate unique code using timestamp and index
 const generateUniqueId = (index) => {
   const timestamp = Date.now();
@@ -120,6 +121,24 @@ exports.createAgent = asyncHandler(async (req, res) => {
                         details: "Agent created",
                       },
                     ],
+  });
+  let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+  
+  console.log(ipAddress, "ipaddress");
+    await createAuditLog({
+    module: "Agent",
+    action: "create",
+    performedBy: req.user.id,
+    referenceId: agent._id,
+    clientId,
+    details: "agent created successfully",
+    ipAddress,
   });
 
   res
@@ -343,6 +362,23 @@ exports.updateAgent = asyncHandler(async (req, res) => {
 
   // ✅ Step 10: Save document
   await agent.save();
+   let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+  await createAuditLog({
+    module: "Agent",
+    action: "update",
+    performedBy: req.user.id,
+    referenceId: agent._id,
+    clientId: req.user.clientID,
+    details: "agent updated successfully",
+    changes,
+    ipAddress,
+  });
 
   res
     .status(200)
@@ -513,6 +549,23 @@ exports.deleteAgent = asyncHandler(async (req, res) => {
             details: "Agent marked as deleted",
           });
   await agent.save();
+
+  let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+    await createAuditLog({
+    module: "Agent",
+    action: "delete",
+    performedBy: req.user.id,
+    referenceId: customer._id,
+    clientId: req.user.clientID,
+    details: "agent marked as deleted",
+    ipAddress,
+  });
 
   // send response
   res.status(200).json({

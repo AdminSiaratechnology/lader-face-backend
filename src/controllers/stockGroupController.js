@@ -7,6 +7,7 @@ const asyncHandler = require("../utils/asyncHandler");
 const User = require("../models/User");
 // const {generateUniqueId} =require("../utils/generate16DigiId")
 const mongoose=require("mongoose")
+const   {createAuditLog}=require("../utils/createAuditLog")
 
 
 // Generate unique 18-digit code using timestamp and index
@@ -117,6 +118,24 @@ exports.createStockGroup = asyncHandler(async (req, res) => {
         details: "Stock Group created",
       },
     ],
+  });
+  let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+  
+  console.log(ipAddress, "ipaddress");
+    await createAuditLog({
+    module: "StockGroup",
+    action: "create",
+    performedBy: req.user.id,
+    referenceId: stockGroup._id,
+    clientId:req.user.clientID,
+    details: "Customer created successfully",
+    ipAddress,
   });
 
   res
@@ -450,6 +469,24 @@ exports.updateStockGroup = asyncHandler(async (req, res) => {
   // ✅ Save
   await stockGroup.save();
 
+ let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+  await createAuditLog({
+    module: "StockGroup",
+    action: "update",
+    performedBy: req.user.id,
+    referenceId: stockGroup._id,
+    clientId: req.user.clientID,
+    details: "stockGroup updated successfully",
+    changes,
+    ipAddress,
+  });
+
   res.json(new ApiResponse(200, stockGroup, "Stock Group updated successfully"));
 });
 
@@ -481,6 +518,23 @@ exports.deleteStockGroup = asyncHandler(async (req, res) => {
               details: "Stock Group marked as deleted",
             });
   await stock.save();
+  let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+    await createAuditLog({
+    module: "StockGroup",
+    action: "delete",
+    performedBy: req.user.id,
+    referenceId: stock._id,
+    clientId: req.user.clientID,
+    details: "stockGroup marked as deleted",
+    ipAddress,
+  });
+
 
   res.json(new ApiResponse(200, stock, "Stock Group deleted successfully"));
 });

@@ -17,6 +17,7 @@ const vendorRoute=require("./routes/vendorRoute")
 const agentRoute=require("./routes/agentRoutes")
 const ladgerRoute=require("./routes/ladgerRoutes")
 const stockItemRoutes=require("./routes/stockItem.routes")
+const auditLogRoutes=require("./routes/auditLogRoutes")
 
 
 
@@ -79,6 +80,7 @@ app.use("/api/agent/vendors",vendorRoute)
 app.use("/api/agent/agents",agentRoute)
 app.use("/api/agent/ledgers",ladgerRoute)
 app.use("/api/stock-items",stockItemRoutes)
+app.use("/api/auditLog",auditLogRoutes)
 
 
 // Not found middleware (for invalid routes)

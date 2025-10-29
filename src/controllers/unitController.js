@@ -4,6 +4,7 @@ const ApiResponse = require('../utils/apiResponse');
 const ApiError = require('../utils/apiError');
 const User = require('../models/User');
 const mongoose = require('mongoose');
+const   {createAuditLog}=require("../utils/createAuditLog")
 
 const insertInBatches = async (data, batchSize) => {
   if (!data || !Array.isArray(data) || data.length === 0) {
@@ -90,6 +91,24 @@ exports.createUnit = asyncHandler(async (req, res) => {
       },
     ],
 
+  });
+  let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+  
+  console.log(ipAddress, "ipaddress");
+    await createAuditLog({
+    module: "Unit",
+    action: "create",
+    performedBy: req.user.id,
+    referenceId: unit._id,
+    clientId:req.user.clientID,
+    details: "Unit created successfully",
+    ipAddress,
   });
 
   res.status(201).json(new ApiResponse(201, unit, "Unit created successfully"));
@@ -243,6 +262,23 @@ exports.updateUnit = asyncHandler(async (req, res) => {
 
   // ✅ Step 6: Save
   await unit.save();
+   let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+  await createAuditLog({
+    module: "Unit",
+    action: "update",
+    performedBy: req.user.id,
+    referenceId: unit._id,
+    clientId: req.user.clientID,
+    details: "Unit updated successfully",
+    changes,
+    ipAddress,
+  });
 
   res.status(200).json(new ApiResponse(200, unit, "Unit updated successfully"));
 });
@@ -255,6 +291,24 @@ exports.deleteUnit = asyncHandler(async (req, res) => {
   const unit = await Unit.findByIdAndDelete(id,);
 
   if (!unit) throw new ApiError(404, "Unit not found");
+
+let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+    await createAuditLog({
+    module: "Unit",
+    action: "delete",
+    performedBy: req.user.id,
+    referenceId: unit._id,
+    clientId: req.user.clientID,
+    details: "Unit marked as deleted",
+    ipAddress,
+  });
+
 
   res.status(200).json(new ApiResponse(200, null, "Unit deleted successfully"));
 });

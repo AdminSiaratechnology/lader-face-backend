@@ -6,6 +6,8 @@ const ApiResponse = require('../utils/apiResponse');
 const { generateUniqueId } = require('../utils/generate16DigiId');
 const mongoose = require('mongoose');
 const User = require('../models/User');
+const   {createAuditLog}=require("../utils/createAuditLog")
+
 
 
 // safe JSON parse
@@ -103,6 +105,24 @@ exports.createCustomer = asyncHandler(async (req, res) => {
                 details: "customer created",
               },
             ],
+  });
+  let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+  
+  console.log(ipAddress, "ipaddress");
+    await createAuditLog({
+    module: "customer",
+    action: "create",
+    performedBy: adminId,
+    referenceId: customer._id,
+    clientId,
+    details: "Customer created successfully",
+    ipAddress,
   });
 
   res
@@ -262,6 +282,23 @@ exports.updateCustomer = asyncHandler(async (req, res) => {
   });
 
   await customer.save();
+    let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+  await createAuditLog({
+    module: "customer",
+    action: "update",
+    performedBy: adminId,
+    referenceId: customer._id,
+    clientId: req.user.clientID,
+    details: "Customer updated successfully",
+    changes,
+    ipAddress,
+  });
 
   res
     .status(200)
@@ -442,6 +479,22 @@ exports.deleteCustomer = asyncHandler(async (req, res) => {
         details: "Customer marked as deleted",
       });
   await customer.save();
+    let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+    await createAuditLog({
+    module: "customer",
+    action: "delete",
+    performedBy:  req.user.id,
+    referenceId: customer._id,
+    clientId: req.user.clientID,
+    details: "Customer marked as deleted",
+    ipAddress,
+  });
 
   // send response
   res.status(200).json({
