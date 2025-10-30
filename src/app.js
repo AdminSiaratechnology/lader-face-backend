@@ -56,7 +56,7 @@ app.use(express.urlencoded({limit: '50mb', extended: true }));
 
 app.get("/",(req,res)=>{
 
-    res.send("API is working hiii")
+    res.send("API is working 30/10")
 
 
 })
