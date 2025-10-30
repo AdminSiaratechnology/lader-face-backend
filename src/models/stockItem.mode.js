@@ -32,7 +32,7 @@ const stockItemSchema = new mongoose.Schema(
     clientId: { type: mongoose.Schema.Types.ObjectId, ref: "Client", required: true },
     status: {
       type: String,
-      enum: ["active", "inactive", "deleted"],
+      enum: ["active", "inactive", "delete"],
       default: "active",
       required: true,
     },

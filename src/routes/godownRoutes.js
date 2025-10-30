@@ -20,7 +20,7 @@ router.post("/", upload.none(), godownController.createGodown);
 router.get("/:companyId", godownController.getGodownsByCompany);
 
 // Update
-router.put("/:id", godownController.updateGodown);
+router.put("/:id",upload.none(), godownController.updateGodown);
 
 // Delete
 router.delete("/:id", godownController.deleteGodown);

@@ -292,7 +292,7 @@ exports.updateCustomer = asyncHandler(async (req, res) => {
   await createAuditLog({
     module: "customer",
     action: "update",
-    performedBy: adminId,
+    performedBy: req.user.id,
     referenceId: customer._id,
     clientId: req.user.clientID,
     details: "Customer updated successfully",

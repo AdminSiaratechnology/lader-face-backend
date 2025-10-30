@@ -19,7 +19,7 @@ const unitSchema = new mongoose.Schema({
   secondUnit: { type: String },      // like pcs
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   auditLogs: [auditLogSchema],
-  status: { type: String, enum: ['Active', 'Inactive', "Deleted"], default: 'Active' },
+  status: { type: String, enum: ["active", "inactive", "delete"], default: "active" },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Unit', unitSchema);

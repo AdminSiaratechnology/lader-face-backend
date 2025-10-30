@@ -349,7 +349,7 @@ exports.updateStockCategory = asyncHandler(async (req, res) => {
   if (!stockCategory) throw new ApiError(404, "Stock Category not found");
 
   // ✅ Allowed fields for update
-  const allowedFields = ["companyId", "name", "description"];
+  const allowedFields = ["companyId", "name", "description", "status"];
   const updateData = {};
   Object.keys(req.body || {}).forEach(key => {
     if (allowedFields.includes(key)) updateData[key] = req.body[key];

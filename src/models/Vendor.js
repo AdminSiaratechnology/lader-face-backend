@@ -35,11 +35,7 @@ const VendorSchema = new mongoose.Schema(
     procurementPerson: { type: String },
     vendorStatus: { type: String },
     companySize: { type: String },
-    status: {
-      type: String,
-      enum: ["Active", "Inactive", "Delete"],
-      default: "Active"
-    },
+     status: { type: String, enum: ["active", "inactive", "delete"], default: "active" },
 
     contactPerson: { type: String },
     designation: { type: String },

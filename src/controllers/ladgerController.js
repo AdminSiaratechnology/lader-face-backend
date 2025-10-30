@@ -399,7 +399,7 @@ exports.getLedgersByCompany = asyncHandler(async (req, res) => {
 
   // Query
   const [ledgers, total] = await Promise.all([
-    Ledger.find(filter).sort(sortOptions).skip(skip).limit(perPage),
+    Ledger.find(filter).select("-auditLogs").sort(sortOptions).skip(skip).limit(perPage),
     Ledger.countDocuments(filter),
   ]);
 
@@ -457,7 +457,7 @@ exports.getLedgersByClient = asyncHandler(async (req, res) => {
 
   // Query
   const [ledgers, total] = await Promise.all([
-    Ledger.find(filter).sort(sortOptions).skip(skip).limit(perPage),
+    Ledger.find(filter).select("-auditLogs").sort(sortOptions).skip(skip).limit(perPage),
     Ledger.countDocuments(filter),
   ]);
 

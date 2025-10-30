@@ -264,12 +264,10 @@ exports.createBulkVendors = asyncHandler(async (req, res) => {
     )
   );
 });
-
-// 🟢 Update Vendor
 exports.updateVendor = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  // ✅ Step 1: Find existing vendor
+  // ✅ 1. Find existing vendor
   const vendor = await Vendor.findById(id);
   if (!vendor) throw new ApiError(404, "Vendor not found");
 
@@ -277,12 +275,12 @@ exports.updateVendor = asyncHandler(async (req, res) => {
   let registrationDocs = vendor.registrationDocs;
   let banks = vendor.banks;
 
-  // ✅ Step 2: Replace logo if new one uploaded
+  // ✅ 2. Replace logo if new one uploaded
   if (req?.files?.['logo'] && req?.files?.['logo'][0]) {
     logoUrl = req.files['logo'][0].location;
   }
 
-  // ✅ Step 3: Replace registration docs if new ones uploaded
+  // ✅ 3. Replace registration docs if new ones uploaded
   if (req?.files?.['registrationDocs']) {
     registrationDocs = req.files['registrationDocs'].map(file => ({
       type: req.body.docType || 'Other',
@@ -291,14 +289,33 @@ exports.updateVendor = asyncHandler(async (req, res) => {
     }));
   }
 
-  // ✅ Step 4: Prepare updateData
-  const updateData = {
-    ...req.body,
-    logo: logoUrl,
-    registrationDocs,
-  };
+  // ✅ 4. Build updateData safely
+  const updateData = { ...req.body };
 
-  // ✅ Step 5: Safely parse banks
+  // Prevent overwriting nested arrays
+  delete updateData.auditLogs;
+  delete updateData.__v;
+
+  // ✅ 5. Coerce types (convert strings to booleans/numbers/arrays where needed)
+  const booleanFields = [
+    "isFrozenAccount",
+    "disabled",
+    "allowZeroValuation",
+    "isTaxExempt",
+    "reverseCharge",
+    "exportVendor",
+    "allowPartialShipments",
+    "allowBackOrders",
+    "autoInvoice",
+  ];
+
+  booleanFields.forEach((field) => {
+    if (field in updateData) {
+      updateData[field] = updateData[field] === "true" || updateData[field] === true;
+    }
+  });
+
+  // ✅ 6. Parse banks if sent as JSON string
   if (req.body.banks) {
     try {
       banks = typeof req.body.banks === "string" ? JSON.parse(req.body.banks) : req.body.banks;
@@ -308,27 +325,23 @@ exports.updateVendor = asyncHandler(async (req, res) => {
     }
   }
 
-  // ✅ Step 6: Track field changes before update
+  // ✅ 7. Update logo and registrationDocs
+  updateData.logo = logoUrl;
+  updateData.registrationDocs = registrationDocs;
+
+  // ✅ 8. Detect changes for audit log
   const oldData = vendor.toObject();
   const changes = {};
-
-  Object.keys(updateData).forEach((key) => {
+  for (const key of Object.keys(updateData)) {
     if (JSON.stringify(oldData[key]) !== JSON.stringify(updateData[key])) {
       changes[key] = { from: oldData[key], to: updateData[key] };
     }
-  });
-
-  // ✅ Step 7: Prevent auditLogs overwrite
-  if (updateData.auditLogs) {
-    delete updateData.auditLogs;
   }
 
-  // ✅ Step 8: Apply updates safely
-  for (const key in updateData) {
-    vendor[key] = updateData[key];
-  }
+  // ✅ 9. Apply valid updates
+  Object.assign(vendor, updateData);
 
-  // ✅ Step 9: Push new audit log entry
+  // ✅ 10. Push audit log safely
   vendor.auditLogs.push({
     action: "update",
     performedBy: req.user?.id || null,
@@ -336,7 +349,6 @@ exports.updateVendor = asyncHandler(async (req, res) => {
     changes,
   });
 
-  // ✅ Step 10: Save vendor document
   await vendor.save();
 
    let ipAddress =

@@ -35,11 +35,8 @@ const AgentSchema = new mongoose.Schema(
     supervisor: { type: String },
     agentStatus: { type: String },
     experienceLevel: { type: String },
-    status: {
-      type: String,
-      enum: ["Active", "Inactive", "Delete"],
-      default: "Active"
-    },
+     status: { type: String, enum: [ "active", "inactive", "delete"], default: "active" },
+
 
     contactPerson: { type: String },
     designation: { type: String },
