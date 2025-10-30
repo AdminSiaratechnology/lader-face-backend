@@ -18,6 +18,7 @@ const agentRoute=require("./routes/agentRoutes")
 const ladgerRoute=require("./routes/ladgerRoutes")
 const stockItemRoutes=require("./routes/stockItem.routes")
 const auditLogRoutes=require("./routes/auditLogRoutes")
+const contactRoute=require("./routes/contactFormRoutes")
 
 
 
@@ -66,6 +67,7 @@ app.get("/",(req,res)=>{
 // Routes
 
 app.use('/api/auth', authRoutes);
+app.use("/api/contactUs",contactRoute)
 app.use(authMiddleware);
 app.use('/api/company', companyRoutes);
 app.use('/api/salesman', salesmanRoutes);
@@ -81,6 +83,7 @@ app.use("/api/agent/agents",agentRoute)
 app.use("/api/agent/ledgers",ladgerRoute)
 app.use("/api/stock-items",stockItemRoutes)
 app.use("/api/auditLog",auditLogRoutes)
+app.use("/api/contactUs",contactRoute)
 
 
 // Not found middleware (for invalid routes)
