@@ -420,7 +420,7 @@ const result = await User.aggregate([
 // Update
 exports.updateStockGroup = asyncHandler(async (req, res) => {
   const agentId = req.user.id;
-  const { companyId, name, description } = req.body;
+  const { companyId, name, description, status } = req.body;
 
   // ✅ Required field check
   if (!companyId || !name) {
@@ -438,7 +438,7 @@ exports.updateStockGroup = asyncHandler(async (req, res) => {
   if (!stockGroup) throw new ApiError(404, "Stock Group not found");
 
   // ✅ Allowed fields for update
-  const allowedFields = ["companyId", "name", "description"];
+  const allowedFields = ["companyId", "name", "description", "status"];
   const updateData = {};
   Object.keys(req.body || {}).forEach(key => {
     if (allowedFields.includes(key)) updateData[key] = req.body[key];

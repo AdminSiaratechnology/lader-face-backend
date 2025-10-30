@@ -235,6 +235,7 @@ console.log("getAuditLogsByClientDetailByID")
 
 
 exports.restoreRecord = async (req, res) => {
+  console.log("restoreRecord");
   try {
     const { module, referenceId, id } = req.body; // module = model name, id = audit log id
     const performedBy = req.user.id;
@@ -253,7 +254,7 @@ exports.restoreRecord = async (req, res) => {
         success: false,
         message: "Invalid module name",
       });
-
+console.log(Model,"model")
     const record = await Model.findById(referenceId);
     console.log(module, "module");
     console.log(record, "record");
@@ -264,7 +265,7 @@ exports.restoreRecord = async (req, res) => {
         message: "Record not found",
       });
 
-    if (record.status === "Active") {
+    if (record.status === "active") {
       return res.status(400).json({
         success: false,
         message: "Record already active",
@@ -272,7 +273,7 @@ exports.restoreRecord = async (req, res) => {
     }
 
     // ✅ Restore logic
-    record.status = "Active";
+    record.status = "active";
     await record.save();
 
     // ✅ Get IP Address properly
@@ -291,7 +292,7 @@ exports.restoreRecord = async (req, res) => {
         action: "update",
         ipAddress,
         details: `${module} record restored`,
-        changes: { status: "Active" },
+        changes: { status: "active" },
         performedBy,
         clientId,
       },

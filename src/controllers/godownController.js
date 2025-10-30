@@ -294,8 +294,10 @@ exports.updateGodown = asyncHandler(async (req, res) => {
     "state",
     "status",
   ];
+  try{
 
   const body = req.body || {}; // safeguard
+  console.log("Request Body:", body);
   const updateData = {};
   Object.keys(body).forEach(key => {
     if (allowedFields.includes(key)) updateData[key] = body[key];
@@ -324,6 +326,7 @@ exports.updateGodown = asyncHandler(async (req, res) => {
     timestamp: new Date()
   });
   console.log("Godown after update:", godown);
+  console.log("Changes:",oldData,godown);   
 
   await godown.save();
 
@@ -347,6 +350,11 @@ exports.updateGodown = asyncHandler(async (req, res) => {
   });
 
   res.status(200).json(new ApiResponse(200, godown, "Godown updated successfully"));
+}
+catch(err){
+  console.log(err);
+  res.status(500).json(new ApiResponse(500, err, "Something went wrong"));
+}
 });
 
 
@@ -590,7 +598,7 @@ exports.deleteGodown = asyncHandler(async (req, res) => {
 
   // ✅ 3️⃣ Track changes for audit log
   const oldStatus = godown.status;
-  godown.status = "Delete"; // Soft delete
+  godown.status = "delete"; // Soft delete
 
   // ✅ 4️⃣ Push audit log
   if (!godown.auditLogs) godown.auditLogs = [];
@@ -598,7 +606,7 @@ exports.deleteGodown = asyncHandler(async (req, res) => {
     action: "delete",
     performedBy: req.user.id,
     details: `Godown "${godown.name}" deleted`,
-    changes: { status: { from: oldStatus, to: "Delete" } },
+    changes: { status: { from: oldStatus, to: "delete" } },
     timestamp: new Date(),
   });
 

@@ -34,11 +34,7 @@ const LedgerSchema = new mongoose.Schema(
     territory: { type: String },
     ledgerStatus: { type: String },
     companySize: { type: String },
-    status: {
-      type: String,
-      enum: ["Active", "Inactive", "Delete"],
-      default: "Active"
-    },
+      status: { type: String, enum: ["active", "inactive", "delete"], default: "active" },
 
     contactPerson: { type: String },
     designation: { type: String },

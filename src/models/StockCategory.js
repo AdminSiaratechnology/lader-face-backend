@@ -20,7 +20,7 @@ const stockCategorySchema = new mongoose.Schema({
   },
   name: { type: String, required: true, trim: true },
   description: { type: String },
-  status: { type: String, enum: ["Active", "Inactive","Delete"], default: "Active" },
+  status: { type: String, enum: ["active", "inactive", "delete"], default: "active" },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   auditLogs: [auditLogSchema],
   
