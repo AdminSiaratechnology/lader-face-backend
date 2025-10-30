@@ -128,7 +128,9 @@ users.length ? "Users fetched successfully" : "No users found"
 
 
 exports.getAllClientUsers = asyncHandler(async (req, res) => {
-  const clientId = req.user.id; // Logged in user ID
+  console.log("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
+  const clientId = req.user.clientID; // Logged in user ID
+console.log(clientId,"clientId")
   const {
     search = "",
     role = "",
@@ -145,7 +147,7 @@ exports.getAllClientUsers = asyncHandler(async (req, res) => {
 
   // aggregation
   const result = await User.aggregate([
-    { $match: { clientId: new mongoose.Types.ObjectId(clientId) } },
+    { $match: { clientID: new mongoose.Types.ObjectId(clientId) } },
     {
       $lookup: {
         from: "users",
