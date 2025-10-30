@@ -59,7 +59,9 @@ const userSchema = new mongoose.Schema({
   area: { type: String },
   pincode: { type: String },
   status: { type: String, enum: ["active", "inactive", "delete"], default: "active" },
-  lastLogin: { type: Date, default: Date.now },
+  lastLogin: { type: Date },
+   loginHistory: [{ type: Date }],
+
 
   allPermissions: { type: Boolean, default: false },
   access: [accessSchema],

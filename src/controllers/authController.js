@@ -42,7 +42,7 @@ exports.register = asyncHandler(async (req, res) => {
     clientID: creatorInfo?.clientID || adminId,
     createdBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
     parent: creatorInfo?._id || null,
-    lastLogin: new Date(),
+   
     access:access,
     auditLogs: [
       {
@@ -151,18 +151,20 @@ exports.updateUser = asyncHandler(async (req, res) => {
   // Store old data before update
   const oldData = user.toObject();
 
-  // Apply updates safely
-  Object.entries(updateData).forEach(([key, value]) => {
-    // Ignore system fields that should not be updated
-    if (["createdBy", "createdAt", "_id","password"].includes(key)) return;
+Object.entries(updateData).forEach(([key, value]) => {
+ if (["createdBy", "createdAt", "_id", "password"].includes(key)) return;
 
-    // Convert to ObjectId if schema expects it
-    if (["parent", "clientID", "company"].includes(key) && value) {
-      user[key] = new mongoose.Types.ObjectId(value);
-    } else {
-      user[key] = value;
-    }
-  });
+ if (["parent", "clientID", "company"].includes(key)) {
+  if (value && mongoose.Types.ObjectId.isValid(value)) {
+   user[key] = new mongoose.Types.ObjectId(value);
+  } else {
+   // If empty or invalid, explicitly set to null
+   user[key] = null;
+  }
+ } else {
+  user[key] = value;
+ }
+});
 
   // Track changed fields for audit logs
   const changes = {};
@@ -271,7 +273,10 @@ exports.login = asyncHandler(async (req, res) => {
   safeUser.access = [...(user.access || [])];
 
   // Update last login + log it
-  user.lastLogin = new Date();
+  const now = new Date();
+
+  user.lastLogin = now;
+  user.loginHistory.push(now);
   user.auditLogs.push({
     action: "login",
     performedBy: new mongoose.Types.ObjectId(user._id),
