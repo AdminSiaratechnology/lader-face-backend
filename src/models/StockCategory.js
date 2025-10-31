@@ -13,11 +13,11 @@ const stockCategorySchema = new mongoose.Schema({
     ref: "Company",
     required: true
   },
-  stockGroupId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "StockGroup",
-    required: true
-  },
+  // stockGroupId: {
+  //   type: mongoose.Schema.Types.ObjectId,
+  //   ref: "StockGroup",
+  //   required: true
+  // },
   name: { type: String, required: true, trim: true },
   description: { type: String },
   status: { type: String, enum: ["active", "inactive", "delete"], default: "active" },

@@ -14,8 +14,8 @@ const upload = require("../config/s3");
 const router = express.Router();
 
 // Create agent
-router.post("/",upload.fields([
-   
+router.post("/", upload.fields([
+    { name: "logo", maxCount: 1 },
     { name: "registrationDocs", maxCount: 5 },
   ]), createAgent);
   router.post("/bulk", createBulkAgents);

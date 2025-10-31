@@ -62,11 +62,11 @@ const insertInBatches = async (data, batchSize) => {
 };
 
 exports.createStockCategory = asyncHandler(async (req, res) => {
-  const { companyId, stockGroupId, name, description } = req.body;
+  const { companyId, name, description } = req.body;
   const agentId = req.user.id;
 
   // Required fields
-  if (!companyId || !stockGroupId || !name) {
+  if (!companyId || !name) {
     throw new ApiError(400, "Company ID, Stock Group ID and Name are required");
   }
 
@@ -82,10 +82,9 @@ exports.createStockCategory = asyncHandler(async (req, res) => {
   const category = await StockCategory.create({
     clientId,
     companyId,
-    stockGroupId,
     name,
     description,
-    status: "Active",
+    status: "active",
     createdBy: agentId,
     auditLogs: [
       {
@@ -110,7 +109,7 @@ exports.createStockCategory = asyncHandler(async (req, res) => {
     module: "StockCategory",
     action: "create",
     performedBy: req.user.id,
-    referenceId: customer._id,
+    referenceId: category._id,
     clientId:req.user.clientID,
     details: "Stock Category created successfully",
     ipAddress,
@@ -252,7 +251,6 @@ exports.getStockCategories = asyncHandler(async (req, res) => {
   // query with pagination
   const [categories, total] = await Promise.all([
     StockCategory.find(filter)
-      .populate("stockGroupId", "name")
       .sort(sort)
       .skip(skip)
       .limit(perPage),
@@ -314,7 +312,6 @@ exports.getStockCategoriesByCompanyId = asyncHandler(async (req, res) => {
   // query with pagination
   const [categories, total] = await Promise.all([
     StockCategory.find(filter)
-      .populate("stockGroupId", "name")
       .sort(sort)
       .skip(skip)
       .limit(perPage),

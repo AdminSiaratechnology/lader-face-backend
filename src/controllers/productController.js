@@ -96,14 +96,21 @@ exports.createProduct = asyncHandler(async (req, res) => {
   console.log("clientId", clientId);
 
   // registration docs
-  let registrationDocs = [];
-  if (req?.files?.["registrationDocs"]) {
-    registrationDocs = req.files["registrationDocs"].map((file) => ({
-      type: req.body.docType || "Other",
-      file: file.location,
-      fileName: file.originalname,
-    }));
-  }
+    let registrationDocTypes;
+    try {
+      registrationDocTypes = JSON.parse(req.body.registrationDocTypes || '[]');
+    } catch (e) {
+      console.error('Failed to parse registrationDocTypes:', e);
+      registrationDocTypes = [];
+    }
+
+    if (req?.files?.['registrationDocs']) {
+      registrationDocs = req?.files['registrationDocs'].map((file, index) => ({
+        type: registrationDocTypes[index] || 'Other',
+        file: file.location,
+        fileName: file.originalname
+      }));
+    }
   // let code=await generateUniqueId(Product,"code")
 
   // Build product object
@@ -597,7 +604,7 @@ exports.createBulkProducts = asyncHandler(async (req, res) => {
         taxConfiguration: safeParse(body.taxConfiguration, {}),
         openingQuantities: safeParse(body.openingQuantities, []),
         remarks: body.remarks || undefined,
-        status: body.status || "Active",
+        status: body.status || "active",
         createdBy: userId,
         auditLogs: [
           {

@@ -4,41 +4,38 @@ const ApiResponse = require("../utils/apiResponse");
 const ApiError = require("../utils/apiError");
 const mongoose = require("mongoose");
 
-const Company=require("../models/Company")
-const Customer=require("../models/Customer")
-const Agent=require("../models/Agent")
-const Unit=require("../models/Unit")
-const Godown=require("../models/Godown")
-const StockCategory=require("../models/StockCategory")
-const StockGroup=require("../models/StockGroup")
-const User=require("../models/User")
-const Vendor=require("../models/Vendor")
-const Ledger=require("../models/Ladger")
-const Product=require("../models/Product")
-const {createAuditLog}=require("../utils/createAuditLog");
+const Company = require("../models/Company");
+const Customer = require("../models/Customer");
+const Agent = require("../models/Agent");
+const Unit = require("../models/Unit");
+const Godown = require("../models/Godown");
+const StockCategory = require("../models/StockCategory");
+const StockGroup = require("../models/StockGroup");
+const User = require("../models/User");
+const Vendor = require("../models/Vendor");
+const Ledger = require("../models/Ladger");
+const Product = require("../models/Product");
+const { createAuditLog } = require("../utils/createAuditLog");
 const Auditlog = require("../models/Auditlog");
-const modelMap = {Company,
-        Customer,
-        Agent,
-        Unit,
-        Godown,
-        StockCategory,
-        StockGroup,
-        Vendor,
-        Product,
-        User,
-        Ledger,
-  
+const modelMap = {
+  Company,
+  Customer,
+  Agent,
+  Unit,
+  Godown,
+  StockCategory,
+  StockGroup,
+  Vendor,
+  Product,
+  User,
+  Ledger,
 };
-
-
-
 
 // ✅ Get all Audit Logs by Client ID
 exports.getAuditLogsByClient = asyncHandler(async (req, res) => {
   const clientID = req.user.clientID;
   if (!clientID) throw new ApiError(400, "Client ID is required");
-console.log("hiiii")
+  console.log("hiiii");
   // Query params for filtering/sorting/pagination
   const {
     search = "",
@@ -111,20 +108,6 @@ console.log("hiiii")
 exports.getAuditLogsByClientAllAudilog = asyncHandler(async (req, res) => {
   const clientID = req.user.clientID;
   if (!clientID) throw new ApiError(400, "Client ID is required");
-
-let models={
-  company,
-customer,
-agent,
-unit,
-godown,
-"StockCategory":StockCategory,
-"Stock Group":StockGroup,
-user,
-vendor,
-ledger,
-product
-}
   // Query params for filtering/sorting/pagination
   const {
     search = "",
@@ -199,23 +182,18 @@ exports.getAuditLogsByClientDetailByID = asyncHandler(async (req, res) => {
   const clientID = req.user.clientID;
   if (!clientID) throw new ApiError(400, "Client ID is required");
 
-const {id}=req.params
-console.log("getAuditLogsByClientDetailByID")
+  const { id } = req.params;
+  console.log("getAuditLogsByClientDetailByID");
   // Query params for filtering/sorting/pagination
-  
-
-
 
   // ✅ Filters
-  const filter = { clientId: clientID,_id:new mongoose.Types.ObjectId(id) };
-
-  
+  const filter = { clientId: clientID, _id: new mongoose.Types.ObjectId(id) };
 
   // ✅ Fetch logs & count
   const [auditLogs, total] = await Promise.all([
     AuditLog.find(filter)
       .populate("performedBy", "name email role")
-      .populate("referenceId")
+      .populate("referenceId"),
   ]);
 
   return res.status(200).json(
@@ -223,7 +201,6 @@ console.log("getAuditLogsByClientDetailByID")
       200,
       {
         auditLogs,
-       
       },
       auditLogs.length
         ? "Audit logs fetched successfully"
@@ -231,8 +208,6 @@ console.log("getAuditLogsByClientDetailByID")
     )
   );
 });
-
-
 
 exports.restoreRecord = async (req, res) => {
   console.log("restoreRecord");
@@ -254,7 +229,7 @@ exports.restoreRecord = async (req, res) => {
         success: false,
         message: "Invalid module name",
       });
-console.log(Model,"model")
+    console.log(Model, "model");
     const record = await Model.findById(referenceId);
     console.log(module, "module");
     console.log(record, "record");
@@ -311,7 +286,6 @@ console.log(Model,"model")
       message: `${module} record restored successfully`,
       updatedAudit,
     });
-    
   } catch (error) {
     console.error("Restore Error:", error);
     res.status(500).json({
@@ -321,9 +295,3 @@ console.log(Model,"model")
     });
   }
 };
-
-
-
-
-
-
