@@ -83,7 +83,7 @@ const ensureFound = (doc, message = "Resource not found") => {
 // Create
 exports.createStockGroup = asyncHandler(async (req, res) => {
   const agentId = req.user.id;
-  const { companyId, name, description } = req.body;
+  const { companyId, name, description, parent } = req.body;
 
   // Required field check
   if (!companyId || !name) {
@@ -107,6 +107,7 @@ exports.createStockGroup = asyncHandler(async (req, res) => {
     clientId,
     companyId,
     stockGroupId,
+    parent,
     name,
     description,
     createdBy: agentId,
@@ -300,6 +301,7 @@ exports.getStockGroups = asyncHandler(async (req, res) => {
       },
     },
     { $unwind: { path: "$stockGroups", preserveNullAndEmptyArrays: false } },
+    { $unwind: {path: "$parent"}, preserveNullAndEmptyArrays: false},
     { $replaceRoot: { newRoot: "$stockGroups" } },
     {
       $facet: {
@@ -420,7 +422,7 @@ const result = await User.aggregate([
 // Update
 exports.updateStockGroup = asyncHandler(async (req, res) => {
   const agentId = req.user.id;
-  const { companyId, name, description, status } = req.body;
+  const { companyId, name, description, status, parent } = req.body;
 
   // ✅ Required field check
   if (!companyId || !name) {
@@ -438,7 +440,7 @@ exports.updateStockGroup = asyncHandler(async (req, res) => {
   if (!stockGroup) throw new ApiError(404, "Stock Group not found");
 
   // ✅ Allowed fields for update
-  const allowedFields = ["companyId", "name", "description", "status"];
+  const allowedFields = ["companyId", "name", "description", "status", "parent"];
   const updateData = {};
   Object.keys(req.body || {}).forEach(key => {
     if (allowedFields.includes(key)) updateData[key] = req.body[key];
