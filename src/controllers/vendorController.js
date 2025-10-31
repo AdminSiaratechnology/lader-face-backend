@@ -444,7 +444,7 @@ exports.getVendorsByCompany = asyncHandler(async (req, res) => {
 
   // Fetch data & total count
   const [vendors, total] = await Promise.all([
-    Vendor.find(filter).sort(sortOptions).skip(skip).limit(perPage),
+    Vendor.find(filter).select("-auditLogs").sort(sortOptions).skip(skip).limit(perPage),
     Vendor.countDocuments(filter),
   ]);
 console.log(vendors)
@@ -500,7 +500,7 @@ exports.getVendorsByClient = asyncHandler(async (req, res) => {
 
   // Fetch data & total count
   const [vendors, total] = await Promise.all([
-    Vendor.find(filter).sort(sortOptions).skip(skip).limit(perPage),
+    Vendor.find(filter).select("-auditLogs").sort(sortOptions).skip(skip).limit(perPage),
     Vendor.countDocuments(filter),
   ]);
 

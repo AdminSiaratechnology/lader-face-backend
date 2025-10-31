@@ -359,6 +359,7 @@ exports.getCustomersByCompany = asyncHandler(async (req, res) => {
   // Fetch data & total count
   const [customers, total] = await Promise.all([
     Customer.find(filter)
+    .select("-auditLogs")
       .sort(sortOptions)
       .skip(skip)
       .limit(perPage),
@@ -421,6 +422,7 @@ exports.getCustomersByClient = asyncHandler(async (req, res) => {
   // Fetch data & total count
   const [customers, total] = await Promise.all([
     Customer.find(filter)
+    .select("-auditLogs")
       .sort(sortOptions)
       .skip(skip)
       .limit(perPage),

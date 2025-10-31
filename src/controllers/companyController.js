@@ -296,7 +296,7 @@ exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
 
   // 4. DB se companies nikaalo
   const [companies, total] = await Promise.all([
-    Company.find(filter).sort(sort)
+    Company.find(filter).select("-auditLogs").sort(sort)
     .skip(skip).limit(perPage)
     ,
     Company.countDocuments(filter),
@@ -497,7 +497,7 @@ exports.getCompanies = asyncHandler(async (req, res) => {
   const filter = { isDeleted: false }; // 🟢 sirf active companies
   if (clientId) filter.client = clientId;
 
-  const companies = await Company.find(filter);
+  const companies = await Company.find(filter).select("-auditLogs");
   const newcompanies={companies:[...companies]}
 
 
