@@ -197,7 +197,8 @@ exports.getAllClientUsers = asyncHandler(async (req, res) => {
         },
       },
     },
-    { $project: { accessCompanies: 0 } },
+    
+    { $project: { accessCompanies: 0 ,   auditLogs: 0,password:0} },
     {
       $facet: {
         records: [{ $skip: skip }, { $limit: perPage }],

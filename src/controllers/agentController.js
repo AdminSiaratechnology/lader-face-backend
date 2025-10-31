@@ -433,7 +433,7 @@ exports.getAgentsByCompany = asyncHandler(async (req, res) => {
 
   // Fetch data & total count
   const [agents, total] = await Promise.all([
-    Agent.find(filter)
+    Agent.find(filter).select("-auditLogs")
       .sort(sortOptions)
       .skip(skip)
       .limit(perPage),
@@ -522,7 +522,7 @@ exports.getAgentsByClient = asyncHandler(async (req, res) => {
 exports.getAgentById = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  const agent = await Agent.findById(id).populate("company");
+  const agent = await Agent.findById(id).select("-auditLogs").populate("company");
   if (!agent) throw new ApiError(404, "Agent not found");
 
   res

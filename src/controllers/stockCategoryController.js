@@ -251,6 +251,7 @@ exports.getStockCategories = asyncHandler(async (req, res) => {
   // query with pagination
   const [categories, total] = await Promise.all([
     StockCategory.find(filter)
+    .select("-auditLogs")
       .sort(sort)
       .skip(skip)
       .limit(perPage),
@@ -312,6 +313,7 @@ exports.getStockCategoriesByCompanyId = asyncHandler(async (req, res) => {
   // query with pagination
   const [categories, total] = await Promise.all([
     StockCategory.find(filter)
+    .select("-auditLogs")
       .sort(sort)
       .skip(skip)
       .limit(perPage),

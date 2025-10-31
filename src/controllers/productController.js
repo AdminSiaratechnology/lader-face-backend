@@ -369,6 +369,7 @@ exports.getProductById = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
   const product = await Product.findOne({ _id: id, status: { $ne: "Delete" } })
+  .select("-auditLogs")
     .populate('companyId', 'namePrint')
     .populate('clientId', 'name email')
     .populate('stockGroup', 'name')
@@ -429,6 +430,7 @@ exports.listProducts = asyncHandler(async (req, res) => {
   // ✅ Fetch data & total count in parallel
   const [items, total] = await Promise.all([
     Product.find(filter)
+    .select("-auditLogs")
       .populate("stockGroup", "name")
       .populate("stockCategory", "name")
       .populate("unit", "name symbol")
@@ -507,6 +509,7 @@ exports.listProductsByCompanyId = asyncHandler(async (req, res) => {
   // ✅ Fetch data & total count in parallel
   const [items, total] = await Promise.all([
     Product.find(filter)
+    .select("-auditLogs")
       .populate("stockGroup", "name")
       .populate("stockCategory", "name")
       .populate("unit", "name symbol")

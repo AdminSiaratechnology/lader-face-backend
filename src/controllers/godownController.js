@@ -462,6 +462,7 @@ exports.getGodowns = asyncHandler(async (req, res) => {
 // ✅ Get godown by ID
 exports.getGodownById = asyncHandler(async (req, res) => {
   const godown = await Godown.findById(req.params.id)
+  .select("-auditLogs")
     .populate("company", "namePrint")
     .populate("client", "name email");
 
@@ -495,59 +496,62 @@ exports.getGodownsByCompany = asyncHandler(async (req, res) => {
       sort = { createdAt: -1 };
     }
 
-    const result = await User.aggregate([
-      {
-        $match: {
-          _id: new mongoose.Types.ObjectId(userId),
-          
-        },
-      },
-      {
-        $lookup: {
-          from: "godowns",
-          localField: "clientID",
-          foreignField: "client",
-          as: "godowns",
-        },
-      },
-      {
-        $unwind: {
-          path: "$godowns",
-          preserveNullAndEmptyArrays: false,
-        },
-      },
-      {
-        $replaceRoot: { newRoot: "$godowns" }, // sirf godown document ban gaya
-      },
-      {
-        $match: {
-          ...(status ? { status } : {}),
-          ...(search
-            ? {
-                $or: [
-                  { name: { $regex: search, $options: "i" } },
-                  { location: { $regex: search, $options: "i" } },
-                ],
-              }
-            : {}),
-          company:new mongoose.Types.ObjectId(companyId),
-        },
-      },
-      {
-        $sort: sort,
-      },
-      {
-        $facet: {
-          records: [
-            { $skip: skip },
-            { $limit: perPage },
-          ],
-          totalCount: [
-            { $count: "count" },
-          ],
-        },
-      },
-    ]);
+   const result = await User.aggregate([
+  {
+    $match: {
+      _id: new mongoose.Types.ObjectId(userId),
+    },
+  },
+  {
+    $lookup: {
+      from: "godowns",
+      localField: "clientID",
+      foreignField: "client",
+      as: "godowns",
+    },
+  },
+  {
+    $unwind: {
+      path: "$godowns",
+      preserveNullAndEmptyArrays: false,
+    },
+  },
+  {
+    $replaceRoot: { newRoot: "$godowns" },
+  },
+  {
+    $match: {
+      ...(status ? { status } : {}),
+      ...(search
+        ? {
+            $or: [
+              { name: { $regex: search, $options: "i" } },
+              { location: { $regex: search, $options: "i" } },
+            ],
+          }
+        : {}),
+      company: new mongoose.Types.ObjectId(companyId),
+    },
+  },
+  {
+    $sort: sort,
+  },
+
+  // 🧹 Exclude auditLogs here
+  {
+    $project: {
+      auditLogs: 0, // 0 = exclude field
+    },
+  },
+
+  {
+    $facet: {
+      records: [{ $skip: skip }, { $limit: perPage }],
+      totalCount: [{ $count: "count" }],
+    },
+  },
+]);
+
 
     const records = result?.[0]?.records || [];
     const total = result?.[0]?.totalCount?.[0]?.count || 0;
