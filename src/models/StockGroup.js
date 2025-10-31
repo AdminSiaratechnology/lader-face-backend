@@ -16,6 +16,7 @@ const stockGroupSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   description: { type: String },
   status: { type: String, enum: [ "active", "inactive", "delete"], default: "active" },
+  parent: { type: mongoose.Schema.Types.ObjectId, ref: "StockGroup" },
   stockGroupId:{
     type:String,
     required:true
