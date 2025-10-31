@@ -129,7 +129,7 @@ exports.registerInside = asyncHandler(async (req, res) => {
 // ✅ UPDATE USER
 exports.updateUser = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const updateData = { ...req.body };
+  const updateData = { ...req.body, clientID: req.user.clientID };
 
   const user = await User.findById(id);
   if (!user) throw new ApiError(404, "User not found");
@@ -154,7 +154,7 @@ exports.updateUser = asyncHandler(async (req, res) => {
 Object.entries(updateData).forEach(([key, value]) => {
  if (["createdBy", "createdAt", "_id", "password"].includes(key)) return;
 
- if (["parent", "clientID", "company"].includes(key)) {
+ if (["parent",  "company"].includes(key)) {
   if (value && mongoose.Types.ObjectId.isValid(value)) {
    user[key] = new mongoose.Types.ObjectId(value);
   } else {

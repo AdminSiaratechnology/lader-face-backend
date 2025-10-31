@@ -125,11 +125,8 @@ exports.getAllClientUsersWithCompany = asyncHandler(async (req, res) => {
     )
   );
 });
-
 exports.getAllClientUsers = asyncHandler(async (req, res) => {
-  console.log("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
-  const clientId = req.user.clientID; // Logged in user ID
-  console.log(clientId, "clientId");
+  const clientId = req.user.clientID;
   const {
     search = "",
     role = "",
@@ -139,77 +136,75 @@ exports.getAllClientUsers = asyncHandler(async (req, res) => {
     page = 1,
     limit = 10,
   } = req.query;
-
   const perPage = parseInt(limit, 10);
   const currentPage = Math.max(parseInt(page, 10), 1);
   const skip = (currentPage - 1) * perPage;
   const sortField = sortBy === "name" ? "name" : "createdAt";
   const sortOrderValue = sortOrder === "desc" ? -1 : 1;
-  // aggregation
-  const result = await User.aggregate(
-    [
-      { $match: { clientID: new mongoose.Types.ObjectId(clientId) } },
-      { $sort: { [sortField]: sortOrderValue } },
-      {
-        $lookup: {
-          from: "companies",
-          localField: "access.company",
-          foreignField: "_id",
-          as: "accessCompanies",
-          pipeline: [
-            { $project: { namePrint: 1 } }, // only fetch name
-          ],
-        },
-      },
 
-      // ✅ Merge only company name into access
-      {
-        $addFields: {
-          access: {
-            $map: {
-              input: "$access",
-              as: "acc",
-              in: {
-                $mergeObjects: [
-                  "$$acc",
-                  {
-                    company: {
-                      $arrayElemAt: [
-                        {
-                          $map: {
-                            input: {
-                              $filter: {
-                                input: "$accessCompanies",
-                                as: "acomp",
-                                cond: { $eq: ["$$acomp._id", "$$acc.company"] },
-                              },
-                            },
-                            as: "c",
-                            in: { _id: "$$c._id", namePrint: "$$c.namePrint" },
-                          },
+  const matchStage = {
+    clientID: new mongoose.Types.ObjectId(clientId),
+  };
+  if (search) {
+    matchStage.$or = [
+      { name: { $regex: search, $options: "i" } },
+      { email: { $regex: search, $options: "i" } },
+    ];
+  }
+  if (role) matchStage.role = role;
+  if (status) matchStage.status = status;
+
+  const result = await User.aggregate([
+    { $match: matchStage },
+    { $sort: { [sortField]: sortOrderValue } },
+    {
+      $lookup: {
+        from: "companies",
+        let: { companyIds: "$access.company" },
+        pipeline: [
+          { $match: { $expr: { $in: ["$_id", "$$companyIds"] } } },
+          { $project: { namePrint: 1 } },
+        ],
+        as: "accessCompanies",
+      },
+    },
+    {
+      $addFields: {
+        access: {
+          $map: {
+            input: "$access",
+            as: "acc",
+            in: {
+              $mergeObjects: [
+                "$$acc",
+                {
+                  company: {
+                    $arrayElemAt: [
+                      {
+                        $filter: {
+                          input: "$accessCompanies",
+                          as: "c",
+                          cond: { $eq: ["$$c._id", "$$acc.company"] },
                         },
-                        0,
-                      ],
-                    },
+                      },
+                      0,
+                    ],
                   },
-                ],
-              },
+                },
+              ],
             },
           },
         },
       },
-
-      { $project: { accessCompanies: 0 } },
-
-      {
-        $facet: {
-          records: [{ $skip: skip }, { $limit: perPage }],
-          totalCount: [{ $count: "count" }],
-        },
+    },
+    { $project: { accessCompanies: 0 } },
+    {
+      $facet: {
+        records: [{ $skip: skip }, { $limit: perPage }],
+        totalCount: [{ $count: "count" }],
       },
-    ],
-    { maxTimeMS: 60000, allowDiskUse: true }
-  );
+    },
+  ], { maxTimeMS: 60000, allowDiskUse: true });
 
   const users = result?.[0]?.records || [];
   const total = result?.[0]?.totalCount?.[0]?.count || 0;
@@ -230,3 +225,4 @@ exports.getAllClientUsers = asyncHandler(async (req, res) => {
     )
   );
 });
+

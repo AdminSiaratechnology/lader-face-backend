@@ -72,13 +72,21 @@ exports.createCustomer = asyncHandler(async (req, res) => {
   // console.log(req.files,req.body,"req,files")
 
   // Registration docs files
-  if (req?.files?.['registrationDocs']) {
-    registrationDocs = req.files['registrationDocs'].map(file => ({
-      type: req.body.docType || 'Other',
-      file: file.location,
-      fileName: file.originalname
-    }));
-  }
+    let registrationDocTypes;
+    try {
+      registrationDocTypes = JSON.parse(req.body.registrationDocTypes || '[]');
+    } catch (e) {
+      console.error('Failed to parse registrationDocTypes:', e);
+      registrationDocTypes = [];
+    }
+
+    if (req?.files?.['registrationDocs']) {
+      registrationDocs = req?.files['registrationDocs'].map((file, index) => ({
+        type: registrationDocTypes[index] || 'Other',
+        file: file.location,
+        fileName: file.originalname
+      }));
+    }
   let code=await generateUniqueId(Customer,"code")
   console.log(JSON.parse(req.body.banks),"JSON.parse(req.body.banks)")
 

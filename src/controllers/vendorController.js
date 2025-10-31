@@ -1,24 +1,24 @@
-const Vendor = require('../models/Vendor');
-const Company = require('../models/Company');
-const asyncHandler = require('../utils/asyncHandler');
-const ApiError = require('../utils/apiError');
-const ApiResponse = require('../utils/apiResponse');
+const Vendor = require("../models/Vendor");
+const Company = require("../models/Company");
+const asyncHandler = require("../utils/asyncHandler");
+const ApiError = require("../utils/apiError");
+const ApiResponse = require("../utils/apiResponse");
 // const { generateUniqueId } = require('../utils/generate16DigiId');
-const mongoose = require('mongoose');
-const   {createAuditLog}=require("../utils/createAuditLog")
-
+const mongoose = require("mongoose");
+const { createAuditLog } = require("../utils/createAuditLog");
+const { generateUniqueId } = require("../utils/generate16DigiId");
 
 // Generate unique 18-digit code using timestamp and index
-const generateUniqueId = (index) => {
-  const timestamp = Date.now();
-  const random = Math.floor(1000 + Math.random() * 9000); // 4-digit random number
-  return `${timestamp}${index.toString().padStart(4, '0')}${random}`.slice(-18); // 18-digit code
-};
+// const generateUniqueId = (index) => {
+//   const timestamp = Date.now();
+//   const random = Math.floor(1000 + Math.random() * 9000); // 4-digit random number
+//   return `${timestamp}${index.toString().padStart(4, '0')}${random}`.slice(-18); // 18-digit code
+// };
 
 // Insert records in batches with robust error handling
 const insertInBatches = async (data, batchSize) => {
   if (!data || !Array.isArray(data) || data.length === 0) {
-    console.error('No valid data to insert');
+    console.error("No valid data to insert");
     return [];
   }
 
@@ -37,18 +37,28 @@ const insertInBatches = async (data, batchSize) => {
         results.push(...inserted);
         console.log(`Inserted ${inserted.length} records in batch`);
       } else {
-        console.error('No records inserted in batch');
+        console.error("No records inserted in batch");
       }
     } catch (error) {
-      if (error.name === 'MongoBulkWriteError' && error.code === 11000) {
-        const failedDocs = error.writeResult?.result?.writeErrors?.map(err => ({
-          code: err.op.code,
-          error: err.errmsg
-        })) || [];
-        const successfulDocs = batch.filter(doc => !failedDocs.some(f => f.code === doc.code));
-        results.push(...successfulDocs.map(doc => ({ ...doc, _id: doc._id || new mongoose.Types.ObjectId() })));
-        failedDocs.forEach(failed => {
-          console.error(`Failed to insert record with code ${failed.code}: ${failed.error}`);
+      if (error.name === "MongoBulkWriteError" && error.code === 11000) {
+        const failedDocs =
+          error.writeResult?.result?.writeErrors?.map((err) => ({
+            code: err.op.code,
+            error: err.errmsg,
+          })) || [];
+        const successfulDocs = batch.filter(
+          (doc) => !failedDocs.some((f) => f.code === doc.code)
+        );
+        results.push(
+          ...successfulDocs.map((doc) => ({
+            ...doc,
+            _id: doc._id || new mongoose.Types.ObjectId(),
+          }))
+        );
+        failedDocs.forEach((failed) => {
+          console.error(
+            `Failed to insert record with code ${failed.code}: ${failed.error}`
+          );
         });
       } else {
         console.error(`Batch insertion failed: ${error.message}`);
@@ -57,8 +67,11 @@ const insertInBatches = async (data, batchSize) => {
   }
 
   // Verify inserted records
-  const insertedIds = results.map(doc => doc._id);
-  const verifiedDocs = insertedIds.length > 0 ? await Vendor.find({ _id: { $in: insertedIds } }) : [];
+  const insertedIds = results.map((doc) => doc._id);
+  const verifiedDocs =
+    insertedIds.length > 0
+      ? await Vendor.find({ _id: { $in: insertedIds } })
+      : [];
   console.log(`Verified ${verifiedDocs.length} records in database`);
   return verifiedDocs;
 };
@@ -89,17 +102,24 @@ exports.createVendor = asyncHandler(async (req, res) => {
   let registrationDocs = [];
 
   // Logo file
-  if (req?.files?.['logo'] && req?.files?.['logo'][0]) {
-    logoUrl = req.files['logo'][0].location;
+  if (req?.files?.["logo"] && req?.files?.["logo"][0]) {
+    logoUrl = req.files["logo"][0].location;
   }
   // console.log(req.files,req.body,"req,files")
 
-  // Registration docs files
-  if (req?.files?.['registrationDocs']) {
-    registrationDocs = req.files['registrationDocs'].map(file => ({
-      type: req.body.docType || 'Other',
+  let registrationDocTypes;
+  try {
+    registrationDocTypes = JSON.parse(req.body.registrationDocTypes || "[]");
+  } catch (e) {
+    console.error("Failed to parse registrationDocTypes:", e);
+    registrationDocTypes = [];
+  }
+
+  if (req?.files?.["registrationDocs"]) {
+    registrationDocs = req?.files["registrationDocs"].map((file, index) => ({
+      type: registrationDocTypes[index] || "Other",
       file: file.location,
-      fileName: file.originalname
+      fileName: file.originalname,
     }));
   }
   let code = await generateUniqueId(Vendor, "code");
@@ -117,27 +137,27 @@ exports.createVendor = asyncHandler(async (req, res) => {
     registrationDocs: registrationDocs || [],
     banks: JSON.parse(req.body.banks),
     company: companyID,
-        createdBy: adminId,
-             auditLogs: [
-                  {
-                    action: "create",
-                    performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
-                    timestamp: new Date(),
-                    details: "vendor created",
-                  },
-                ],
+    createdBy: adminId,
+    auditLogs: [
+      {
+        action: "create",
+        performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+        timestamp: new Date(),
+        details: "vendor created",
+      },
+    ],
   });
 
   let ipAddress =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
+
   // convert ::1 → 127.0.0.1
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
   }
-  
+
   console.log(ipAddress, "ipaddress");
-    await createAuditLog({
+  await createAuditLog({
     module: "Vendor",
     action: "create",
     performedBy: req.user.id,
@@ -175,7 +195,7 @@ exports.createBulkVendors = asyncHandler(async (req, res) => {
 
   // Preload existing codes
   const existingVendors = await Vendor.find({}, "code");
-  const existingCodes = new Set(existingVendors.map(vendor => vendor.code));
+  const existingCodes = new Set(existingVendors.map((vendor) => vendor.code));
 
   const results = [];
   const errors = [];
@@ -209,8 +229,14 @@ exports.createBulkVendors = asyncHandler(async (req, res) => {
       seenCodes.add(code);
 
       // Generate unique values for optional fields if not provided
-      const emailAddress = body.emailAddress || `${body.vendorName.replace(/\s+/g, '').toLowerCase()}${index}@gmail.com`;
-      const phoneNumber = body.phoneNumber || `+919${(973884720 + index).toString().padStart(9, '0')}`;
+      const emailAddress =
+        body.emailAddress ||
+        `${body.vendorName
+          .replace(/\s+/g, "")
+          .toLowerCase()}${index}@gmail.com`;
+      const phoneNumber =
+        body.phoneNumber ||
+        `+919${(973884720 + index).toString().padStart(9, "0")}`;
 
       const vendorObj = {
         _id: new mongoose.Types.ObjectId(), // Generate unique _id
@@ -276,16 +302,16 @@ exports.updateVendor = asyncHandler(async (req, res) => {
   let banks = vendor.banks;
 
   // ✅ 2. Replace logo if new one uploaded
-  if (req?.files?.['logo'] && req?.files?.['logo'][0]) {
-    logoUrl = req.files['logo'][0].location;
+  if (req?.files?.["logo"] && req?.files?.["logo"][0]) {
+    logoUrl = req.files["logo"][0].location;
   }
 
   // ✅ 3. Replace registration docs if new ones uploaded
-  if (req?.files?.['registrationDocs']) {
-    registrationDocs = req.files['registrationDocs'].map(file => ({
-      type: req.body.docType || 'Other',
+  if (req?.files?.["registrationDocs"]) {
+    registrationDocs = req.files["registrationDocs"].map((file) => ({
+      type: req.body.docType || "Other",
       file: file.location,
-      fileName: file.originalname
+      fileName: file.originalname,
     }));
   }
 
@@ -311,14 +337,18 @@ exports.updateVendor = asyncHandler(async (req, res) => {
 
   booleanFields.forEach((field) => {
     if (field in updateData) {
-      updateData[field] = updateData[field] === "true" || updateData[field] === true;
+      updateData[field] =
+        updateData[field] === "true" || updateData[field] === true;
     }
   });
 
   // ✅ 6. Parse banks if sent as JSON string
   if (req.body.banks) {
     try {
-      banks = typeof req.body.banks === "string" ? JSON.parse(req.body.banks) : req.body.banks;
+      banks =
+        typeof req.body.banks === "string"
+          ? JSON.parse(req.body.banks)
+          : req.body.banks;
       updateData.banks = banks;
     } catch (err) {
       throw new ApiError(400, "Invalid banks data");
@@ -351,9 +381,9 @@ exports.updateVendor = asyncHandler(async (req, res) => {
 
   await vendor.save();
 
-   let ipAddress =
+  let ipAddress =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
+
   // convert ::1 → 127.0.0.1
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
@@ -374,8 +404,6 @@ exports.updateVendor = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, vendor, "Vendor updated successfully"));
 });
 
-
-
 // 🟢 Get All Vendors (for a company)
 exports.getVendorsByCompany = asyncHandler(async (req, res) => {
   const clientID = req.user.clientID;
@@ -387,40 +415,39 @@ exports.getVendorsByCompany = asyncHandler(async (req, res) => {
     sortBy = "name",
     sortOrder = "asc",
     page = 1,
-    limit = 10
+    limit = 10,
   } = req.query;
-     const { companyId } = req.params;
-   if (!companyId) throw new ApiError(400, "Company ID is required");
-
+  const { companyId } = req.params;
+  if (!companyId) throw new ApiError(400, "Company ID is required");
   const perPage = parseInt(limit, 10);
   const currentPage = Math.max(parseInt(page, 10), 1);
   const skip = (currentPage - 1) * perPage;
 
   // Filter
-  const filter = { clientId: clientID,company:companyId, status: { $ne: "Delete" } };
+  const filter = {
+    clientId: clientID,
+    company: companyId,
+    status: { $ne: "Delete" },
+  };
   if (status && status.trim() !== "") filter.status = status;
 
   if (search && search.trim() !== "") {
     filter.$or = [
-      { name: { $regex: search, $options: "i" } },
-      { email: { $regex: search, $options: "i" } },
-      { contactNumber: { $regex: search, $options: "i" } },
+      { vendorName: { $regex: search, $options: "i" } },
+      { emailAddress: { $regex: search, $options: "i" } },
+      { phoneNumber: { $regex: search, $options: "i" } },
     ];
   }
-
   // Sorting
   const sortDirection = sortOrder === "asc" ? 1 : -1;
   const sortOptions = { [sortBy]: sortDirection };
 
   // Fetch data & total count
   const [vendors, total] = await Promise.all([
-    Vendor.find(filter)
-      .sort(sortOptions)
-      .skip(skip)
-      .limit(perPage),
+    Vendor.find(filter).sort(sortOptions).skip(skip).limit(perPage),
     Vendor.countDocuments(filter),
   ]);
-
+console.log(vendors)
   res.status(200).json(
     new ApiResponse(
       200,
@@ -473,10 +500,7 @@ exports.getVendorsByClient = asyncHandler(async (req, res) => {
 
   // Fetch data & total count
   const [vendors, total] = await Promise.all([
-    Vendor.find(filter)
-      .sort(sortOptions)
-      .skip(skip)
-      .limit(perPage),
+    Vendor.find(filter).sort(sortOptions).skip(skip).limit(perPage),
     Vendor.countDocuments(filter),
   ]);
 
@@ -496,7 +520,6 @@ exports.getVendorsByClient = asyncHandler(async (req, res) => {
     )
   );
 });
-
 
 // 🟢 Get Single Vendor
 exports.getVendorById = asyncHandler(async (req, res) => {
@@ -532,22 +555,22 @@ exports.deleteVendor = asyncHandler(async (req, res) => {
 
   // soft delete
   vendor.status = "Delete";
-   vendor.auditLogs.push({
-          action: "delete",
-          performedBy: new mongoose.Types.ObjectId(req.user.id),
-          timestamp: new Date(),
-          details: "Vendor marked as deleted",
-        });
-  
+  vendor.auditLogs.push({
+    action: "delete",
+    performedBy: new mongoose.Types.ObjectId(req.user.id),
+    timestamp: new Date(),
+    details: "Vendor marked as deleted",
+  });
+
   await vendor.save();
   let ipAddress =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
+
   // convert ::1 → 127.0.0.1
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
   }
-    await createAuditLog({
+  await createAuditLog({
     module: "Vendor",
     action: "delete",
     performedBy: req.user.id,
@@ -556,7 +579,6 @@ exports.deleteVendor = asyncHandler(async (req, res) => {
     details: "vendor marked as deleted",
     ipAddress,
   });
-
 
   // send response
   res.status(200).json({

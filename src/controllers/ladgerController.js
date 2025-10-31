@@ -7,13 +7,14 @@ const ApiResponse = require('../utils/apiResponse');
 // const { generateUniqueId } = require('../utils/generate16DigiId');
 const mongoose = require('mongoose');
 const   {createAuditLog}=require("../utils/createAuditLog")
+const { generateUniqueId } = require('../utils/generate16DigiId');
 
 // Generate unique 18-digit code using timestamp and index
-const generateUniqueId = (index) => {
-  const timestamp = Date.now();
-  const random = Math.floor(1000 + Math.random() * 9000); // 4-digit random number
-  return `${timestamp}${index.toString().padStart(4, '0')}${random}`.slice(-18); // 18-digit code
-};
+// const generateUniqueId = (index) => {
+//   const timestamp = Date.now();
+//   const random = Math.floor(1000 + Math.random() * 9000); // 4-digit random number
+//   return `${timestamp}${index.toString().padStart(4, '0')}${random}`.slice(-18); // 18-digit code
+// };
 
 // Insert records in batches with robust error handling
 const insertInBatches = async (data, batchSize) => {
@@ -88,13 +89,21 @@ exports.createLedger = asyncHandler(async (req, res) => {
   }
 
   // Registration docs files
-  if (req?.files?.['registrationDocs']) {
-    registrationDocs = req.files['registrationDocs'].map(file => ({
-      type: req.body.docType || 'Other',
-      file: file.location,
-      fileName: file.originalname
-    }));
-  }
+     let registrationDocTypes;
+    try {
+      registrationDocTypes = JSON.parse(req.body.registrationDocTypes || '[]');
+    } catch (e) {
+      console.error('Failed to parse registrationDocTypes:', e);
+      registrationDocTypes = [];
+    }
+
+    if (req?.files?.['registrationDocs']) {
+      registrationDocs = req?.files['registrationDocs'].map((file, index) => ({
+        type: registrationDocTypes[index] || 'Other',
+        file: file.location,
+        fileName: file.originalname
+      }));
+    }
   let ledgerCode = await generateUniqueId(Ledger, "ledgerCode");
 
   const ledger = await Ledger.create({
@@ -387,9 +396,9 @@ exports.getLedgersByCompany = asyncHandler(async (req, res) => {
 
   if (search && search.trim() !== "") {
     filter.$or = [
-      { name: { $regex: search, $options: "i" } },
-      { email: { $regex: search, $options: "i" } },
-      { contactNumber: { $regex: search, $options: "i" } },
+      { ledgerName: { $regex: search, $options: "i" } },
+      { emailAddress: { $regex: search, $options: "i" } },
+      { phoneNumber: { $regex: search, $options: "i" } },
     ];
   }
 

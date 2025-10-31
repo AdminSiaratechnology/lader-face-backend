@@ -7,13 +7,15 @@ const ApiResponse = require('../utils/apiResponse');
 const mongoose = require('mongoose');
 const User=require("../models/User")
 const   {createAuditLog}=require("../utils/createAuditLog")
+const { generateUniqueId } = require('../utils/generate16DigiId');
+
 // Generate unique code using timestamp and index
-const generateUniqueId = (index) => {
-  const timestamp = Date.now();
-  const random = Math.floor(1000 + Math.random() * 9000); // 4-digit random number
-  return `${timestamp}${index.toString().padStart(4, '0')}${random}`.slice(-18); // 18-digit code to match input length
-};
-console.log(generateUniqueId(1))
+// const generateUniqueId = (index) => {
+//   const timestamp = Date.now();
+//   const random = Math.floor(1000 + Math.random() * 9000); // 4-digit random number
+//   return `${timestamp}${index.toString().padStart(4, '0')}${random}`.slice(-18); // 18-digit code to match input length
+// };
+// console.log(generateUniqueId(1))
 // Insert records in batches with robust error handling
 const insertInBatches = async (data, batchSize) => {
   if (!data || !Array.isArray(data) || data.length === 0) {
@@ -90,13 +92,21 @@ exports.createAgent = asyncHandler(async (req, res) => {
   }
 
   // Registration docs files
-  if (req?.files?.['registrationDocs']) {
-    registrationDocs = req.files['registrationDocs'].map(file => ({
-      type: req.body.docType || 'Other',
-      file: file.location,
-      fileName: file.originalname
-    }));
-  }
+    let registrationDocTypes;
+    try {
+      registrationDocTypes = JSON.parse(req.body.registrationDocTypes || '[]');
+    } catch (e) {
+      console.error('Failed to parse registrationDocTypes:', e);
+      registrationDocTypes = [];
+    }
+
+    if (req?.files?.['registrationDocs']) {
+      registrationDocs = req?.files['registrationDocs'].map((file, index) => ({
+        type: registrationDocTypes[index] || 'Other',
+        file: file.location,
+        fileName: file.originalname
+      }));
+    }
   let code = await generateUniqueId(Agent, "code");
   console.log(JSON.parse(req.body.banks), "JSON.parse(req.body.banks)");
 
@@ -412,9 +422,9 @@ exports.getAgentsByCompany = asyncHandler(async (req, res) => {
   if(status && status.trim()!=="") filter.status=status;
   if(search && search.trim()!=="") {
      filter.$or = [
-      { name: { $regex: search, $options: "i" } },
-      { email: { $regex: search, $options: "i" } },
-      { contactNumber: { $regex: search, $options: "i" } },
+      { agentName: { $regex: search, $options: "i" } },
+      { emailAddress: { $regex: search, $options: "i" } },
+      { phoneNumber: { $regex: search, $options: "i" } },
     ];
   }
   // Sorting

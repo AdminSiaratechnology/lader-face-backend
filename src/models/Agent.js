@@ -3,13 +3,13 @@ const auditLogSchema = require("../middlewares/auditLogSchema");
 
 // Bank schema
 const BankSchema = new mongoose.Schema({
-  accountHolderName: { type: String, required: true },
-  accountNumber: { type: String, required: true },
-  ifscCode: { type: String, required: true },
-  swiftCode: { type: String },
-  micrNumber: { type: String },
-  bankName: { type: String, required: true },
-  branch: { type: String, required: true },
+   accountHolderName: String,
+  accountNumber: String,
+  ifscCode: String,
+  swiftCode: String,
+  micrNumber: String,
+  bankName: String,
+  branch: String,
 });
 
 // Registration Document schema
