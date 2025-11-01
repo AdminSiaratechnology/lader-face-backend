@@ -356,7 +356,7 @@ const result = await User.aggregate([
       pipeline: [
         {
           $match: {
-            status: { $ne: "Delete" },
+            status: { $ne: "delete" },
             ...(companyId
               ? { companyId: new mongoose.Types.ObjectId(companyId) } // ✅ only add if valid
               : {}),
