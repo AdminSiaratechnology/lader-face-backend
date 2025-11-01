@@ -512,7 +512,7 @@ exports.deleteStockGroup = asyncHandler(async (req, res) => {
   }
 
   // Soft delete update
-  stock.status = "Delete";
+  stock.status = "delete";
      stock.auditLogs.push({
               action: "delete",
               performedBy: new mongoose.Types.ObjectId(req.user.id),

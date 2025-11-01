@@ -449,7 +449,7 @@ exports.getLedgersByClient = asyncHandler(async (req, res) => {
   const skip = (currentPage - 1) * perPage;
 
   // Filter
-  const filter = { clientId: clientID, status: { $ne: "Delete" } };
+  const filter = { clientId: clientID, status: { $ne: "delete" } };
   if (status && status.trim() !== "") filter.status = status;
 
   if (search && search.trim() !== "") {
@@ -521,7 +521,7 @@ exports.deleteLedger = asyncHandler(async (req, res) => {
   }
 
   // Soft delete
-  ledger.status = "Delete";
+  ledger.status = "delete";
   ledger.auditLogs.push({
               action: "delete",
               performedBy: new mongoose.Types.ObjectId(req.user.id),
