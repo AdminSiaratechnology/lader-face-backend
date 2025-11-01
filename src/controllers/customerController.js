@@ -325,8 +325,8 @@ exports.getCustomersByCompany = asyncHandler(async (req, res) => {
   const {
     search = "",
     status = "",
-    sortBy = "name",
-    sortOrder = "asc",
+    sortBy = "createdAt",
+    sortOrder = "desc",
     page = 1,
     limit = 10,
   } = req.query;

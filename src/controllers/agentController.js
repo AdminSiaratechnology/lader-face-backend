@@ -409,8 +409,8 @@ exports.getAgentsByCompany = asyncHandler(async (req, res) => {
   const {
     search="",
     status="",
-    sortBy='',
-    sortOrder="asc",
+    sortBy='createdAt',
+    sortOrder="desc",
     page=1,
     limit=10
   }=req.query;
