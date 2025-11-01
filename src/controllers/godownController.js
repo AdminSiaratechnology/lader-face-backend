@@ -480,7 +480,6 @@ exports.getGodownsByCompany = asyncHandler(async (req, res) => {
  const { companyId } = req.params;
        if (!companyId) throw new ApiError(400, "Company ID is required");
     const { search, status, sortBy, sortOrder, limit = 3, page = 1 } = req.query;
-       
 
     const perPage = parseInt(limit, 10);
     const currentPage = parseInt(page, 10);
@@ -499,7 +498,7 @@ exports.getGodownsByCompany = asyncHandler(async (req, res) => {
    const result = await User.aggregate([
   {
     $match: {
-      _id: new mongoose.Types.ObjectId(userId),
+      _id: new mongoose.Types.ObjectId(userId)
     },
   },
   {
@@ -531,6 +530,13 @@ exports.getGodownsByCompany = asyncHandler(async (req, res) => {
           }
         : {}),
       company: new mongoose.Types.ObjectId(companyId),
+      $and: [
+    {
+      status: {
+        $ne: "delete"
+      }
+    }
+  ]
     },
   },
   {
