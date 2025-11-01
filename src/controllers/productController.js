@@ -485,7 +485,7 @@ exports.listProductsByCompanyId = asyncHandler(async (req, res) => {
   if (stockCategory) filter.stockCategory = stockCategory;
 
   // ✅ Status filter (default: exclude Delete)
-  filter.status = status && status.trim() !== "" ? status : { $ne: "Delete" };
+  filter.status = status && status.trim() !== "" ? status : { $ne: "delete" };
 
   // 🔍 Search filter
   if (search && search.trim() !== "") {

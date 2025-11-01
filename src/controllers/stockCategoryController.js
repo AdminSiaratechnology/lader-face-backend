@@ -281,7 +281,7 @@ exports.getStockCategoriesByCompanyId = asyncHandler(async (req, res) => {
   if(!companyId) throw new ApiError(400,"company id is required")
 
   // filter object
-  const filter = { status: { $ne: "Delete" } }; // soft delete filter
+  const filter = { status: { $ne: "delete" } }; // soft delete filter
 
   if (companyId) filter.companyId = companyId;
   if (stockGroupId) filter.stockGroupId = stockGroupId;
@@ -313,6 +313,7 @@ exports.getStockCategoriesByCompanyId = asyncHandler(async (req, res) => {
   // query with pagination
   const [categories, total] = await Promise.all([
     StockCategory.find(filter)
+    .populate("companyId")
     .select("-auditLogs")
       .sort(sort)
       .skip(skip)

@@ -338,7 +338,7 @@ exports.getCustomersByCompany = asyncHandler(async (req, res) => {
   // Filter
   // const filter = { clientId: clientID, status: { $ne: "Delete" } };
   console.log(companyId,"companyidddd")
-  const filter = { clientId: clientID,company:companyId};
+  const filter = { clientId: clientID,company:companyId, status: { $ne: "delete" } };
   if (status && status.trim() !== "") filter.status = status;
   console.log(search,"search","getCustomersByCompany")
 

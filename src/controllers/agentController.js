@@ -417,7 +417,7 @@ exports.getAgentsByCompany = asyncHandler(async (req, res) => {
   const perPage=parseInt(limit,10)
   const currentPage=Math.max(parseInt(page,10),1);
   const skip=(currentPage-1)*perPage;
-  const filter={clientId,company:companyId,status:{$ne:"Delete"}}
+  const filter={clientId,company:companyId,status:{$ne:"delete"}}
 
   if(status && status.trim()!=="") filter.status=status;
   if(search && search.trim()!=="") {

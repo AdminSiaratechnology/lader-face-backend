@@ -391,7 +391,7 @@ exports.getLedgersByCompany = asyncHandler(async (req, res) => {
   const skip = (currentPage - 1) * perPage;
 
   // Filter
-  const filter = { clientId: clientID,company:companyId, status: { $ne: "Delete" } };
+  const filter = { clientId: clientID,company:companyId, status: { $ne: "delete" } };
   if (status && status.trim() !== "") filter.status = status;
 
   if (search && search.trim() !== "") {
