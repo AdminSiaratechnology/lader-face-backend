@@ -319,12 +319,12 @@ exports.deleteProduct = asyncHandler(async (req, res) => {
   // ✅ Step 3: Track changes for audit log
   const oldStatus = product.status;
   const changes = {};
-  if (oldStatus !== "Delete") {
-    changes.status = { from: oldStatus, to: "Delete" };
+  if (oldStatus !== "delete") {
+    changes.status = { from: oldStatus, to: "delete" };
   }
 
   // ✅ Step 4: Apply soft delete
-  product.status = "Delete";
+  product.status = "delete";
 
   // ✅ Step 5: Push audit log
   if (!product.auditLogs) product.auditLogs = [];
@@ -513,6 +513,7 @@ exports.listProductsByCompanyId = asyncHandler(async (req, res) => {
       .populate("stockGroup", "name")
       .populate("stockCategory", "name")
       .populate("unit", "name symbol")
+      .populate("companyId", "namePrint")
       .skip(skip)
       .limit(perPage)
       .sort(sortOptions),

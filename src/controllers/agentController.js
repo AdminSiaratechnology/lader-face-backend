@@ -476,7 +476,7 @@ exports.getAgentsByClient = asyncHandler(async (req, res) => {
   const skip = (currentPage - 1) * perPage;
 
   // Filter
-  const filter = { clientId: clientId, status: { $ne: "Delete" } };
+  const filter = { clientId: clientId, status: { $ne: "delete" } };
   if (status && status.trim() !== "") filter.status = status;
 
   if (search && search.trim() !== "") {
@@ -551,7 +551,7 @@ exports.deleteAgent = asyncHandler(async (req, res) => {
   }
 
   // soft delete
-  agent.status = "Delete";
+  agent.status = "delete";
     agent.auditLogs.push({
             action: "delete",
             performedBy: new mongoose.Types.ObjectId(req.user.id),
@@ -571,7 +571,7 @@ exports.deleteAgent = asyncHandler(async (req, res) => {
     module: "Agent",
     action: "delete",
     performedBy: req.user.id,
-    referenceId: customer._id,
+    referenceId: agent._id,
     clientId: req.user.clientID,
     details: "agent marked as deleted",
     ipAddress,
