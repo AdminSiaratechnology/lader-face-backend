@@ -378,7 +378,7 @@ const result = await User.aggregate([
         {
           $sort: (() => {
             const field = sortBy === "name" ? "name" : "createdAt";
-            const order = sortOrder === "desc" ? -1 : 1;
+            const order = sortOrder === "asc" ? 1 : -1;
             return { [field]: order };
           })(),
         },
