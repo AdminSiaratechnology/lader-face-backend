@@ -259,7 +259,7 @@ exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
   
 
 
-  let filter = { client: clientId,isDeleted:false };
+  let filter = { client: clientId,status: { $ne: "delete" }  };
 
   // status filter
   if (status && status !== "") {
@@ -520,7 +520,7 @@ exports.deleteCompany = asyncHandler(async (req, res) => {
     throw new ApiError(403, "You can only delete your own companies");
   }
 
-  company.isDeleted = true; // 🟢 Soft delete
+  company.status = "delete"; // 🟢 Soft delete
    company.auditLogs.push({
       action: "delete",
       performedBy: new mongoose.Types.ObjectId(req.user.id),
