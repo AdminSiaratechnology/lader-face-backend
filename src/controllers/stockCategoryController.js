@@ -407,7 +407,7 @@ exports.deleteStockCategory = asyncHandler(async (req, res) => {
   const category = await StockCategory.findById(id);
   ensureFound(category, "Stock Category not found");
 
-  category.status = "Delete";
+  category.status = "delete";
   const agentId = req.user.id;
   category.auditLogs.push({
     action: "delete",

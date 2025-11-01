@@ -481,7 +481,7 @@ exports.deleteCustomer = asyncHandler(async (req, res) => {
   }
 
   // soft delete
-  customer.status = "Delete";
+  customer.status = "delete";
    customer.auditLogs.push({
         action: "delete",
         performedBy: new mongoose.Types.ObjectId(req.user.id),

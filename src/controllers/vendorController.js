@@ -427,7 +427,7 @@ exports.getVendorsByCompany = asyncHandler(async (req, res) => {
   const filter = {
     clientId: clientID,
     company: companyId,
-    status: { $ne: "Delete" },
+    status: { $ne: "delete" },
   };
   if (status && status.trim() !== "") filter.status = status;
 
@@ -483,7 +483,7 @@ exports.getVendorsByClient = asyncHandler(async (req, res) => {
   const skip = (currentPage - 1) * perPage;
 
   // Filter
-  const filter = { clientId: clientID, status: { $ne: "Delete" } };
+  const filter = { clientId: clientID, status: { $ne: "delete" } };
   if (status && status.trim() !== "") filter.status = status;
 
   if (search && search.trim() !== "") {
@@ -554,7 +554,7 @@ exports.deleteVendor = asyncHandler(async (req, res) => {
   }
 
   // soft delete
-  vendor.status = "Delete";
+  vendor.status = "delete";
   vendor.auditLogs.push({
     action: "delete",
     performedBy: new mongoose.Types.ObjectId(req.user.id),
