@@ -62,7 +62,7 @@ htmlContent = `
 `;
 }
 
-_// ✅ Step 3: Send internal email_
+// ✅ Step 3: Send internal email_
 const response = await sendEmail({
 to: process.env.ZOHO_USER_RECIVER,
 subject,
