@@ -24,7 +24,7 @@ router.post("/",  upload.fields([
 
 // Update customer
 router.put("/:id",upload.fields([
-   
+    { name: "logo", maxCount: 1 },
     { name: "registrationDocs", maxCount: 5 },
   ]),  updateCustomer);
 

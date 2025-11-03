@@ -31,5 +31,20 @@ const godownSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+godownSchema.index({ client: 1, company: 1, status: 1, createdAt: -1 });
+godownSchema.index({ code: 1 }, { unique: true });
+godownSchema.index({ name: "text", city: "text", address: "text", manager: "text" });
+godownSchema.index({ company: 1, status: 1 });
+
+
+godownSchema.index({ status: 1 });
+
+godownSchema.index({ createdBy: 1 });
+
+// godownSchema.index({ city: 1, state: 1, country: 1 });
+
+godownSchema.index({ company: 1, isPrimary: 1 });
+
+godownSchema.index({ updatedAt: -1 });
 
 module.exports = mongoose.model("Godown", godownSchema);

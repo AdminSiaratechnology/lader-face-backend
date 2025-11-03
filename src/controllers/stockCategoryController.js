@@ -62,7 +62,7 @@ const insertInBatches = async (data, batchSize) => {
 };
 
 exports.createStockCategory = asyncHandler(async (req, res) => {
-  const { companyId, name, description } = req.body;
+  const { companyId, name, description, parent } = req.body;
   const agentId = req.user.id;
 
   // Required fields
@@ -84,6 +84,7 @@ exports.createStockCategory = asyncHandler(async (req, res) => {
     companyId,
     name,
     description,
+    parent,
     status: "active",
     createdBy: agentId,
     auditLogs: [
@@ -313,7 +314,7 @@ exports.getStockCategoriesByCompanyId = asyncHandler(async (req, res) => {
   // query with pagination
   const [categories, total] = await Promise.all([
     StockCategory.find(filter)
-    .populate("companyId")
+    .populate("companyId").populate({path: "parent", select: "name"})
     .select("-auditLogs")
       .sort(sort)
       .skip(skip)

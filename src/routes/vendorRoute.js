@@ -23,7 +23,7 @@ router.post("/",  upload.fields([
 
 // Update vendor
 router.put("/:id",upload.fields([
-   
+    { name: "logo", maxCount: 1 },
     { name: "registrationDocs", maxCount: 5 },
   ]),  updateVendor);
 

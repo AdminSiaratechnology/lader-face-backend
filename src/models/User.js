@@ -2,72 +2,120 @@ const mongoose = require("mongoose");
 const auditLogSchema = require("../middlewares/auditLogSchema");
 // Permission schema
 // Permission schema
-const permissionSchema = new mongoose.Schema({
-  create: { type: Boolean, default: false },
-  read: { type: Boolean, default: false },
-  update: { type: Boolean, default: false },
-  delete: { type: Boolean, default: false },
-  extra: [{ type: String }],
-  changes: { type: Object, default: {} },
-}, { _id: false });
+const permissionSchema = new mongoose.Schema(
+  {
+    create: { type: Boolean, default: false },
+    read: { type: Boolean, default: false },
+    update: { type: Boolean, default: false },
+    delete: { type: Boolean, default: false },
+    extra: [{ type: String }],
+    changes: { type: Object, default: {} },
+  },
+  { _id: false }
+);
 
 // Company Access Schema - FIXED: Using Mixed type instead of Map
-const accessSchema = new mongoose.Schema({
-  company: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true },
-  modules: {
-    type: mongoose.Schema.Types.Mixed,  // ✅ Changed from Map to Mixed
-    default: {}
+const accessSchema = new mongoose.Schema(
+  {
+    company: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Company",
+      required: true,
+    },
+    modules: {
+      type: mongoose.Schema.Types.Mixed, // ✅ Changed from Map to Mixed
+      default: {},
+    },
   },
-}, { _id: false });
+  { _id: false }
+);
 
 // 🧠 Audit Log Schema (embedded)
 
-
 // User Schema
-const userSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  email: { type: String, unique: true, required: true },
-  password: { type: String, required: true },
+const userSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    email: { type: String, unique: true, required: true },
+    password: { type: String, required: true },
 
-  role: {
-    type: String,
-    enum: [
-      "SuperAdmin", "Partner", "SubPartner", "Client",
-      "Agent", "Salesman", "Customer", "Admin",
-    ],
-    required: true,
+    role: {
+      type: String,
+      enum: [
+        "SuperAdmin",
+        "Partner",
+        "SubPartner",
+        "Client",
+        "Agent",
+        "Salesman",
+        "Customer",
+        "Admin",
+      ],
+      required: true,
+    },
+
+    subRole: {
+      type: [String],
+      enum: [
+        "superadmin_devteam",
+        "superadmin_supportteam",
+        "superadmin_accounts",
+        "superadmin_adminteam",
+        "partner_admin",
+        "partner_accounts",
+        "subpartner_admin",
+        "subpartner_accounts",
+        "salesman",
+        "admin",
+        "customer",
+        "client",
+        "agent",
+        "Admin",
+        "InventoryManager",
+        "SalesManager",
+        "PurchaseManager",
+        "HRManager",
+        "FinanceManager",
+        "Customer",
+        "Salesman",
+      ],
+      default: [],
+    },
+
+    parent: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    clientID: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    company: { type: mongoose.Schema.Types.ObjectId, ref: "Company" },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+
+    phone: { type: String },
+    area: { type: String },
+    pincode: { type: String },
+    status: {
+      type: String,
+      enum: ["active", "inactive", "delete"],
+      default: "active",
+    },
+    lastLogin: { type: Date },
+    loginHistory: [{ type: Date }],
+
+    allPermissions: { type: Boolean, default: false },
+    access: [accessSchema],
+
+    // 🧾 Maintain full change history here
+    auditLogs: [auditLogSchema],
   },
+  { timestamps: true }
+);
+userSchema.index({ email: 1 }, { unique: true });
+userSchema.index({ clientID: 1 });
+userSchema.index({ clientID: 1, name: 1 });
+userSchema.index({ clientID: 1, createdAt: -1 });
+userSchema.index({ role: 1 });
+userSchema.index({ status: 1 });
+userSchema.index({ "access.company": 1 });
+userSchema.index({ lastLogin: -1 });
+userSchema.index({ name: "text", email: "text" });
 
-  subRole: {
-    type: [String],
-    enum: [
-      "superadmin_devteam", "superadmin_supportteam", "superadmin_accounts", "superadmin_adminteam",
-      "partner_admin", "partner_accounts",
-      "subpartner_admin", "subpartner_accounts",
-      "salesman", "admin", "customer", "client", "agent",
-      "Admin", "InventoryManager", "SalesManager", "PurchaseManager", "HRManager", "FinanceManager", "Customer", "Salesman",
-    ],
-    default: [],
-  },
-
-  parent: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-  clientID: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-  company: { type: mongoose.Schema.Types.ObjectId, ref: "Company" },
-  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-
-  phone: { type: String },
-  area: { type: String },
-  pincode: { type: String },
-  status: { type: String, enum: ["active", "inactive", "delete"], default: "active" },
-  lastLogin: { type: Date },
-   loginHistory: [{ type: Date }],
-
-
-  allPermissions: { type: Boolean, default: false },
-  access: [accessSchema],
-
-  // 🧾 Maintain full change history here
-  auditLogs: [auditLogSchema],
-}, { timestamps: true });
-
+userSchema.index({ clientID: 1 });
+userSchema.index({ status: 1 });
 module.exports = mongoose.model("User", userSchema);

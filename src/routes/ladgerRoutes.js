@@ -23,7 +23,7 @@ router.post("/", upload.fields([
 
 // Update agent
 router.put("/:id",upload.fields([
-   
+    { name: "logo", maxCount: 1 },
     { name: "registrationDocs", maxCount: 5 },
   ]),  updateLedger);
 

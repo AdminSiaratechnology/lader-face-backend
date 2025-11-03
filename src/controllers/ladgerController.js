@@ -112,7 +112,7 @@ exports.createLedger = asyncHandler(async (req, res) => {
     clientId,
     emailAddress,
     phoneNumber,
-    companyID,
+    // companyID,
     ...rest,
     logo: logoUrl || "",
     registrationDocs: registrationDocs || [],

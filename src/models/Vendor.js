@@ -113,5 +113,61 @@ const VendorSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+// 📂 vendor.model.js (or where schema is defined)
+
+// ----------------------------
+// 🔹 1. Main Filters + Sorting
+// ----------------------------
+VendorSchema.index({ clientId: 1, company: 1, status: 1, createdAt: -1 });
+// 👉 Speeds up getVendorsByCompany() and getVendorsByClient()
+//    Queries that filter by clientId, company, and status + sort by createdAt
+
+// ---------------------------------
+// 🔹 2. Unique Vendor Code per Client
+// ---------------------------------
+VendorSchema.index({ clientId: 1, code: 1 }, { unique: true });
+// 👉 Ensures each vendor code is unique for that client
+//    (prevents accidental duplicates across same client)
+
+// ---------------------------------
+// 🔹 3. Unique Email per Client (Active/Inactive Only)
+// ---------------------------------
+VendorSchema.index(
+  { clientId: 1, emailAddress: 1 },
+  { unique: true, partialFilterExpression: { status: { $in: ["active", "inactive"] } } }
+);
+// 👉 Allows duplicate emails only for "delete" vendors
+// 👉 Enforces unique active emails for real vendors
+
+// ---------------------------------
+// 🔹 4. Search Optimization
+// ---------------------------------
+VendorSchema.index({
+  vendorName: "text",
+  emailAddress: "text",
+  phoneNumber: "text",
+});
+// 👉 Enables text search for `search` queries (name/email/phone)
+// 👉 Fast lookup if you ever filter/search vendors by doc type
+
+// ---------------------------------
+// 🔹 6. Audit & Reference Optimization
+// ---------------------------------
+VendorSchema.index({ createdBy: 1 });
+// 👉 Helps when fetching by created user
+
+VendorSchema.index({ company: 1 });
+// 👉 Common filter in vendor-company relationship
+
+// ---------------------------------
+// 🔹 7. Status Fast Lookup
+// ---------------------------------
+VendorSchema.index({ status: 1 });
+// 👉 Quick retrieval of vendors by active/inactive/delete state
+
+// ---------------------------------
+// 🔹 8. Date-based Analytics or Reports
+// ---------------------------------
+VendorSchema.index({ updatedAt: -1 });
 
 module.exports = mongoose.model("Vendor", VendorSchema);
