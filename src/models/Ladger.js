@@ -3,7 +3,7 @@ const auditLogSchema = require("../middlewares/auditLogSchema");
 
 // Bank schema
 const BankSchema = new mongoose.Schema({
-   accountHolderName: String,
+  accountHolderName: String,
   accountNumber: String,
   ifscCode: String,
   swiftCode: String,
@@ -22,8 +22,16 @@ const RegistrationDocumentSchema = new mongoose.Schema({
 // Ledger schema
 const LedgerSchema = new mongoose.Schema(
   {
-    company: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true }, // reference to company
-    clientId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    company: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Company",
+      required: true,
+    }, // reference to company
+    clientId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
 
     ledgerType: { type: String, required: true },
     ledgerCode: { type: String, required: true, unique: true },
@@ -34,13 +42,17 @@ const LedgerSchema = new mongoose.Schema(
     territory: { type: String },
     ledgerStatus: { type: String },
     companySize: { type: String },
-      status: { type: String, enum: ["active", "inactive", "delete"], default: "active" },
+    status: {
+      type: String,
+      enum: ["active", "inactive", "delete"],
+      default: "active",
+    },
 
     contactPerson: { type: String },
     designation: { type: String },
     phoneNumber: { type: String },
     mobileNumber: { type: String },
-    emailAddress: { type: String ,unique:true,required:true},
+    emailAddress: { type: String, unique: true, required: true },
     faxNumber: { type: String },
 
     addressLine1: { type: String },
@@ -86,9 +98,32 @@ const LedgerSchema = new mongoose.Schema(
 
     registrationDocs: [RegistrationDocumentSchema], // embedded documents
     auditLogs: [auditLogSchema],
-    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, 
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   },
   { timestamps: true }
 );
+LedgerSchema.index({ ledgerCode: 1 }, { unique: true });
 
+LedgerSchema.index(
+  { emailAddress: 1 },
+  { unique: true, partialFilterExpression: { emailAddress: { $exists: true } } }
+);
+
+LedgerSchema.index({ company: 1, clientId: 1, status: 1, createdAt: -1 });
+
+LedgerSchema.index({ clientId: 1, status: 1, createdAt: -1 });
+
+LedgerSchema.index({
+  ledgerName: "text",
+  emailAddress: "text",
+  contactPerson: "text",
+  phoneNumber: "text",
+  ledgerCode: "text",
+});
+
+LedgerSchema.index({ status: 1 });
+
+LedgerSchema.index({ createdAt: -1 });
+
+LedgerSchema.index({ createdBy: 1 });
 module.exports = mongoose.model("Ledger", LedgerSchema);

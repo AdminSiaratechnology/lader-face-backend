@@ -359,7 +359,7 @@ exports.getCustomersByCompany = asyncHandler(async (req, res) => {
   // Fetch data & total count
   const [customers, total] = await Promise.all([
     Customer.find(filter)
-    .select("-auditLogs")
+    .select("-auditLogs").populate({path: "agent", select: "agentName"})
       .sort(sortOptions)
       .skip(skip)
       .limit(perPage),

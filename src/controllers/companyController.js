@@ -9,6 +9,7 @@ const {generate6DigitUniqueId} = require("../utils/generate6DigitUniqueId")
 const puppeteer = require("puppeteer");
 const mongoose = require('mongoose');
 const   {createAuditLog}=require("../utils/createAuditLog")
+const processRegistrationDocs =require("../utils/processRegistrationDocs")
 
 const generateUniqueCodeInMemory = (existingSet) => {
   let code;
@@ -41,115 +42,79 @@ async function insertInBatches(Model, docs, batchSize = 1000) {
 
 // Backend changes - createCompany
 exports.createCompany = asyncHandler(async (req, res) => {
-  console.log("Request Body:", req.user);
-  const adminId = req?.user?.id;
-  const clientId=req.user.clientID
-  
-  // res.status(200).json({ message: "Create Company - Not Implemented" });
-  try {
-
-    
-  
   const userId = req.user.id;
-
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
-  // console.log("Logged in user:", user);
-    const { namePrint, banks, ...rest } = req.body;
-    if (!namePrint) throw new ApiError(400, 'Company name is required');
-    
-    let logoUrl = null;
-    let registrationDocs = [];
-    // console.log("Request Files:", req.files);
-    
-    if (req?.files?.['logo'] && req?.files?.['logo'][0]) {
-        logoUrl = req.files['logo'][0].location;
-    }
-    console.log(req.files,"req.files")
-    
-    let registrationDocTypes;
-    try {
-      registrationDocTypes = JSON.parse(req.body.registrationDocTypes || '[]');
-    } catch (e) {
-      console.error('Failed to parse registrationDocTypes:', e);
-      registrationDocTypes = [];
-    }
 
-    if (req?.files?.['registrationDocs']) {
-      registrationDocs = req?.files['registrationDocs'].map((file, index) => ({
-        type: registrationDocTypes[index] || 'Other',
-        file: file.location,
-        fileName: file.originalname
-      }));
-    }
-    
-//    res.send("Create Company Controller is working")
-// res.send(req.body)
-if(user.role==="Client" || user.role==="Admin"){
-  // Allow creating company
-  // console.log("banks:", JSON.parse(banks) || []);
-  // console.log(generateUniqueId,"generateUniqueId")
-  
-  let code=await generate6DigitUniqueId(Company,"code")
-  // console.log("jsdnfjbsjhd")
-  // let code="123456"
-  const isExistWithName=await Company.find({client:clientId,namePrint})
-  console.log(isExistWithName.length,"req.user,")
+  const { namePrint, banks, registrationDocTypes: rawDocTypes, ...rest } = req.body;
+  if (!namePrint) throw new ApiError(400, 'Company name is required');
 
+  // Early client check
+  if (user.role !== "Client" && user.role !== "Admin") {
+    throw new ApiError(403, "Only clients and admins can create companies");
+  }
 
-   if (isExistWithName && 0<isExistWithName.length)  throw new ApiError(409, "Company name already in use");
+  const clientId = user.role === 'Client' ? userId : user.clientID;
+  const isExistWithName = await Company.findOne({ client: clientId, namePrint });
+  if (isExistWithName) throw new ApiError(409, "Company name already in use");
 
-  
+  // Parallelize file processing (minimal overhead, but cleaner)
+  const [logoUrl, processedDocs] = await Promise.all([
+    (req.files?.logo?.[0]?.location || null),
+    processRegistrationDocs(req.files?.registrationDocs || [], rawDocTypes)
+  ]);
 
+  const code = await generate6DigitUniqueId(Company, "code");
+  const banksParsed = JSON.parse(banks || '[]');
 
   const company = await Company.create({
     namePrint,
     ...rest,
-    code:code,
-    client: user.role === 'Client' ? userId : user.clientID,
-    banks: JSON.parse(banks) || [],
-    logo: logoUrl || "",
-    registrationDocs: registrationDocs || [],
+    code,
+    client: clientId,
+    banks: banksParsed,
+    logo: logoUrl,
+    registrationDocs: processedDocs,
     createdBy: userId,
-     auditLogs: [
-          {
-            action: "create",
-            performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
-            timestamp: new Date(),
-            details: "company created",
-          },
-        ],
+    auditLogs: [{
+      action: "create",
+      performedBy: req.user.id,
+      timestamp: new Date(),
+      details: "company created",
+    }],
   });
 
+  // Fire audit log async (non-blocking)
+  createAuditLogAsync(req, company._id).catch(console.error);
 
-let ipAddress =
-    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
-  // convert ::1 → 127.0.0.1
-  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
-    ipAddress = "127.0.0.1";
-  }
-  
-  console.log(ipAddress, "ipaddress");
-    await createAuditLog({
+  res.status(201).json(new ApiResponse(201, company, "Company created successfully"));
+});
+
+// Helper: Process docs in parallel
+// async function processRegistrationDocs(files, rawDocTypes) {
+//   if (!files.length) return [];
+//   const docTypes = JSON.parse(rawDocTypes || '[]');
+//   return Promise.all(files.map((file, index) => ({
+//     type: docTypes[index] || 'Other',
+//     file: file.location,
+//     fileName: file.originalname
+//   })));
+// }
+
+// Helper: Async audit log
+async function createAuditLogAsync(req, companyId) {
+  const ipAddress = req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  const ip = ipAddress === "::1" || ipAddress === "127.0.0.1" ? "127.0.0.1" : ipAddress;
+  await createAuditLog({
     module: "Company",
     action: "create",
     performedBy: req.user.id,
-    referenceId: company._id,
-    clientId:req.user.clientID,
-    details: "comapny created successfully",
-    ipAddress,
+    referenceId: companyId,
+    clientId: req.user.clientID,
+    details: "company created successfully",
+    ipAddress: ip,
   });
-
-  res.status(201).json(new ApiResponse(201, company, "Company created successfully"));
-} else {
-  throw new ApiError(403, "Only clients and admins can create companies");
 }
-} catch (error) {
-  console.log("Error creating company:", error);
-  res.status(500).json({ error: error.message});
-}}
-);
 exports.createBulkCompanies = asyncHandler(async (req, res) => {
   const { companies } = req.body;
 
@@ -259,7 +224,7 @@ exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
   
 
 
-  let filter = { client: clientId,status: { $ne: "delete" }  };
+  let filter = { client: clientId,isDeleted:false };
 
   // status filter
   if (status && status !== "") {
@@ -394,40 +359,21 @@ exports.updateCompany = asyncHandler(async (req, res) => {
     throw new ApiError(403, "You can only update your own companies");
   }
 
+  const { registrationDocTypes: rawDocTypes, ...rest } = req.body; // Destructure like create
+
+  // Parallelize file processing (minimal overhead, but cleaner) - similar to create
+  const [logoUrl, processedNewDocs] = await Promise.all([
+    (req.files?.logo?.[0]?.location || null),
+    processRegistrationDocs(req.files?.registrationDocs || [], rawDocTypes) // Reuse helper from create
+  ]);
+
   // 4️⃣ Prepare update data safely
-  const updateData = { ...req.body }; // shallow copy
+  const updateData = { ...rest }; // shallow copy
 
   // Logo update
-  if (req?.files?.["logo"] && req?.files?.["logo"][0]) {
-    updateData.logo = req.files["logo"][0].location;
+  if (logoUrl) {
+    updateData.logo = logoUrl;
   }
-  console.log(req?.files,"req?.files?.",req.body.registrationDocTypes,"req.body.registrationDocTypes)")
-  
-  let registrationDocTypes;
-  try {
-    registrationDocTypes = JSON.parse(req.body.registrationDocTypes || '[]');
-  } catch (e) {
-    console.error('Failed to parse registrationDocTypes:', e);
-    registrationDocTypes = [];
-  }
-
-  // Registration docs update - merge with existing
-  if (req?.files?.["registrationDocs"]) {
-    const newDocs = req.files["registrationDocs"].map((file, index) => ({
-      type: registrationDocTypes[index] || "Other",
-      file: file.location,
-      fileName: file.originalname,
-    }));
-
-    // Filter out existing docs with types that are being updated
-    const existingDocs = (company.registrationDocs || []).filter(
-      (doc) => !registrationDocTypes.includes(doc.type)
-    );
-
-    // Replace matching types with new docs, append others
-    updateData.registrationDocs = [...existingDocs, ...newDocs];
-  }
-  // If no new files, existing docs remain unchanged
 
   // Banks parsing
   if (req.body?.banks) {
@@ -437,6 +383,18 @@ exports.updateCompany = asyncHandler(async (req, res) => {
       throw new ApiError(400, "Banks field must be a valid JSON array");
     }
   }
+
+  // Registration docs update - merge with existing (adapted from original)
+  if (processedNewDocs.length > 0) {
+    // Filter out existing docs with types that are being updated
+    const existingDocs = (company.registrationDocs || []).filter(
+      (doc) => !rawDocTypes.includes(doc.type) // Use parsed docTypes
+    );
+
+    // Replace matching types with new docs, append others
+    updateData.registrationDocs = [...existingDocs, ...processedNewDocs];
+  }
+  // If no new files, existing docs remain unchanged
 
   // 5️⃣ Track changes for audit log
   const oldData = company.toObject();
@@ -466,28 +424,28 @@ exports.updateCompany = asyncHandler(async (req, res) => {
   // 8️⃣ Save company
   await company.save();
 
-   let ipAddress =
-    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
-  // convert ::1 → 127.0.0.1
-  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
-    ipAddress = "127.0.0.1";
-  }
-  await createAuditLog({
-    module: "Company",
-    action: "update",
-    performedBy: req.user.id,
-    referenceId: company._id,
-    clientId: req.user.clientID,
-    details: "Company updated successfully",
-    changes,
-    ipAddress,
-  });
+  // Fire audit log async (non-blocking) - same as create
+  createAuditLogAsyncUpdate(req, company._id, changes).catch(console.error);
 
   // 9️⃣ Respond
   res.status(200).json(new ApiResponse(200, company, "Company updated successfully"));
 });
 
+// Helper: Async audit log for update (adapted from create)
+async function createAuditLogAsyncUpdate(req, companyId, changes) {
+  const ipAddress = req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  const ip = ipAddress === "::1" || ipAddress === "127.0.0.1" ? "127.0.0.1" : ipAddress;
+  await createAuditLog({
+    module: "Company",
+    action: "update",
+    performedBy: req.user.id,
+    referenceId: companyId,
+    clientId: req.user.clientID,
+    details: "Company updated successfully",
+    changes, // Include changes
+    ipAddress: ip,
+  });
+}
 
 
 // Get Companies
@@ -520,7 +478,7 @@ exports.deleteCompany = asyncHandler(async (req, res) => {
     throw new ApiError(403, "You can only delete your own companies");
   }
 
-  company.status = "delete"; // 🟢 Soft delete
+  company.isDeleted = true; // 🟢 Soft delete
    company.auditLogs.push({
       action: "delete",
       performedBy: new mongoose.Types.ObjectId(req.user.id),
@@ -756,4 +714,3 @@ exports.deleteCompaniesByClientId = asyncHandler(async (req, res) => {
     message: `${result.deletedCount} companies deleted successfully`,
   });
 });
-

@@ -8,6 +8,7 @@ const User = require("../models/User");
 // const {generateUniqueId} =require("../utils/generate16DigiId")
 const mongoose=require("mongoose")
 const   {createAuditLog}=require("../utils/createAuditLog")
+const {generate6DigitUniqueId} = require("../utils/generate6DigitUniqueId")
 
 
 // Generate unique 18-digit code using timestamp and index
@@ -100,7 +101,7 @@ exports.createStockGroup = asyncHandler(async (req, res) => {
   const clientId = agentDetail.clientID;
 
   // Generate unique stockGroupId
-  const stockGroupId = await generateUniqueId(StockGroup,"stockGroupId");
+  const stockGroupId = await generate6DigitUniqueId(StockGroup,"stockGroupId");
 
   // Create stock group
   const stockGroup = await StockGroup.create({

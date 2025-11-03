@@ -1,9 +1,9 @@
-const mongoose=require("mongoose")
+const mongoose = require("mongoose");
 const auditLogSchema = require("../middlewares/auditLogSchema");
 
 // Bank schema
-const BankSchema = new  mongoose.Schema({
-   accountHolderName: String,
+const BankSchema = new mongoose.Schema({
+  accountHolderName: String,
   accountNumber: String,
   ifscCode: String,
   swiftCode: String,
@@ -22,9 +22,16 @@ const RegistrationDocumentSchema = new mongoose.Schema({
 // Customer schema
 const CustomerSchema = new mongoose.Schema(
   {
-    company: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true }, // reference to company
-    clientId:{type:mongoose.Schema.Types.ObjectId,ref:"User",required:true},
-    
+    company: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Company",
+      required: true,
+    }, // reference to company
+    clientId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
 
     customerType: { type: String, required: true },
     code: { type: String, required: true, unique: true },
@@ -36,13 +43,17 @@ const CustomerSchema = new mongoose.Schema(
     salesPerson: { type: String },
     customerStatus: { type: String },
     companySize: { type: String },
-    status: { type: String, enum: ["active", "inactive", "delete"], default: "active" },
+    status: {
+      type: String,
+      enum: ["active", "inactive", "delete"],
+      default: "active",
+    },
 
     contactPerson: { type: String },
     designation: { type: String },
     phoneNumber: { type: String },
     mobileNumber: { type: String },
-    emailAddress: { type: String ,unique:true,required:true},
+    emailAddress: { type: String, unique: true, required: true },
     faxNumber: { type: String },
 
     addressLine1: { type: String },
@@ -59,7 +70,7 @@ const CustomerSchema = new mongoose.Schema(
     creditLimit: { type: String },
     creditDays: { type: String },
     discount: { type: String },
-    agent: { type: String },
+    agent: { type: mongoose.Schema.Types.ObjectId, ref: "Agent" },
 
     isFrozenAccount: { type: Boolean, default: false },
     disabled: { type: Boolean, default: false },
@@ -101,7 +112,6 @@ const CustomerSchema = new mongoose.Schema(
     leadSource: { type: String },
     internalNotes: { type: String },
 
-
     allowPartialShipments: { type: Boolean, default: false },
     allowBackOrders: { type: Boolean, default: false },
     autoInvoice: { type: Boolean, default: false },
@@ -110,10 +120,28 @@ const CustomerSchema = new mongoose.Schema(
     notes: { type: String },
 
     registrationDocs: [RegistrationDocumentSchema], // embedded documents
-     auditLogs: [auditLogSchema],
+    auditLogs: [auditLogSchema],
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   },
   { timestamps: true }
 );
+CustomerSchema.index({ code: 1 }, { unique: true });
+CustomerSchema.index(
+  { emailAddress: 1 },
+  { unique: true, partialFilterExpression: { emailAddress: { $exists: true } } }
+);
 
-module.exports= mongoose.model("Customer", CustomerSchema);
+CustomerSchema.index({ company: 1, clientId: 1, status: 1, createdAt: -1 });
+CustomerSchema.index({ clientId: 1, status: 1, createdAt: -1 });
+
+CustomerSchema.index({
+  customerName: "text",
+  emailAddress: "text",
+  contactPerson: "text",
+  phoneNumber: "text",
+});
+
+CustomerSchema.index({ status: 1 });
+
+CustomerSchema.index({ createdAt: -1 });
+module.exports = mongoose.model("Customer", CustomerSchema);
