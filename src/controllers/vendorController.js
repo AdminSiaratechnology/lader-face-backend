@@ -7,6 +7,7 @@ const ApiResponse = require("../utils/apiResponse");
 const mongoose = require("mongoose");
 const { createAuditLog } = require("../utils/createAuditLog");
 const { generateUniqueId } = require("../utils/generate16DigiId");
+const processRegistrationDocs =require("../utils/processRegistrationDocs")
 
 // Generate unique 18-digit code using timestamp and index
 // const generateUniqueId = (index) => {
@@ -77,54 +78,147 @@ const insertInBatches = async (data, batchSize) => {
 };
 
 // 🟢 Create Vendor
+// exports.createVendor = asyncHandler(async (req, res) => {
+//   const {
+//     vendorName,
+//     emailAddress,
+//     phoneNumber,
+//     companyID, // company reference
+//     ...rest
+//   } = req.body;
+
+//   if (!vendorName) {
+//     throw new ApiError(400, "Vendor name and code are required");
+//   }
+//   const clientId = req.user.clientID;
+//   const adminId = req?.user?.id;
+
+//   // Company check
+//   // const existingCompany = await Company.findById(companyID);
+//   // if (!existingCompany) {
+//   //   throw new ApiError(404, "Company not found");
+//   // }
+
+//   let logoUrl = null;
+//   let registrationDocs = [];
+
+//   // Logo file
+//   if (req?.files?.["logo"] && req?.files?.["logo"][0]) {
+//     logoUrl = req.files["logo"][0].location;
+//   }
+//   // console.log(req.files,req.body,"req,files")
+
+//   let registrationDocTypes;
+//   try {
+//     registrationDocTypes = JSON.parse(req.body.registrationDocTypes || "[]");
+//   } catch (e) {
+//     console.error("Failed to parse registrationDocTypes:", e);
+//     registrationDocTypes = [];
+//   }
+
+//   if (req?.files?.["registrationDocs"]) {
+//     registrationDocs = req?.files["registrationDocs"].map((file, index) => ({
+//       type: registrationDocTypes[index] || "Other",
+//       file: file.location,
+//       fileName: file.originalname,
+//     }));
+//   }
+//   let code = await generateUniqueId(Vendor, "code");
+//   console.log(JSON.parse(req.body.banks), "JSON.parse(req.body.banks)");
+
+//   const vendor = await Vendor.create({
+//     vendorName,
+//     code,
+//     clientId,
+//     emailAddress,
+//     phoneNumber,
+//     companyID,
+//     ...rest,
+//     logo: logoUrl || "",
+//     registrationDocs: registrationDocs || [],
+//     banks: JSON.parse(req.body.banks),
+//     company: companyID,
+//     createdBy: adminId,
+//     auditLogs: [
+//       {
+//         action: "create",
+//         performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+//         timestamp: new Date(),
+//         details: "vendor created",
+//       },
+//     ],
+//   });
+
+//   let ipAddress =
+//     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+
+//   // convert ::1 → 127.0.0.1
+//   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+//     ipAddress = "127.0.0.1";
+//   }
+
+//   console.log(ipAddress, "ipaddress");
+//   await createAuditLog({
+//     module: "Vendor",
+//     action: "create",
+//     performedBy: req.user.id,
+//     referenceId: vendor._id,
+//     clientId,
+//     details: "vendor created successfully",
+//     ipAddress,
+//   });
+
+//   res
+//     .status(201)
+//     .json(new ApiResponse(201, vendor, "Vendor created successfully"));
+// });
+
 exports.createVendor = asyncHandler(async (req, res) => {
   const {
     vendorName,
     emailAddress,
     phoneNumber,
-    companyID, // company reference
+    companyID,
+    registrationDocTypes: rawDocTypes,   // <-- same name as Agent
     ...rest
   } = req.body;
+
+  const adminId = req?.user?.id;
+  const clientId = req.user.clientID;
 
   if (!vendorName) {
     throw new ApiError(400, "Vendor name and code are required");
   }
-  const clientId = req.user.clientID;
-  const adminId = req?.user?.id;
-
-  // Company check
-  // const existingCompany = await Company.findById(companyID);
-  // if (!existingCompany) {
-  //   throw new ApiError(404, "Company not found");
-  // }
-
-  let logoUrl = null;
-  let registrationDocs = [];
-
-  // Logo file
-  if (req?.files?.["logo"] && req?.files?.["logo"][0]) {
-    logoUrl = req.files["logo"][0].location;
-  }
-  // console.log(req.files,req.body,"req,files")
-
-  let registrationDocTypes;
-  try {
-    registrationDocTypes = JSON.parse(req.body.registrationDocTypes || "[]");
-  } catch (e) {
-    console.error("Failed to parse registrationDocTypes:", e);
-    registrationDocTypes = [];
+  if (!clientId) {
+    throw new ApiError(400, "Client ID is required from token");
   }
 
-  if (req?.files?.["registrationDocs"]) {
-    registrationDocs = req?.files["registrationDocs"].map((file, index) => ({
-      type: registrationDocTypes[index] || "Other",
-      file: file.location,
-      fileName: file.originalname,
-    }));
-  }
-  let code = await generateUniqueId(Vendor, "code");
-  console.log(JSON.parse(req.body.banks), "JSON.parse(req.body.banks)");
+  // ---------- Logo ----------
+  const logoUrl = req.files?.logo?.[0]?.location || null;
 
+  // ---------- Registration Docs ----------
+  const processedDocs = await processRegistrationDocs(
+    req.files?.registrationDocs || [],
+    rawDocTypes
+  );
+
+  // ---------- Unique Code ----------
+  const code = await generateUniqueId(Vendor, "code");
+
+  // ---------- Banks ----------
+  let banks = [];
+  if (req.body.banks) {
+    try {
+      banks =
+        typeof req.body.banks === "string"
+          ? JSON.parse(req.body.banks)
+          : req.body.banks;
+    } catch (e) {
+      throw new ApiError(400, "Invalid banks JSON");
+    }
+  }
+
+  // ---------- Create Vendor ----------
   const vendor = await Vendor.create({
     vendorName,
     code,
@@ -134,8 +228,8 @@ exports.createVendor = asyncHandler(async (req, res) => {
     companyID,
     ...rest,
     logo: logoUrl || "",
-    registrationDocs: registrationDocs || [],
-    banks: JSON.parse(req.body.banks),
+    registrationDocs: processedDocs,
+    banks,
     company: companyID,
     createdBy: adminId,
     auditLogs: [
@@ -143,20 +237,16 @@ exports.createVendor = asyncHandler(async (req, res) => {
         action: "create",
         performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
         timestamp: new Date(),
-        details: "vendor created",
+        details: "Vendor created",
       },
     ],
   });
 
-  let ipAddress =
+  // ---------- Global Audit Log ----------
+  const ipAddress =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  const finalIp = ipAddress === "::1" ? "127.0.0.1" : ipAddress;
 
-  // convert ::1 → 127.0.0.1
-  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
-    ipAddress = "127.0.0.1";
-  }
-
-  console.log(ipAddress, "ipaddress");
   await createAuditLog({
     module: "Vendor",
     action: "create",
@@ -164,7 +254,7 @@ exports.createVendor = asyncHandler(async (req, res) => {
     referenceId: vendor._id,
     clientId,
     details: "vendor created successfully",
-    ipAddress,
+    ipAddress: finalIp,
   });
 
   res
@@ -239,7 +329,7 @@ exports.createBulkVendors = asyncHandler(async (req, res) => {
         `+919${(973884720 + index).toString().padStart(9, "0")}`;
 
       const vendorObj = {
-        _id: new mongoose.Types.ObjectId(), // Generate unique _id
+        _id: new mongoose.Types.ObjectId(), // Generate unique_ id
         vendorName: body.vendorName,
         code,
         clientId,
@@ -290,39 +380,186 @@ exports.createBulkVendors = asyncHandler(async (req, res) => {
     )
   );
 });
+// exports.updateVendor = asyncHandler(async (req, res) => {
+//   const { id } = req.params;
+
+//   // ✅ 1. Find existing vendor
+//   const vendor = await Vendor.findById(id);
+//   if (!vendor) throw new ApiError(404, "Vendor not found");
+
+//   let logoUrl = vendor.logo;
+//   let registrationDocs = vendor.registrationDocs;
+//   let banks = vendor.banks;
+
+//   // ✅ 2. Replace logo if new one uploaded
+//   if (req?.files?.["logo"] && req?.files?.["logo"][0]) {
+//     logoUrl = req.files["logo"][0].location;
+//   }
+
+//   // ✅ 3. Replace registration docs if new ones uploaded
+//   if (req?.files?.["registrationDocs"]) {
+//     registrationDocs = req.files["registrationDocs"].map((file) => ({
+//       type: req.body.docType || "Other",
+//       file: file.location,
+//       fileName: file.originalname,
+//     }));
+//   }
+
+//   // ✅ 4. Build updateData safely
+//   const updateData = { ...req.body };
+
+//   // Prevent overwriting nested arrays
+//   delete updateData.auditLogs;
+//   delete updateData.__v;
+
+//   // ✅ 5. Coerce types (convert strings to booleans/numbers/arrays where needed)
+//   const booleanFields = [
+//     "isFrozenAccount",
+//     "disabled",
+//     "allowZeroValuation",
+//     "isTaxExempt",
+//     "reverseCharge",
+//     "exportVendor",
+//     "allowPartialShipments",
+//     "allowBackOrders",
+//     "autoInvoice",
+//   ];
+
+//   booleanFields.forEach((field) => {
+//     if (field in updateData) {
+//       updateData[field] =
+//         updateData[field] === "true" || updateData[field] === true;
+//     }
+//   });
+
+//   // ✅ 6. Parse banks if sent as JSON string
+//   if (req.body.banks) {
+//     try {
+//       banks =
+//         typeof req.body.banks === "string"
+//           ? JSON.parse(req.body.banks)
+//           : req.body.banks;
+//       updateData.banks = banks;
+//     } catch (err) {
+//       throw new ApiError(400, "Invalid banks data");
+//     }
+//   }
+
+//   // ✅ 7. Update logo and registrationDocs
+//   updateData.logo = logoUrl;
+//   updateData.registrationDocs = registrationDocs;
+
+//   // ✅ 8. Detect changes for audit log
+//   const oldData = vendor.toObject();
+//   const changes = {};
+//   for (const key of Object.keys(updateData)) {
+//     if (JSON.stringify(oldData[key]) !== JSON.stringify(updateData[key])) {
+//       changes[key] = { from: oldData[key], to: updateData[key] };
+//     }
+//   }
+
+//   // ✅ 9. Apply valid updates
+//   Object.assign(vendor, updateData);
+
+//   // ✅ 10. Push audit log safely
+//   vendor.auditLogs.push({
+//     action: "update",
+//     performedBy: req.user?.id || null,
+//     details: "Vendor updated successfully",
+//     changes,
+//   });
+
+//   await vendor.save();
+
+//   let ipAddress =
+//     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+
+//   // convert ::1 → 127.0.0.1
+//   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+//     ipAddress = "127.0.0.1";
+//   }
+//   await createAuditLog({
+//     module: "Vendor",
+//     action: "update",
+//     performedBy: req.user.id,
+//     referenceId: vendor._id,
+//     clientId: req.user.clientID,
+//     details: "vendor updated successfully",
+//     changes,
+//     ipAddress,
+//   });
+
+//   res
+//     .status(200)
+//     .json(new ApiResponse(200, vendor, "Vendor updated successfully"));
+// });
+
 exports.updateVendor = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  // ✅ 1. Find existing vendor
+  // 1. Fetch vendor
   const vendor = await Vendor.findById(id);
   if (!vendor) throw new ApiError(404, "Vendor not found");
 
-  let logoUrl = vendor.logo;
-  let registrationDocs = vendor.registrationDocs;
-  let banks = vendor.banks;
+  // 2. Destructure (same as Agent)
+  const { registrationDocTypes: rawDocTypes, ...rest } = req.body;
 
-  // ✅ 2. Replace logo if new one uploaded
-  if (req?.files?.["logo"] && req?.files?.["logo"][0]) {
-    logoUrl = req.files["logo"][0].location;
+  // 3. Parallel file processing
+  const [logoUrl, processedNewDocs] = await Promise.all([
+    req.files?.logo?.[0]?.location || null,
+    processRegistrationDocs(req.files?.registrationDocs || [], rawDocTypes),
+  ]);
+
+  // 4. Prepare update payload
+  const updateData = { ...rest };
+
+  // ---- Logo ----
+  if (logoUrl) updateData.logo = logoUrl;
+
+  // ---- Banks ----
+  if (req.body.banks) {
+    try {
+      updateData.banks =
+        typeof req.body.banks === "string"
+          ? JSON.parse(req.body.banks)
+          : req.body.banks;
+    } catch {
+      throw new ApiError(400, "Invalid banks JSON");
+    }
   }
 
-  // ✅ 3. Replace registration docs if new ones uploaded
-  if (req?.files?.["registrationDocs"]) {
-    registrationDocs = req.files["registrationDocs"].map((file) => ({
-      type: req.body.docType || "Other",
-      file: file.location,
-      fileName: file.originalname,
-    }));
+  // ---- Registration Docs (replace by type) ----
+  if (processedNewDocs.length > 0) {
+    let parsedTypes = [];
+    try {
+      parsedTypes =
+        typeof rawDocTypes === "string" ? JSON.parse(rawDocTypes) : rawDocTypes || [];
+    } catch {
+      parsedTypes = [];
+    }
+
+    // Keep docs whose type is NOT in the new upload
+    const existingDocs = (vendor.registrationDocs || []).filter(
+      (doc) => !parsedTypes.includes(doc.type)
+    );
+
+    const finalDocs = [...existingDocs];
+    processedNewDocs.forEach((newDoc, idx) => {
+      const type = parsedTypes[idx];
+      if (type) {
+        const existingIdx = finalDocs.findIndex((d) => d.type === type);
+        if (existingIdx !== -1) {
+          finalDocs[existingIdx] = newDoc;
+        } else {
+          finalDocs.push(newDoc);
+        }
+      }
+    });
+
+    updateData.registrationDocs = finalDocs;
   }
 
-  // ✅ 4. Build updateData safely
-  const updateData = { ...req.body };
-
-  // Prevent overwriting nested arrays
-  delete updateData.auditLogs;
-  delete updateData.__v;
-
-  // ✅ 5. Coerce types (convert strings to booleans/numbers/arrays where needed)
+  // ---- Boolean coercion (same list as before) ----
   const booleanFields = [
     "isFrozenAccount",
     "disabled",
@@ -334,60 +571,45 @@ exports.updateVendor = asyncHandler(async (req, res) => {
     "allowBackOrders",
     "autoInvoice",
   ];
-
   booleanFields.forEach((field) => {
     if (field in updateData) {
-      updateData[field] =
-        updateData[field] === "true" || updateData[field] === true;
+      updateData[field] = updateData[field] === "true" || updateData[field] === true;
     }
   });
 
-  // ✅ 6. Parse banks if sent as JSON string
-  if (req.body.banks) {
-    try {
-      banks =
-        typeof req.body.banks === "string"
-          ? JSON.parse(req.body.banks)
-          : req.body.banks;
-      updateData.banks = banks;
-    } catch (err) {
-      throw new ApiError(400, "Invalid banks data");
-    }
-  }
-
-  // ✅ 7. Update logo and registrationDocs
-  updateData.logo = logoUrl;
-  updateData.registrationDocs = registrationDocs;
-
-  // ✅ 8. Detect changes for audit log
+  // ---- Detect changes for audit ----
   const oldData = vendor.toObject();
   const changes = {};
-  for (const key of Object.keys(updateData)) {
+  Object.keys(updateData).forEach((key) => {
+    if (key === "auditLogs") return;
     if (JSON.stringify(oldData[key]) !== JSON.stringify(updateData[key])) {
       changes[key] = { from: oldData[key], to: updateData[key] };
     }
-  }
+  });
 
-  // ✅ 9. Apply valid updates
-  Object.assign(vendor, updateData);
+  // ---- Apply updates (skip auditLogs) ----
+  Object.keys(updateData).forEach((key) => {
+    if (key !== "auditLogs") vendor[key] = updateData[key];
+  });
 
-  // ✅ 10. Push audit log safely
+  // ---- Push model-level audit log ----
+  if (!vendor.auditLogs) vendor.auditLogs = [];
   vendor.auditLogs.push({
     action: "update",
-    performedBy: req.user?.id || null,
-    details: "Vendor updated successfully",
+    performedBy: new mongoose.Types.ObjectId(req.user.id),
+    timestamp: new Date(),
+    details: "Vendor updated",
     changes,
   });
 
+  // ---- Save ----
   await vendor.save();
 
-  let ipAddress =
+  // ---- Global audit log ----
+  const ipAddress =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  const finalIp = ipAddress === "::1" ? "127.0.0.1" : ipAddress;
 
-  // convert ::1 → 127.0.0.1
-  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
-    ipAddress = "127.0.0.1";
-  }
   await createAuditLog({
     module: "Vendor",
     action: "update",
@@ -396,9 +618,10 @@ exports.updateVendor = asyncHandler(async (req, res) => {
     clientId: req.user.clientID,
     details: "vendor updated successfully",
     changes,
-    ipAddress,
+    ipAddress: finalIp,
   });
 
+  // ---- Respond ----
   res
     .status(200)
     .json(new ApiResponse(200, vendor, "Vendor updated successfully"));

@@ -97,6 +97,7 @@ exports.createProduct = asyncHandler(async (req, res) => {
 
   // registration docs
     let registrationDocTypes;
+    let registrationDocs=[];
     try {
       registrationDocTypes = JSON.parse(req.body.registrationDocTypes || '[]');
     } catch (e) {

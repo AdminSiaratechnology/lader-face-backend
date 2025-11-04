@@ -1,16 +1,15 @@
-const Customer = require('../models/Customer');
-const Company = require('../models/Company');
-const asyncHandler = require('../utils/asyncHandler');
-const ApiError = require('../utils/apiError');
-const ApiResponse = require('../utils/apiResponse');
-const { generateUniqueId } = require('../utils/generate16DigiId');
-const mongoose = require('mongoose');
-const User = require('../models/User');
-const   {createAuditLog}=require("../utils/createAuditLog")
+const Customer = require("../models/Customer");
+const Company = require("../models/Company");
+const asyncHandler = require("../utils/asyncHandler");
+const ApiError = require("../utils/apiError");
+const ApiResponse = require("../utils/apiResponse");
+const { generateUniqueId } = require("../utils/generate16DigiId");
+const mongoose = require("mongoose");
+const User = require("../models/User");
+const { createAuditLog } = require("../utils/createAuditLog");
+const processRegistrationDocs = require("../utils/processRegistrationDocs");
 
-
-
-// safe JSON parse
+//  safe JSON parse_
 const safeParse = (value, fallback) => {
   try {
     return typeof value === "string" ? JSON.parse(value) : value || fallback;
@@ -29,66 +28,48 @@ const insertInBatches = async (data, batchSize = 1000) => {
       allInserted = allInserted.concat(inserted);
     } catch (err) {
       console.error("⚠️ Partial insert error:", err.message);
-      // Continue inserting other batches
     }
   }
 
   return allInserted;
 };
 
-
-// 🟢 Create Customer
 exports.createCustomer = asyncHandler(async (req, res) => {
   const {
     customerName,
-    
-    
     emailAddress,
     phoneNumber,
-    companyID, // company reference
+    companyID,
+    registrationDocTypes: rawDocTypes,
     ...rest
   } = req.body;
 
-  if (!customerName) {
-    throw new ApiError(400, "Customer name and code are required");
-  }
-  const clientId = req.user.clientID;
   const adminId = req?.user?.id;
+  const clientId = req.user.clientID;
 
-  // Company check
-  // const existingCompany = await Company.findById(companyID);
-  // if (!existingCompany) {
-  //   throw new ApiError(404, "Company not found");
-  // }
-
-
-  let logoUrl = null;
-  let registrationDocs = [];
-
-  // Logo file
-  if (req?.files?.['logo'] && req?.files?.['logo'][0]) {
-    logoUrl = req.files['logo'][0].location;
+  if (!customerName) {
+    throw new ApiError(400, "Customer name is required");
   }
-  // console.log(req.files,req.body,"req,files")
-
-  // Registration docs files
-    let registrationDocTypes;
+  if (!clientId) {
+    throw new ApiError(400, "Client ID is required from token");
+  }
+  // Parallelize file processing_
+  const [logoUrl, processedDocs] = await Promise.all([
+    req.files?.logo?.[0]?.location || null,
+    processRegistrationDocs(req.files?.registrationDocs || [], rawDocTypes),
+  ]);
+  const code = await generateUniqueId(Customer, "code");
+  let banks = [];
+  if (req.body.banks) {
     try {
-      registrationDocTypes = JSON.parse(req.body.registrationDocTypes || '[]');
-    } catch (e) {
-      console.error('Failed to parse registrationDocTypes:', e);
-      registrationDocTypes = [];
+      banks =
+        typeof req.body.banks === "string"
+          ? JSON.parse(req.body.banks)
+          : req.body.banks;
+    } catch (err) {
+      throw new ApiError(400, "Invalid banks data format");
     }
-
-    if (req?.files?.['registrationDocs']) {
-      registrationDocs = req?.files['registrationDocs'].map((file, index) => ({
-        type: registrationDocTypes[index] || 'Other',
-        file: file.location,
-        fileName: file.originalname
-      }));
-    }
-  let code=await generateUniqueId(Customer,"code")
-  console.log(JSON.parse(req.body.banks),"JSON.parse(req.body.banks)")
+  }
 
   const customer = await Customer.create({
     customerName,
@@ -96,37 +77,32 @@ exports.createCustomer = asyncHandler(async (req, res) => {
     clientId,
     emailAddress,
     phoneNumber,
-   
-   
     companyID,
     ...rest,
     logo: logoUrl || "",
-    registrationDocs: registrationDocs || [],
-    banks:JSON.parse(req.body.banks),
-    company:companyID,
-     createdBy: adminId,
-         auditLogs: [
-              {
-                action: "create",
-                performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
-                timestamp: new Date(),
-                details: "customer created",
-              },
-            ],
+    registrationDocs: processedDocs,
+    banks,
+    company: companyID,
+    createdBy: adminId,
+    auditLogs: [
+      {
+        action: "create",
+        performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+        timestamp: new Date(),
+        details: "Customer created",
+      },
+    ],
   });
   let ipAddress =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
-  // convert ::1 → 127.0.0.1
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
   }
-  
-  console.log(ipAddress, "ipaddress");
-    await createAuditLog({
-    module: "customer",
+
+  await createAuditLog({
+    module: "Customer",
     action: "create",
-    performedBy: adminId,
+    performedBy: req.user.id,
     referenceId: customer._id,
     clientId,
     details: "Customer created successfully",
@@ -137,8 +113,7 @@ exports.createCustomer = asyncHandler(async (req, res) => {
     .status(201)
     .json(new ApiResponse(201, customer, "Customer created successfully"));
 });
-// batch insert helper
-
+// batch insert helper_
 
 exports.createBulkCustomers = asyncHandler(async (req, res) => {
   const { customers } = req.body;
@@ -146,15 +121,11 @@ exports.createBulkCustomers = asyncHandler(async (req, res) => {
   if (!Array.isArray(customers) || customers.length === 0) {
     throw new ApiError(400, "Customers array is required in body");
   }
-
-  // ✅ Validate user
   const userId = req.user.id;
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
   const clientId = req.user.clientID;
-  // const clientId = "68e4c05943e6b05c02e8f951";
 
-  // ✅ Preload company IDs
   const companies = await Company.find({}, "_id");
   const validCompanyIds = new Set(companies.map((c) => String(c._id)));
 
@@ -163,7 +134,7 @@ exports.createBulkCustomers = asyncHandler(async (req, res) => {
 
   for (const [index, body] of customers.entries()) {
     try {
-      // Required fields
+      // Required fields_
       if (!body.customerName || !body.company) {
         throw new Error("customerName and company are required");
       }
@@ -195,8 +166,7 @@ exports.createBulkCustomers = asyncHandler(async (req, res) => {
       });
     }
   }
-
-  // ✅ Batch insert
+  // ✅ Batch insert_
   const inserted = await insertInBatches(results, 1000);
 
   res.status(201).json(
@@ -214,91 +184,95 @@ exports.createBulkCustomers = asyncHandler(async (req, res) => {
   );
 });
 
-// 🟢 Update Customer
 exports.updateCustomer = asyncHandler(async (req, res) => {
   const { id } = req.params;
-
   const customer = await Customer.findById(id);
   if (!customer) throw new ApiError(404, "Customer not found");
+  const { registrationDocTypes: rawDocTypes, ...rest } = req.body;
 
-  let logoUrl = customer.logo;
-  let registrationDocs = customer.registrationDocs;
-  let banks = customer.banks;
+  const [logoUrl, processedNewDocs] = await Promise.all([
+    req.files?.logo?.[0]?.location || null,
+    processRegistrationDocs(req.files?.registrationDocs || [], rawDocTypes),
+  ]);
+  const updateData = { ...rest };
 
-  // ✅ Replace logo if new one uploaded
-  if (req?.files?.['logo'] && req?.files?.['logo'][0]) {
-    logoUrl = req.files['logo'][0].location;
+  if (logoUrl) {
+    updateData.logo = logoUrl;
   }
 
-  // ✅ Replace registration docs if new ones uploaded
-  if (req?.files?.['registrationDocs']) {
-    registrationDocs = req.files['registrationDocs'].map(file => ({
-      type: req.body.docType || 'Other',
-      file: file.location,
-      fileName: file.originalname
-    }));
-  }
-
-  // ✅ Prepare updateData
-  const updateData = { 
-    ...req.body, 
-    logo: logoUrl, 
-    registrationDocs 
-  };
-
-  // ✅ Remove password if not given
-  if (!req.body.password) {
-    delete updateData.password;
-  }
-
-  // ✅ Safely parse banks
   if (req.body.banks) {
     try {
-      banks = typeof req.body.banks === "string" ? JSON.parse(req.body.banks) : req.body.banks;
-      updateData.banks = banks;
-    } catch (err) {
-      throw new ApiError(400, "Invalid banks data");
+      updateData.banks =
+        typeof req.body.banks === "string"
+          ? JSON.parse(req.body.banks)
+          : req.body.banks;
+    } catch {
+      throw new ApiError(400, "Invalid banks JSON");
     }
   }
 
-  // ✅ Track changes before update
+  if (processedNewDocs.length > 0) {
+    let parsedTypes = [];
+    try {
+      parsedTypes =
+        typeof rawDocTypes === "string"
+          ? JSON.parse(rawDocTypes)
+          : rawDocTypes || [];
+    } catch (e) {
+      parsedTypes = [];
+    }
+
+    const existingDocs = (customer.registrationDocs || []).filter(
+      (doc) => !parsedTypes.includes(doc.type)
+    );
+
+    const finalDocs = [...existingDocs];
+    processedNewDocs.forEach((newDoc, idx) => {
+      const type = parsedTypes[idx];
+      if (type) {
+        const existingIndex = finalDocs.findIndex((d) => d.type === type);
+        if (existingIndex !== -1) {
+          finalDocs[existingIndex] = newDoc;
+        } else {
+          finalDocs.push(newDoc);
+        }
+      }
+    });
+
+    updateData.registrationDocs = finalDocs;
+  }
+
   const oldData = customer.toObject();
   const changes = {};
-
   Object.keys(updateData).forEach((key) => {
+    if (key === "auditLogs") return;
     if (JSON.stringify(oldData[key]) !== JSON.stringify(updateData[key])) {
       changes[key] = { from: oldData[key], to: updateData[key] };
     }
   });
 
-  // ✅ Prevent overwriting auditLogs
-  if (updateData.auditLogs) {
-    delete updateData.auditLogs;
-  }
-
-  // ✅ Apply updates safely
-  for (const key in updateData) {
-    customer[key] = updateData[key];
-  }
-
-  // ✅ Add audit log entry
+  Object.keys(updateData).forEach((key) => {
+    if (key !== "auditLogs") {
+      customer[key] = updateData[key];
+    }
+  });
+  if (!customer.auditLogs) customer.auditLogs = [];
   customer.auditLogs.push({
     action: "update",
-    performedBy: req.user?.id || null,
+    performedBy: new mongoose.Types.ObjectId(req.user.id),
+    timestamp: new Date(),
     details: "Customer updated",
     changes,
   });
-
   await customer.save();
-    let ipAddress =
+  let ipAddress =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
-  // convert ::1 → 127.0.0.1
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
   }
+
   await createAuditLog({
-    module: "customer",
+    module: "Customer",
     action: "update",
     performedBy: req.user.id,
     referenceId: customer._id,
@@ -313,14 +287,12 @@ exports.updateCustomer = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, customer, "Customer updated successfully"));
 });
 
-
-// 🟢 Get All Customers (for a company)
+// 🟢 Get All Customers (for a company)_
 exports.getCustomersByCompany = asyncHandler(async (req, res) => {
   const clientID = req.user.clientID;
   if (!clientID) throw new ApiError(400, "Client ID is required");
-   const  {companyId} = req.params;
+  const { companyId } = req.params;
   if (!companyId) throw new ApiError(400, "company ID is required");
-  
 
   const {
     search = "",
@@ -334,13 +306,14 @@ exports.getCustomersByCompany = asyncHandler(async (req, res) => {
   const perPage = parseInt(limit, 10);
   const currentPage = Math.max(parseInt(page, 10), 1);
   const skip = (currentPage - 1) * perPage;
-
-  // Filter
-  // const filter = { clientId: clientID, status: { $ne: "Delete" } };
-  console.log(companyId,"companyidddd")
-  const filter = { clientId: clientID,company:companyId, status: { $ne: "delete" } };
+  console.log(companyId, "companyidddd");
+  const filter = {
+    clientId: clientID,
+    company: companyId,
+    status: { $ne: "delete" },
+  };
   if (status && status.trim() !== "") filter.status = status;
-  console.log(search,"search","getCustomersByCompany")
+  console.log(search, "search", "getCustomersByCompany");
 
   if (search && search.trim() !== "") {
     filter.$or = [
@@ -349,17 +322,14 @@ exports.getCustomersByCompany = asyncHandler(async (req, res) => {
       { contactPerson: { $regex: search, $options: "i" } },
     ];
   }
-  console.log(filter,"filter",search)
-
-  // Sorting
+  console.log(filter, "filter", search);
   const sortDirection = sortOrder === "asc" ? 1 : -1;
   const sortOptions = { [sortBy]: sortDirection };
-  console.log(filter,"filter");
-
-  // Fetch data & total count
+  console.log(filter, "filter");
   const [customers, total] = await Promise.all([
     Customer.find(filter)
-    .select("-auditLogs").populate({path: "agent", select: "agentName"})
+      .select("-auditLogs")
+      .populate({ path: "agent", select: "agentName" })
       .sort(sortOptions)
       .skip(skip)
       .limit(perPage),
@@ -398,12 +368,10 @@ exports.getCustomersByClient = asyncHandler(async (req, res) => {
   const perPage = parseInt(limit, 10);
   const currentPage = Math.max(parseInt(page, 10), 1);
   const skip = (currentPage - 1) * perPage;
-
-  // Filter
-  // const filter = { clientId: clientID, status: { $ne: "Delete" } };
-  const filter = { clientId: clientID};
+  // const filter = { clientId: clientID, status: { $ne: "Delete" } };_
+  const filter = { clientId: clientID };
   if (status && status.trim() !== "") filter.status = status;
-  console.log(search,"search")
+  console.log(search, "search");
 
   if (search && search.trim() !== "") {
     filter.$or = [
@@ -412,17 +380,16 @@ exports.getCustomersByClient = asyncHandler(async (req, res) => {
       { contactNumber: { $regex: search, $options: "i" } },
     ];
   }
-  console.log(filter,"filter")
-
-  // Sorting
+  console.log(filter, "filter");
+  // Sorting_
   const sortDirection = sortOrder === "asc" ? 1 : -1;
   const sortOptions = { [sortBy]: sortDirection };
-  console.log(filter,"filter");
+  console.log(filter, "filter");
 
-  // Fetch data & total count
+  // / Fetch data & total count_
   const [customers, total] = await Promise.all([
     Customer.find(filter)
-    .select("-auditLogs")
+      .select("-auditLogs")
       .sort(sortOptions)
       .skip(skip)
       .limit(perPage),
@@ -446,8 +413,7 @@ exports.getCustomersByClient = asyncHandler(async (req, res) => {
   );
 });
 
-
-// 🟢 Get Single Customer
+// 🟢 Get Single Customer_
 exports.getCustomerById = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
@@ -459,54 +425,44 @@ exports.getCustomerById = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, customer, "Customer fetched successfully"));
 });
 
-//Delete Customer
-
 exports.deleteCustomer = asyncHandler(async (req, res) => {
   const { id } = req.params;
-
-  // check if id is passed
   if (!id) {
     throw new ApiError(400, "Customer ID is required");
   }
-
-  // find customer
+  // find customer_
   const customer = await Customer.findById(id);
   if (!customer) {
     throw new ApiError(404, "Customer not found");
   }
-
-  // check permission
+  // check permission_
   if (String(customer.clientId) !== String(req.user.clientID)) {
     throw new ApiError(403, "You are not permitted to perform this action");
   }
-
-  // soft delete
   customer.status = "delete";
-   customer.auditLogs.push({
-        action: "delete",
-        performedBy: new mongoose.Types.ObjectId(req.user.id),
-        timestamp: new Date(),
-        details: "Customer marked as deleted",
-      });
+  customer.auditLogs.push({
+    action: "delete",
+    performedBy: new mongoose.Types.ObjectId(req.user.id),
+    timestamp: new Date(),
+    details: "Customer marked as deleted",
+  });
   await customer.save();
-    let ipAddress =
-    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
-  // convert ::1 → 127.0.0.1
+  let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress; // convert ::1 → 127.0.0.1_
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
   }
-    await createAuditLog({
+  await createAuditLog({
     module: "customer",
     action: "delete",
-    performedBy:  req.user.id,
+    performedBy: req.user.id,
     referenceId: customer._id,
     clientId: req.user.clientID,
     details: "Customer marked as deleted",
     ipAddress,
   });
 
-  // send response
+  // send response_
   res.status(200).json({
     success: true,
     message: "Customer deleted successfully",
