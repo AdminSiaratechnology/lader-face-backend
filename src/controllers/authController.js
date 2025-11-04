@@ -259,7 +259,10 @@ exports.login = asyncHandler(async (req, res) => {
   if (!email || !password)
     throw new ApiError(400, "Email and password are required");
 
-  const user = await User.findOne({ email: email.toLowerCase() });
+  const user = await User.findOne({ email: email.toLowerCase() }).populate({
+    path: "access.company",
+    select: "namePrint logo nameStreet code"
+  });
   if (!user) throw new ApiError(401, "Invalid credentials");
 
   const isMatch = await bcrypt.compare(password, user.password);
