@@ -6,7 +6,7 @@ const ApiResponse = require("../utils/apiResponse");
 const asyncHandler = require("../utils/asyncHandler");
 const User = require("../models/User");
 const { default: mongoose } = require("mongoose");
-const   {createAuditLog}=require("../utils/createAuditLog")
+const { createAuditLog } = require("../utils/createAuditLog");
 
 // ===== Helpers ===== //
 const ensureFound = (doc, message = "Resource not found") => {
@@ -16,7 +16,7 @@ const ensureFound = (doc, message = "Resource not found") => {
 // Insert records in batches with robust error handling
 const insertInBatches = async (data, batchSize) => {
   if (!data || !Array.isArray(data) || data.length === 0) {
-    console.error('No valid data to insert');
+    console.error("No valid data to insert");
     return [];
   }
 
@@ -30,23 +30,35 @@ const insertInBatches = async (data, batchSize) => {
 
     console.log(`Inserting batch of ${batch.length} records`);
     try {
-      const inserted = await StockCategory.insertMany(batch, { ordered: false });
+      const inserted = await StockCategory.insertMany(batch, {
+        ordered: false,
+      });
       if (inserted && Array.isArray(inserted)) {
         results.push(...inserted);
         console.log(`Inserted ${inserted.length} records in batch`);
       } else {
-        console.error('No records inserted in batch');
+        console.error("No records inserted in batch");
       }
     } catch (error) {
-      if (error.name === 'MongoBulkWriteError' && error.code === 11000) {
-        const failedDocs = error.writeResult?.result?.writeErrors?.map(err => ({
-          name: err.op.name,
-          error: err.errmsg
-        })) || [];
-        const successfulDocs = batch.filter(doc => !failedDocs.some(f => f.name === doc.name));
-        results.push(...successfulDocs.map(doc => ({ ...doc, _id: doc._id || new mongoose.Types.ObjectId() })));
-        failedDocs.forEach(failed => {
-          console.error(`Failed to insert record with name ${failed.name}: ${failed.error}`);
+      if (error.name === "MongoBulkWriteError" && error.code === 11000) {
+        const failedDocs =
+          error.writeResult?.result?.writeErrors?.map((err) => ({
+            name: err.op.name,
+            error: err.errmsg,
+          })) || [];
+        const successfulDocs = batch.filter(
+          (doc) => !failedDocs.some((f) => f.name === doc.name)
+        );
+        results.push(
+          ...successfulDocs.map((doc) => ({
+            ...doc,
+            _id: doc._id || new mongoose.Types.ObjectId(),
+          }))
+        );
+        failedDocs.forEach((failed) => {
+          console.error(
+            `Failed to insert record with name ${failed.name}: ${failed.error}`
+          );
         });
       } else {
         console.error(`Batch insertion failed: ${error.message}`);
@@ -55,8 +67,11 @@ const insertInBatches = async (data, batchSize) => {
   }
 
   // Verify inserted records
-  const insertedIds = results.map(doc => doc._id);
-  const verifiedDocs = insertedIds.length > 0 ? await StockCategory.find({ _id: { $in: insertedIds } }) : [];
+  const insertedIds = results.map((doc) => doc._id);
+  const verifiedDocs =
+    insertedIds.length > 0
+      ? await StockCategory.find({ _id: { $in: insertedIds } })
+      : [];
   console.log(`Verified ${verifiedDocs.length} records in database`);
   return verifiedDocs;
 };
@@ -99,24 +114,28 @@ exports.createStockCategory = asyncHandler(async (req, res) => {
 
   let ipAddress =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
+
   // convert ::1 → 127.0.0.1
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
   }
-  
+
   console.log(ipAddress, "ipaddress");
-    await createAuditLog({
+  await createAuditLog({
     module: "StockCategory",
     action: "create",
     performedBy: req.user.id,
     referenceId: category._id,
-    clientId:req.user.clientID,
+    clientId: req.user.clientID,
     details: "Stock Category created successfully",
     ipAddress,
   });
 
-  res.status(201).json(new ApiResponse(201, category, "Stock Category created successfully"));
+  res
+    .status(201)
+    .json(
+      new ApiResponse(201, category, "Stock Category created successfully")
+    );
 });
 
 exports.createBulkStockCategories = asyncHandler(async (req, res) => {
@@ -195,7 +214,9 @@ exports.createBulkStockCategories = asyncHandler(async (req, res) => {
   }
 
   // Log prepared results
-  console.log(`Prepared ${results.length} valid stock categories for insertion`);
+  console.log(
+    `Prepared ${results.length} valid stock categories for insertion`
+  );
 
   // Batch insert
   const inserted = await insertInBatches(results, 1000);
@@ -216,8 +237,16 @@ exports.createBulkStockCategories = asyncHandler(async (req, res) => {
 });
 
 exports.getStockCategories = asyncHandler(async (req, res) => {
-  
-  const { companyId, stockGroupId, search, status, sortBy, sortOrder, limit = 10, page = 1 } = req.query;
+  const {
+    companyId,
+    stockGroupId,
+    search,
+    status,
+    sortBy,
+    sortOrder,
+    limit = 10,
+    page = 1,
+  } = req.query;
 
   // filter object
   const filter = { status: { $ne: "Delete" } }; // soft delete filter
@@ -235,7 +264,7 @@ exports.getStockCategories = asyncHandler(async (req, res) => {
   }
 
   // sorting
-  let sort= {};
+  let sort = {};
   if (sortBy) {
     let field = sortBy === "name" ? "name" : "createdAt";
     let order = sortOrder === "desc" ? -1 : 1;
@@ -252,7 +281,7 @@ exports.getStockCategories = asyncHandler(async (req, res) => {
   // query with pagination
   const [categories, total] = await Promise.all([
     StockCategory.find(filter)
-    .select("-auditLogs")
+      .select("-auditLogs")
       .sort(sort)
       .skip(skip)
       .limit(perPage),
@@ -276,10 +305,17 @@ exports.getStockCategories = asyncHandler(async (req, res) => {
   );
 });
 exports.getStockCategoriesByCompanyId = asyncHandler(async (req, res) => {
-  
-  const {  stockGroupId, search, status, sortBy, sortOrder, limit = 10, page = 1 } = req.query;
-  const {companyId}=req.params
-  if(!companyId) throw new ApiError(400,"company id is required")
+  const {
+    stockGroupId,
+    search,
+    status,
+    sortBy,
+    sortOrder,
+    limit = 10,
+    page = 1,
+  } = req.query;
+  const { companyId } = req.params;
+  if (!companyId) throw new ApiError(400, "company id is required");
 
   // filter object
   const filter = { status: { $ne: "delete" } }; // soft delete filter
@@ -297,7 +333,7 @@ exports.getStockCategoriesByCompanyId = asyncHandler(async (req, res) => {
   }
 
   // sorting
-  let sort= {};
+  let sort = {};
   if (sortBy) {
     let field = sortBy === "name" ? "name" : "createdAt";
     let order = sortOrder === "desc" ? -1 : 1;
@@ -314,8 +350,9 @@ exports.getStockCategoriesByCompanyId = asyncHandler(async (req, res) => {
   // query with pagination
   const [categories, total] = await Promise.all([
     StockCategory.find(filter)
-    .populate("companyId").populate({path: "parent", select: "name"})
-    .select("-auditLogs")
+      .populate("companyId")
+      .populate({ path: "parent", select: "name" })
+      .select("-auditLogs")
       .sort(sort)
       .skip(skip)
       .limit(perPage),
@@ -339,8 +376,6 @@ exports.getStockCategoriesByCompanyId = asyncHandler(async (req, res) => {
   );
 });
 
-
-
 // Update Stock Category
 exports.updateStockCategory = asyncHandler(async (req, res) => {
   const { id } = req.params;
@@ -350,16 +385,16 @@ exports.updateStockCategory = asyncHandler(async (req, res) => {
   if (!stockCategory) throw new ApiError(404, "Stock Category not found");
 
   // ✅ Allowed fields for update
-  const allowedFields = ["companyId", "name", "description", "status"];
+  const allowedFields = ["companyId", "name", "description", "status", "parent"];
   const updateData = {};
-  Object.keys(req.body || {}).forEach(key => {
+  Object.keys(req.body || {}).forEach((key) => {
     if (allowedFields.includes(key)) updateData[key] = req.body[key];
   });
 
   // ✅ Track changes for audit log
   const oldData = stockCategory.toObject();
   const changes = {};
-  Object.keys(updateData).forEach(key => {
+  Object.keys(updateData).forEach((key) => {
     if (JSON.stringify(oldData[key]) !== JSON.stringify(updateData[key])) {
       changes[key] = { from: oldData[key], to: updateData[key] };
     }
@@ -375,15 +410,15 @@ exports.updateStockCategory = asyncHandler(async (req, res) => {
     performedBy: req.user?.id || null,
     details: "Stock Category updated",
     changes,
-    timestamp: new Date()
+    timestamp: new Date(),
   });
 
   // ✅ Save
   await stockCategory.save();
 
-   let ipAddress =
+  let ipAddress =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
+
   // convert ::1 → 127.0.0.1
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
@@ -399,9 +434,10 @@ exports.updateStockCategory = asyncHandler(async (req, res) => {
     ipAddress,
   });
 
-  res.json(new ApiResponse(200, stockCategory, "Stock Category updated successfully"));
+  res.json(
+    new ApiResponse(200, stockCategory, "Stock Category updated successfully")
+  );
 });
-
 
 // Delete Stock Category (Soft delete → status: "Delete")
 exports.deleteStockCategory = asyncHandler(async (req, res) => {
@@ -420,12 +456,12 @@ exports.deleteStockCategory = asyncHandler(async (req, res) => {
   await category.save();
   let ipAddress =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
+
   // convert ::1 → 127.0.0.1
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
   }
-    await createAuditLog({
+  await createAuditLog({
     module: "StockCategory",
     action: "delete",
     performedBy: req.user.id,
@@ -435,6 +471,7 @@ exports.deleteStockCategory = asyncHandler(async (req, res) => {
     ipAddress,
   });
 
-
-  res.json(new ApiResponse(200, category, "Stock Category deleted successfully"));
+  res.json(
+    new ApiResponse(200, category, "Stock Category deleted successfully")
+  );
 });

@@ -144,6 +144,7 @@ exports.getAllClientUsers = asyncHandler(async (req, res) => {
 
   const matchStage = {
     clientID: new mongoose.Types.ObjectId(clientId),
+    status: { $ne: "delete" },
   };
   if (search) {
     matchStage.$or = [
