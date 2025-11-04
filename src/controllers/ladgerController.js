@@ -8,6 +8,7 @@ const ApiResponse = require('../utils/apiResponse');
 const mongoose = require('mongoose');
 const   {createAuditLog}=require("../utils/createAuditLog")
 const { generateUniqueId } = require('../utils/generate16DigiId');
+const processRegistrationDocs =require("../utils/processRegistrationDocs")
 
 // Generate unique 18-digit code using timestamp and index
 // const generateUniqueId = (index) => {
@@ -66,45 +67,132 @@ const insertInBatches = async (data, batchSize) => {
 
 
 // 🟢 Create Ledger
+// exports.createLedger = asyncHandler(async (req, res) => {
+//   const {
+//     ledgerName,
+//     emailAddress,
+//     phoneNumber,
+//     companyID, // company reference
+//     ...rest
+//   } = req.body;
+
+//   if (!ledgerName) {
+//     throw new ApiError(400, "Ledger name and code are required");
+//   }
+//   const clientId = req.user.clientID;
+
+//   let logoUrl = null;
+//   let registrationDocs = [];
+
+//   // Logo file
+//   if (req?.files?.['logo'] && req?.files?.['logo'][0]) {
+//     logoUrl = req.files['logo'][0].location;
+//   }
+
+//   // Registration docs files
+//      let registrationDocTypes;
+//     try {
+//       registrationDocTypes = JSON.parse(req.body.registrationDocTypes || '[]');
+//     } catch (e) {
+//       console.error('Failed to parse registrationDocTypes:', e);
+//       registrationDocTypes = [];
+//     }
+
+//     if (req?.files?.['registrationDocs']) {
+//       registrationDocs = req?.files['registrationDocs'].map((file, index) => ({
+//         type: registrationDocTypes[index] || 'Other',
+//         file: file.location,
+//         fileName: file.originalname
+//       }));
+//     }
+//   let ledgerCode = await generateUniqueId(Ledger, "ledgerCode");
+
+//   const ledger = await Ledger.create({
+//     ledgerName,
+//     ledgerCode,
+//     clientId,
+//     emailAddress,
+//     phoneNumber,
+//     // companyID,
+//     ...rest,
+//     logo: logoUrl || "",
+//     registrationDocs: registrationDocs || [],
+//     banks: JSON.parse(req.body.banks),
+//     company: companyID,
+//     createdBy: req?.user?.id,
+//     auditLogs: [
+//       {
+//         action: "create",
+//         performedBy: new mongoose.Types.ObjectId(req.user.id),
+//         timestamp: new Date(),
+//         details: "Ledger created",
+//       },
+//     ],
+//   });
+//   let ipAddress =
+//     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+//   // convert ::1 → 127.0.0.1
+//   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+//     ipAddress = "127.0.0.1";
+//   }
+  
+//   console.log(ipAddress, "ipaddress");
+//     await createAuditLog({
+//     module: "Ledger",
+//     action: "create",
+//     performedBy: req.user.id,
+//     referenceId: ledger._id,
+//     clientId,
+//     details: "ledger created successfully",
+//     ipAddress,
+//   });
+
+//   res
+//     .status(201)
+//     .json(new ApiResponse(201, ledger, "Ledger created successfully"));
+// });
+// Create Ledger
 exports.createLedger = asyncHandler(async (req, res) => {
   const {
     ledgerName,
     emailAddress,
     phoneNumber,
-    companyID, // company reference
+    companyID,
+    registrationDocTypes: rawDocTypes,
     ...rest
   } = req.body;
 
-  if (!ledgerName) {
-    throw new ApiError(400, "Ledger name and code are required");
-  }
+  const adminId = req?.user?.id;
   const clientId = req.user.clientID;
 
-  let logoUrl = null;
-  let registrationDocs = [];
-
-  // Logo file
-  if (req?.files?.['logo'] && req?.files?.['logo'][0]) {
-    logoUrl = req.files['logo'][0].location;
+  if (!ledgerName) {
+    throw new ApiError(400, "Ledger name is required");
+  }
+  if (!clientId) {
+    throw new ApiError(400, "Client ID is required from token");
   }
 
-  // Registration docs files
-     let registrationDocTypes;
-    try {
-      registrationDocTypes = JSON.parse(req.body.registrationDocTypes || '[]');
-    } catch (e) {
-      console.error('Failed to parse registrationDocTypes:', e);
-      registrationDocTypes = [];
-    }
+  // Parallelize file processing
+  const [logoUrl, processedDocs] = await Promise.all([
+    req.files?.logo?.[0]?.location || null,
+    processRegistrationDocs(req.files?.registrationDocs || [], rawDocTypes),
+  ]);
 
-    if (req?.files?.['registrationDocs']) {
-      registrationDocs = req?.files['registrationDocs'].map((file, index) => ({
-        type: registrationDocTypes[index] || 'Other',
-        file: file.location,
-        fileName: file.originalname
-      }));
+  // Generate unique ledgerCode
+  const ledgerCode = await generateUniqueId(Ledger, "ledgerCode");
+
+  // Parse banks safely
+  let banks = [];
+  if (req.body.banks) {
+    try {
+      banks = typeof req.body.banks === "string"
+        ? JSON.parse(req.body.banks)
+        : req.body.banks;
+    } catch (err) {
+      throw new ApiError(400, "Invalid banks data format");
     }
-  let ledgerCode = await generateUniqueId(Ledger, "ledgerCode");
+  }
 
   const ledger = await Ledger.create({
     ledgerName,
@@ -112,44 +200,40 @@ exports.createLedger = asyncHandler(async (req, res) => {
     clientId,
     emailAddress,
     phoneNumber,
-    // companyID,
+    companyID,
     ...rest,
     logo: logoUrl || "",
-    registrationDocs: registrationDocs || [],
-    banks: JSON.parse(req.body.banks),
+    registrationDocs: processedDocs,
+    banks,
     company: companyID,
-    createdBy: req?.user?.id,
+    createdBy: adminId,
     auditLogs: [
       {
         action: "create",
-        performedBy: new mongoose.Types.ObjectId(req.user.id),
+        performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
         timestamp: new Date(),
         details: "Ledger created",
       },
     ],
   });
-  let ipAddress =
-    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
-  // convert ::1 → 127.0.0.1
+
+  // Audit Log
+  let ipAddress = req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
   }
-  
-  console.log(ipAddress, "ipaddress");
-    await createAuditLog({
+
+  await createAuditLog({
     module: "Ledger",
     action: "create",
     performedBy: req.user.id,
     referenceId: ledger._id,
     clientId,
-    details: "ledger created successfully",
+    details: "Ledger created successfully",
     ipAddress,
   });
 
-  res
-    .status(201)
-    .json(new ApiResponse(201, ledger, "Ledger created successfully"));
+  res.status(201).json(new ApiResponse(201, ledger, "Ledger created successfully"));
 });
 
 exports.createBulkLedgers = asyncHandler(async (req, res) => {
@@ -213,7 +297,7 @@ exports.createBulkLedgers = asyncHandler(async (req, res) => {
       const phoneNumber = body.phoneNumber || `+919${(973884720 + index).toString().padStart(9, '0')}`;
 
       const ledgerObj = {
-        _id: new mongoose.Types.ObjectId(), // Generate unique _id
+        _id: new mongoose.Types.ObjectId(), // Generate unique_ id
         ledgerName: body.ledgerName,
         ledgerCode,
         clientId,
@@ -269,102 +353,217 @@ exports.createBulkLedgers = asyncHandler(async (req, res) => {
 });
 
 // 🟢 Update Ledger
+// exports.updateLedger = asyncHandler(async (req, res) => {
+//   const { id } = req.params;
+
+//   // ✅ Step 1: Find existing ledger
+//   const ledger = await Ledger.findById(id);
+//   if (!ledger) throw new ApiError(404, "Ledger not found");
+
+//   let logoUrl = ledger.logo;
+//   let registrationDocs = ledger.registrationDocs;
+//   let banks = ledger.banks;
+
+//   // ✅ Step 2: Replace logo if new one uploaded
+//   if (req?.files?.["logo"] && req?.files?.["logo"][0]) {
+//     logoUrl = req.files["logo"][0].location;
+//   }
+
+//   // ✅ Step 3: Replace registration docs if new ones uploaded
+//   if (req?.files?.["registrationDocs"]) {
+//     registrationDocs = req.files["registrationDocs"].map((file) => ({
+//       type: req.body.docType || "Other",
+//       file: file.location,
+//       fileName: file.originalname,
+//     }));
+//   }
+
+//   // ✅ Step 4: Prepare updateData
+//   const updateData = {
+//     ...req.body,
+//     logo: logoUrl,
+//     registrationDocs,
+//   };
+
+//   // ✅ Step 5: Safely parse banks
+//   if (req.body.banks) {
+//     try {
+//       banks =
+//         typeof req.body.banks === "string"
+//           ? JSON.parse(req.body.banks)
+//           : req.body.banks;
+//       updateData.banks = banks;
+//     } catch (err) {
+//       throw new ApiError(400, "Invalid banks data");
+//     }
+//   }
+
+//   // ✅ Step 6: Track field changes before update
+//   const oldData = ledger.toObject();
+//   const changes = {};
+
+//   Object.keys(updateData).forEach((key) => {
+//     if (JSON.stringify(oldData[key]) !== JSON.stringify(updateData[key])) {
+//       changes[key] = { from: oldData[key], to: updateData[key] };
+//     }
+//   });
+
+//   // ✅ Step 7: Prevent auditLogs overwrite
+//   if (updateData.auditLogs) {
+//     delete updateData.auditLogs;
+//   }
+
+//   // ✅ Step 8: Apply updates safely
+//   for (const key in updateData) {
+//     ledger[key] = updateData[key];
+//   }
+
+//   // ✅ Step 9: Push new audit log entry
+//   ledger.auditLogs.push({
+//     action: "update",
+//     performedBy: req.user?.id || null,
+//     details: "Ledger updated successfully",
+//     changes,
+//   });
+
+//   // ✅ Step 10: Save ledger document
+//   await ledger.save();
+//    let ipAddress =
+//     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  
+//   // convert ::1 → 127.0.0.1
+//   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+//     ipAddress = "127.0.0.1";
+//   }
+//   await createAuditLog({
+//     module: "Ledger",
+//     action: "update",
+//     performedBy: req.user.id,
+//     referenceId: ledger._id,
+//     clientId: req.user.clientID,
+//     details: "ledger updated successfully",
+//     changes,
+//     ipAddress,
+//   });
+
+//   res
+//     .status(200)
+//     .json(new ApiResponse(200, ledger, "Ledger updated successfully"));
+// });
+
+// Update Ledger
 exports.updateLedger = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  // ✅ Step 1: Find existing ledger
+  // 1. Fetch ledger
   const ledger = await Ledger.findById(id);
   if (!ledger) throw new ApiError(404, "Ledger not found");
 
-  let logoUrl = ledger.logo;
-  let registrationDocs = ledger.registrationDocs;
-  let banks = ledger.banks;
+  // 2. Destructure
+  const { registrationDocTypes: rawDocTypes, ...rest } = req.body;
 
-  // ✅ Step 2: Replace logo if new one uploaded
-  if (req?.files?.["logo"] && req?.files?.["logo"][0]) {
-    logoUrl = req.files["logo"][0].location;
+  // 3. Parallelize file processing
+  const [logoUrl, processedNewDocs] = await Promise.all([
+    req.files?.logo?.[0]?.location || null,
+    processRegistrationDocs(req.files?.registrationDocs || [], rawDocTypes),
+  ]);
+
+  // 4. Prepare update data
+  const updateData = { ...rest };
+
+  // Logo
+  if (logoUrl) {
+    updateData.logo = logoUrl;
   }
 
-  // ✅ Step 3: Replace registration docs if new ones uploaded
-  if (req?.files?.["registrationDocs"]) {
-    registrationDocs = req.files["registrationDocs"].map((file) => ({
-      type: req.body.docType || "Other",
-      file: file.location,
-      fileName: file.originalname,
-    }));
-  }
-
-  // ✅ Step 4: Prepare updateData
-  const updateData = {
-    ...req.body,
-    logo: logoUrl,
-    registrationDocs,
-  };
-
-  // ✅ Step 5: Safely parse banks
+  // Banks
   if (req.body.banks) {
     try {
-      banks =
-        typeof req.body.banks === "string"
-          ? JSON.parse(req.body.banks)
-          : req.body.banks;
-      updateData.banks = banks;
-    } catch (err) {
-      throw new ApiError(400, "Invalid banks data");
+      updateData.banks = typeof req.body.banks === "string"
+        ? JSON.parse(req.body.banks)
+        : req.body.banks;
+    } catch {
+      throw new ApiError(400, "Invalid banks JSON");
     }
   }
 
-  // ✅ Step 6: Track field changes before update
+  // 5. Registration Docs: Replace by type
+  if (processedNewDocs.length > 0) {
+    let parsedTypes = [];
+    try {
+      parsedTypes = typeof rawDocTypes === "string" ? JSON.parse(rawDocTypes) : rawDocTypes || [];
+    } catch (e) {
+      parsedTypes = [];
+    }
+
+    const existingDocs = (ledger.registrationDocs || []).filter(
+      doc => !parsedTypes.includes(doc.type)
+    );
+
+    const finalDocs = [...existingDocs];
+    processedNewDocs.forEach((newDoc, idx) => {
+      const type = parsedTypes[idx];
+      if (type) {
+        const existingIndex = finalDocs.findIndex(d => d.type === type);
+        if (existingIndex !== -1) {
+          finalDocs[existingIndex] = newDoc;
+        } else {
+          finalDocs.push(newDoc);
+        }
+      }
+    });
+
+    updateData.registrationDocs = finalDocs;
+  }
+
+  // 6. Track changes
   const oldData = ledger.toObject();
   const changes = {};
-
-  Object.keys(updateData).forEach((key) => {
+  Object.keys(updateData).forEach(key => {
+    if (key === "auditLogs") return;
     if (JSON.stringify(oldData[key]) !== JSON.stringify(updateData[key])) {
       changes[key] = { from: oldData[key], to: updateData[key] };
     }
   });
 
-  // ✅ Step 7: Prevent auditLogs overwrite
-  if (updateData.auditLogs) {
-    delete updateData.auditLogs;
-  }
+  // 7. Apply updates (skip auditLogs)
+  Object.keys(updateData).forEach(key => {
+    if (key !== "auditLogs") {
+      ledger[key] = updateData[key];
+    }
+  });
 
-  // ✅ Step 8: Apply updates safely
-  for (const key in updateData) {
-    ledger[key] = updateData[key];
-  }
-
-  // ✅ Step 9: Push new audit log entry
+  // 8. Push audit log
+  if (!ledger.auditLogs) ledger.auditLogs = [];
   ledger.auditLogs.push({
     action: "update",
-    performedBy: req.user?.id || null,
-    details: "Ledger updated successfully",
+    performedBy: new mongoose.Types.ObjectId(req.user.id),
+    timestamp: new Date(),
+    details: "Ledger updated",
     changes,
   });
 
-  // ✅ Step 10: Save ledger document
+  // 9. Save
   await ledger.save();
-   let ipAddress =
-    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
-  // convert ::1 → 127.0.0.1
+
+  // 10. External audit log
+  let ipAddress = req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
   }
+
   await createAuditLog({
     module: "Ledger",
     action: "update",
     performedBy: req.user.id,
     referenceId: ledger._id,
     clientId: req.user.clientID,
-    details: "ledger updated successfully",
+    details: "Ledger updated successfully",
     changes,
     ipAddress,
   });
 
-  res
-    .status(200)
-    .json(new ApiResponse(200, ledger, "Ledger updated successfully"));
+  res.status(200).json(new ApiResponse(200, ledger, "Ledger updated successfully"));
 });
 
 

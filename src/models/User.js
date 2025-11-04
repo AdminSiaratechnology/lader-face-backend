@@ -103,6 +103,7 @@ const userSchema = new mongoose.Schema(
 
     // 🧾 Maintain full change history here
     auditLogs: [auditLogSchema],
+    profilePicture: { type: String },
   },
   { timestamps: true }
 );

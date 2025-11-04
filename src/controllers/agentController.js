@@ -8,6 +8,7 @@ const mongoose = require('mongoose');
 const User=require("../models/User")
 const   {createAuditLog}=require("../utils/createAuditLog")
 const { generateUniqueId } = require('../utils/generate16DigiId');
+const processRegistrationDocs =require("../utils/processRegistrationDocs")
 
 // Generate unique code using timestamp and index
 // const generateUniqueId = (index) => {
@@ -71,6 +72,7 @@ exports.createAgent = asyncHandler(async (req, res) => {
     emailAddress,
     phoneNumber,
     companyID, // company reference
+    registrationDocTypes: rawDocTypes, // Extract rawDocTypes like in Company
     ...rest
   } = req.body;
   const adminId = req?.user?.id;
@@ -84,29 +86,15 @@ exports.createAgent = asyncHandler(async (req, res) => {
   }
 
   let logoUrl = null;
-  let registrationDocs = [];
 
   // Logo file
   if (req?.files?.['logo'] && req?.files?.['logo'][0]) {
     logoUrl = req.files['logo'][0].location;
   }
 
-  // Registration docs files
-    let registrationDocTypes;
-    try {
-      registrationDocTypes = JSON.parse(req.body.registrationDocTypes || '[]');
-    } catch (e) {
-      console.error('Failed to parse registrationDocTypes:', e);
-      registrationDocTypes = [];
-    }
+  // Registration docs files - Use processRegistrationDocs like in Company
+  const processedDocs = await processRegistrationDocs(req.files?.registrationDocs || [], rawDocTypes);
 
-    if (req?.files?.['registrationDocs']) {
-      registrationDocs = req?.files['registrationDocs'].map((file, index) => ({
-        type: registrationDocTypes[index] || 'Other',
-        file: file.location,
-        fileName: file.originalname
-      }));
-    }
   let code = await generateUniqueId(Agent, "code");
   console.log(JSON.parse(req.body.banks), "JSON.parse(req.body.banks)");
 
@@ -119,7 +107,7 @@ exports.createAgent = asyncHandler(async (req, res) => {
     companyID,
     ...rest,
     logo: logoUrl || "",
-    registrationDocs: registrationDocs || [],
+    registrationDocs: processedDocs,
     banks: JSON.parse(req.body.banks),
     company: companyID,
     createdBy: adminId,
@@ -228,7 +216,7 @@ exports.createBulkAgents = asyncHandler(async (req, res) => {
       const zipCode = body.zipCode || (110094 + index).toString().padStart(6, '0');
 
       const agentObj = {
-        _id: new mongoose.Types.ObjectId(), // Generate unique _id
+        _id: new mongoose.Types.ObjectId(), // Generate unique_ id
         company: body.company,
         clientId,
         agentType: body.agentType || "individual",
@@ -301,99 +289,121 @@ exports.createBulkAgents = asyncHandler(async (req, res) => {
 exports.updateAgent = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  // ✅ Step 1: Fetch existing agent
+  // 1. Fetch agent
   const agent = await Agent.findById(id);
   if (!agent) throw new ApiError(404, "Agent not found");
 
-  let logoUrl = agent.logo;
-  let registrationDocs = agent.registrationDocs;
-  let banks = agent.banks;
+  // 2. Destructure like Company
+  const { registrationDocTypes: rawDocTypes, ...rest } = req.body;
 
-  // ✅ Step 2: Replace logo if new one uploaded
-  if (req?.files?.["logo"] && req?.files?.["logo"][0]) {
-    logoUrl = req.files["logo"][0].location;
+  // 3. Parallelize file processing (logo + docs)
+  const [logoUrl, processedNewDocs] = await Promise.all([
+    req.files?.logo?.[0]?.location || null,
+    processRegistrationDocs(req.files?.registrationDocs || [], rawDocTypes),
+  ]);
+
+  // 4. Prepare update data
+  const updateData = { ...rest };
+
+  // Logo
+  if (logoUrl) {
+    updateData.logo = logoUrl;
   }
 
-  // ✅ Step 3: Replace registration docs if new ones uploaded
-  if (req?.files?.["registrationDocs"]) {
-    registrationDocs = req.files["registrationDocs"].map((file) => ({
-      type: req.body.docType || "Other",
-      file: file.location,
-      fileName: file.originalname,
-    }));
-  }
-
-  // ✅ Step 4: Prepare safe update data
-  const updateData = {
-    ...req.body,
-    logo: logoUrl,
-    registrationDocs,
-  };
-
-  // ✅ Step 5: Safely parse banks
+  // Banks
   if (req.body.banks) {
     try {
-      banks =
-        typeof req.body.banks === "string"
-          ? JSON.parse(req.body.banks)
-          : req.body.banks;
-      updateData.banks = banks;
-    } catch (err) {
-      throw new ApiError(400, "Invalid banks data");
+      updateData.banks = typeof req.body.banks === "string"
+        ? JSON.parse(req.body.banks)
+        : req.body.banks;
+    } catch {
+      throw new ApiError(400, "Invalid banks JSON");
     }
   }
 
-  // ✅ Step 6: Track changes before saving
+  // 5. Registration Docs: Replace by type (same as Company)
+  if (processedNewDocs.length > 0) {
+    let parsedTypes = [];
+    try {
+      parsedTypes = typeof rawDocTypes === "string" ? JSON.parse(rawDocTypes) : rawDocTypes || [];
+    } catch (e) {
+      parsedTypes = [];
+    }
+
+    // Keep existing docs that are NOT being updated
+    const existingDocs = (agent.registrationDocs || []).filter(
+      doc => !parsedTypes.includes(doc.type)
+    );
+
+    // Replace only the types that were uploaded
+    const finalDocs = [...existingDocs];
+    processedNewDocs.forEach((newDoc, idx) => {
+      const type = parsedTypes[idx];
+      if (type) {
+        const existingIndex = finalDocs.findIndex(d => d.type === type);
+        if (existingIndex !== -1) {
+          finalDocs[existingIndex] = newDoc;
+        } else {
+          finalDocs.push(newDoc);
+        }
+      }
+    });
+
+    updateData.registrationDocs = finalDocs;
+  }
+  // If no new docs → keep existing
+
+  // 6. Track changes for audit
   const oldData = agent.toObject();
   const changes = {};
-  Object.keys(updateData).forEach((key) => {
+  Object.keys(updateData).forEach(key => {
+    if (key === "auditLogs") return;
     if (JSON.stringify(oldData[key]) !== JSON.stringify(updateData[key])) {
       changes[key] = { from: oldData[key], to: updateData[key] };
     }
   });
 
-  // ✅ Step 7: Prevent auditLogs overwrite
-  if (updateData.auditLogs) {
-    delete updateData.auditLogs;
-  }
+  // 7. Apply updates (skip auditLogs)
+  Object.keys(updateData).forEach(key => {
+    if (key !== "auditLogs") {
+      agent[key] = updateData[key];
+    }
+  });
 
-  // ✅ Step 8: Apply updates safely
-  for (const key in updateData) {
-    agent[key] = updateData[key];
-  }
-
-  // ✅ Step 9: Push new audit log entry
+  // 8. Push audit log
+  if (!agent.auditLogs) agent.auditLogs = [];
   agent.auditLogs.push({
     action: "update",
-    performedBy: req.user?.id || null,
-    details: "Agent updated successfully",
+    performedBy: new mongoose.Types.ObjectId(req.user.id),
+    timestamp: new Date(),
+    details: "Agent updated",
     changes,
   });
 
-  // ✅ Step 10: Save document
+  // 9. Save
   await agent.save();
-   let ipAddress =
-    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
-  // convert ::1 → 127.0.0.1
+
+  // 10. Create audit log (same as Company)
+  let ipAddress = req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
   }
+
   await createAuditLog({
     module: "Agent",
     action: "update",
     performedBy: req.user.id,
     referenceId: agent._id,
     clientId: req.user.clientID,
-    details: "agent updated successfully",
+    details: "Agent updated successfully",
     changes,
     ipAddress,
   });
 
-  res
-    .status(200)
-    .json(new ApiResponse(200, agent, "Agent updated successfully"));
+  // 11. Respond
+  res.status(200).json(new ApiResponse(200, agent, "Agent updated successfully"));
 });
+
 
 
 // 🟢 Get All Agents (for a company)
@@ -409,7 +419,7 @@ exports.getAgentsByCompany = asyncHandler(async (req, res) => {
   const {
     search="",
     status="",
-    sortBy='createdAt',
+    sortBy='',
     sortOrder="desc",
     page=1,
     limit=10
@@ -428,9 +438,8 @@ exports.getAgentsByCompany = asyncHandler(async (req, res) => {
     ];
   }
   // Sorting
-  const sortDirection = sortOrder === "asc" ? 1 : -1;
-  const sortOptions = { [sortBy]: sortDirection };
-
+  const sortDirection = sortOrder === "desc" ? -1 : 1;
+  const sortOptions = { [sortBy || "createdAt"]: sortDirection };
   // Fetch data & total count
   const [agents, total] = await Promise.all([
     Agent.find(filter).select("-auditLogs")

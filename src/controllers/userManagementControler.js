@@ -154,58 +154,61 @@ exports.getAllClientUsers = asyncHandler(async (req, res) => {
   if (role) matchStage.role = role;
   if (status) matchStage.status = status;
 
-  const result = await User.aggregate([
-    { $match: matchStage },
-    { $sort: { [sortField]: sortOrderValue } },
-    {
-      $lookup: {
-        from: "companies",
-        let: { companyIds: "$access.company" },
-        pipeline: [
-          { $match: { $expr: { $in: ["$_id", "$$companyIds"] } } },
-          { $project: { namePrint: 1 } },
-        ],
-        as: "accessCompanies",
+  const result = await User.aggregate(
+    [
+      { $match: matchStage },
+      { $sort: { [sortField]: sortOrderValue } },
+      {
+        $lookup: {
+          from: "companies",
+          let: { companyIds: "$access.company" },
+          pipeline: [
+            { $match: { $expr: { $in: ["$_id", "$$companyIds"] } } },
+            { $project: { namePrint: 1 } },
+          ],
+          as: "accessCompanies",
+        },
       },
-    },
-    {
-      $addFields: {
-        access: {
-          $map: {
-            input: "$access",
-            as: "acc",
-            in: {
-              $mergeObjects: [
-                "$$acc",
-                {
-                  company: {
-                    $arrayElemAt: [
-                      {
-                        $filter: {
-                          input: "$accessCompanies",
-                          as: "c",
-                          cond: { $eq: ["$$c._id", "$$acc.company"] },
+      {
+        $addFields: {
+          access: {
+            $map: {
+              input: "$access",
+              as: "acc",
+              in: {
+                $mergeObjects: [
+                  "$$acc",
+                  {
+                    company: {
+                      $arrayElemAt: [
+                        {
+                          $filter: {
+                            input: "$accessCompanies",
+                            as: "c",
+                            cond: { $eq: ["$$c._id", "$$acc.company"] },
+                          },
                         },
-                      },
-                      0,
-                    ],
+                        0,
+                      ],
+                    },
                   },
-                },
-              ],
+                ],
+              },
             },
           },
         },
       },
-    },
-    
-    { $project: { accessCompanies: 0 ,   auditLogs: 0,password:0} },
-    {
-      $facet: {
-        records: [{ $skip: skip }, { $limit: perPage }],
-        totalCount: [{ $count: "count" }],
+
+      { $project: { accessCompanies: 0, auditLogs: 0, password: 0 } },
+      {
+        $facet: {
+          records: [{ $skip: skip }, { $limit: perPage }],
+          totalCount: [{ $count: "count" }],
+        },
       },
-    },
-  ], { maxTimeMS: 60000, allowDiskUse: true });
+    ],
+    { maxTimeMS: 60000, allowDiskUse: true }
+  );
 
   const users = result?.[0]?.records || [];
   const total = result?.[0]?.totalCount?.[0]?.count || 0;
@@ -227,3 +230,28 @@ exports.getAllClientUsers = asyncHandler(async (req, res) => {
   );
 });
 
+exports.updateUserProfile = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const { name, phone, area, pincode, profilePicture } = req.body;
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+  console.log(req.files,"req.files")
+
+  user.name = name;
+  user.phone = phone;
+  user.area = area;
+  user.pincode = pincode;
+  const profileUrl =
+    req.files && req.files["profile"] ? req.files["profile"][0].location : null;
+  if (profileUrl) {
+    user.profilePicture = profileUrl;
+  }
+  console.log(profileUrl,"profileUrl")
+  console.log(req.files,"req.files")
+  await user.save();
+  res
+    .status(200)
+    .json(new ApiResponse(200, user, "User profile updated successfully"));
+});
