@@ -11,7 +11,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const ApiResponse = require('../utils/apiResponse');
 
-const {generateUniqueId} =require("../utils/generate16DigiId")
+const {generate6DigitUniqueId} =require("../utils/generate6DigitUniqueId")
 const mongoose = require('mongoose');
 const   {createAuditLog}=require("../utils/createAuditLog")
 
@@ -53,51 +53,82 @@ const safeParse = (value, fallback) => {
 };
 
 exports.createProduct = asyncHandler(async (req, res) => {
-  const body = req.body;
- 
+  try {
+    const body = req.body;
+    
+    console.log("req.body", req.body);
 
-  console.log("req.body", req.body);
+    // Validate required fields
+    const required = ["companyId", "code", "name"];
+    for (const r of required) {
+      if (!body[r]) {
+        throw new ApiError(400, `${r} is required`);
+      }
+    }
 
-  // required fields
-  const required = ["companyId", "code", "name"];
-  for (const r of required) {
-    if (!body[r]) throw new ApiError(400, `${r} is required`);
-  }
+    // Validate user
+    const userId = req.user.id;
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new ApiError(404, "User not found");
+    }
+    const clientId = user.clientID;
+    console.log("clientId", clientId);
 
-  // validate refs
-  const [company] = await Promise.all([
-    Company.findById(body.companyId),
-    // future client check
-  ]);
-  if (!company) throw new ApiError(404, "Company not found");
+    // Check for duplicate product name
+    const isProductName = await Product.findOne({
+      clientId,
+      companyId: body.companyId,
+      name: body.name
+    });
+    
+    if (isProductName) {
+      throw new ApiError(400, "Product name already exists");
+    }
 
-  if (body.stockGroup) {
-    const sg = await StockGroup.findById(body.stockGroup);
-    if (!sg) throw new ApiError(404, "StockGroup not found");
-  }
-  if (body.stockCategory) {
-    const sc = await StockCategory.findById(body.stockCategory);
-    if (!sc) throw new ApiError(404, "StockCategory not found");
-  }
-  if (body.unit) {
-    const u = await Unit.findById(body.unit);
-    if (!u) throw new ApiError(404, "Unit not found");
-  }
-  if (body.defaultGodown) {
-    const g = await Godown.findById(body.defaultGodown);
-    if (!g) throw new ApiError(404, "Godown not found");
-  }
+    // Validate references
+    const [company] = await Promise.all([
+      Company.findById(body.companyId),
+      // future client check
+    ]);
+    
+    if (!company) {
+      throw new ApiError(404, "Company not found");
+    }
 
-  // validate user
-  const userId = req.user.id;
-  const user = await User.findById(userId);
-  if (!user) throw new ApiError(404, "User not found");
-  let clientId = user.clientID;
-  console.log("clientId", clientId);
+    // Validate optional references
+    if (body.stockGroup) {
+      const sg = await StockGroup.findById(body.stockGroup);
+      if (!sg) {
+        throw new ApiError(404, "StockGroup not found");
+      }
+    }
+    
+    if (body.stockCategory) {
+      const sc = await StockCategory.findById(body.stockCategory);
+      if (!sc) {
+        throw new ApiError(404, "StockCategory not found");
+      }
+    }
+    
+    if (body.unit) {
+      const u = await Unit.findById(body.unit);
+      if (!u) {
+        throw new ApiError(404, "Unit not found");
+      }
+    }
+    
+    if (body.defaultGodown) {
+      const g = await Godown.findById(body.defaultGodown);
+      if (!g) {
+        throw new ApiError(404, "Godown not found");
+      }
+    }
 
-  // registration docs
-    let registrationDocTypes;
-    let registrationDocs=[];
+    // Handle registration documents
+    let registrationDocTypes = [];
+    let registrationDocs = [];
+    
     try {
       registrationDocTypes = JSON.parse(req.body.registrationDocTypes || '[]');
     } catch (e) {
@@ -106,84 +137,109 @@ exports.createProduct = asyncHandler(async (req, res) => {
     }
 
     if (req?.files?.['registrationDocs']) {
-      registrationDocs = req?.files['registrationDocs'].map((file, index) => ({
+      registrationDocs = req.files['registrationDocs'].map((file, index) => ({
         type: registrationDocTypes[index] || 'Other',
         file: file.location,
         fileName: file.originalname
       }));
     }
-  // let code=await generateUniqueId(Product,"code")
+    const code=await generate6DigitUniqueId(Product,"code")
 
-  // Build product object
-  const productObj = {
-    clientId: clientId,
-    companyId: body.companyId,
-    code: body.code,
-    name: body.name,
-    partNo: body.partNo,
-    stockGroup: body.stockGroup || null,
-    stockCategory: body.stockCategory || null,
-    batch: body.batch === "true" || body.batch === true || false,
-    unit: body.unit || null,
-    alternateUnit: body.alternateUnit || null,
-    minimumQuantity: body.minimumQuantity || undefined,
-    defaultSupplier: body.defaultSupplier || undefined,
-    minimumRate: body.minimumRate || undefined,
-    maximumRate: body.maximumRate || undefined,
-    defaultGodown: body.defaultGodown || null,
-    productType: body.productType || undefined,
-    taxConfiguration: safeParse(body.taxConfiguration, {}),
-    openingQuantities: safeParse(body.openingQuantities, []),
-    images: safeParse(body.images, []), // agar frontend se aaya ho
-    remarks: body.remarks || undefined,
-    status: body.status,
-    createdBy: userId,
-    auditLogs: [
-      {
-        action: "create",
-        performedBy: userId ? new mongoose.Types.ObjectId(userId) : null,
-        timestamp: new Date(),
-        details: "Product created",
-      },
-    ],
-  };
-  console.log(req.body.productImageTypes,"producttypesssss")
-  const productImageTypes=JSON.parse(req.body.productImageTypes)
+    // Build product object
+    const productObj = {
+      clientId: clientId,
+      companyId: body.companyId,
+      code: code,
+      name: body.name,
+      partNo: body.partNo,
+      stockGroup: body.stockGroup || null,
+      stockCategory: body.stockCategory || null,
+      batch: body.batch === "true" || body.batch === true || false,
+      unit: body.unit || null,
+      alternateUnit: body.alternateUnit || null,
+      minimumQuantity: body.minimumQuantity || undefined,
+      defaultSupplier: body.defaultSupplier || undefined,
+      minimumRate: body.minimumRate || undefined,
+      maximumRate: body.maximumRate || undefined,
+      defaultGodown: body.defaultGodown || null,
+      productType: body.productType || undefined,
+      taxConfiguration: safeParse(body.taxConfiguration, {}),
+      openingQuantities: safeParse(body.openingQuantities, []),
+      images: safeParse(body.images, []),
+      remarks: body.remarks || undefined,
+      status: body.status,
+      registrationDocs: registrationDocs, // Add registration docs
+      createdBy: userId,
+      auditLogs: [
+        {
+          action: "create",
+          performedBy: userId ? new mongoose.Types.ObjectId(userId) : null,
+          timestamp: new Date(),
+          details: "Product created",
+        },
+      ],
+    };
 
-  // === Handle Product Images from AWS ===
-  if (req?.files?.["productImages"]) {
-    const uploadedImages = req.files["productImages"].map((file,index) => ({
-      angle: productImageTypes?.[index] || null,
-      fileUrl: file.location, // actual S3 url
-      previewUrl: file.location,
-    }));
-    productObj.images = (productObj.images || []).concat(uploadedImages);
-  }
+    // Handle product images
+    let productImageTypes = [];
+    try {
+      console.log(req.body.productImageTypes, "producttypesssss");
+      productImageTypes = JSON.parse(req.body.productImageTypes || '[]');
+    } catch (e) {
+      console.error('Failed to parse productImageTypes:', e);
+      productImageTypes = [];
+    }
 
-   
+    // Handle Product Images from AWS
+    if (req?.files?.["productImages"]) {
+      const uploadedImages = req.files["productImages"].map((file, index) => ({
+        angle: productImageTypes?.[index] || null,
+        fileUrl: file.location,
+        previewUrl: file.location,
+      }));
+      productObj.images = (productObj.images || []).concat(uploadedImages);
+    }
 
-  // create product
-  const product = await Product.create(productObj);
-  let ipAddress =
-    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
-  // convert ::1 → 127.0.0.1
-  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
-    ipAddress = "127.0.0.1";
-  }
-  
-  console.log(ipAddress, "ipaddress");
+    // Create product
+    const product = await Product.create(productObj);
+    
+    // Get IP address
+    let ipAddress = req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+    
+    // Convert ::1 → 127.0.0.1
+    if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+      ipAddress = "127.0.0.1";
+    }
+    
+    console.log(ipAddress, "ipaddress");
+
+    // Create audit log
     await createAuditLog({
-    module: "Product",
-    action: "create",
-    performedBy: req.user.id,
-    referenceId: product._id,
-    clientId:req.user.clientID,
-    details: "Product created successfully",
-    ipAddress,
-  });
+      module: "Product",
+      action: "create",
+      performedBy: req.user.id,
+      referenceId: product._id,
+      clientId: req.user.clientID,
+      details: "Product created successfully",
+      ipAddress,
+    });
 
-  res.status(201).json(new ApiResponse(201, product, "Product created"));
+    res.status(201).json(new ApiResponse(201, product, "Product created successfully"));
+    
+  } catch (error) {
+    console.error("Error creating product:", error);
+    
+    // If it's already an ApiError, throw it as is
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    
+    // For other errors, wrap in ApiError
+    throw new ApiError(
+      error.statusCode || 500,
+      error.message || "An error occurred while creating the product"
+    );
+  }
 });
 
 // UPDATE product
@@ -224,12 +280,32 @@ exports.createProduct = asyncHandler(async (req, res) => {
 // });
 exports.updateProduct = asyncHandler(async (req, res) => {
   const { id } = req.params;
+    const clientId = user.clientID;
 
   // ✅ Step 0: Validate ID
   if (!id) throw new ApiError(400, "Product ID is required");
+   // Check for duplicate product name
+    
 
   const product = await Product.findById(id);
   if (!product) throw new ApiError(404, "Product not found");
+
+  if (body.name && body.companyId) {
+    const isProductNameExists = await Product.findOne({
+      clientId,
+      companyId: body.companyId,
+      name: body.name.trim(),
+      _id: { $ne: id }, // exclude current product
+    });
+
+    if (isProductNameExists) {
+      throw new ApiError(
+        400,
+        "A product with this name already exists for this company and client."
+      );
+    }
+  }
+  
 
   // ✅ Safe parse nested fields
   req.body.taxConfiguration = safeParse(req.body.taxConfiguration, product.taxConfiguration);
@@ -369,7 +445,7 @@ let ipAddress =
 exports.getProductById = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  const product = await Product.findOne({ _id: id, status: { $ne: "Delete" } })
+  const product = await Product.findOne({ _id: id, status: { $ne: "delete" } })
   .select("-auditLogs")
     .populate('companyId', 'namePrint')
     .populate('clientId', 'name email')
@@ -394,11 +470,12 @@ exports.listProducts = asyncHandler(async (req, res) => {
     sortOrder = "desc", 
     page = 1, 
     limit = 25,
-    companyId, 
+    // companyId, 
     clientId, 
     stockGroup, 
     stockCategory
   } = req.query;
+   const { companyId } = req.params;
 
   const filter = {};
 
@@ -408,7 +485,7 @@ exports.listProducts = asyncHandler(async (req, res) => {
   if (stockCategory) filter.stockCategory = stockCategory;
 
   // ✅ Status filter (default: exclude Delete)
-  filter.status = status && status.trim() !== "" ? status : { $ne: "Delete" };
+  filter.status = status && status.trim() !== "" ? status : { $ne: "delete" };
 
   // 🔍 Search filter
   if (search && search.trim() !== "") {

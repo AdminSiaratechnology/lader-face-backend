@@ -53,7 +53,7 @@ const CustomerSchema = new mongoose.Schema(
     designation: { type: String },
     phoneNumber: { type: String },
     mobileNumber: { type: String },
-    emailAddress: { type: String, unique: true, required: true },
+    emailAddress: { type: String, required: true },
     faxNumber: { type: String },
 
     addressLine1: { type: String },
@@ -126,10 +126,7 @@ const CustomerSchema = new mongoose.Schema(
   { timestamps: true }
 );
 CustomerSchema.index({ code: 1 }, { unique: true });
-CustomerSchema.index(
-  { emailAddress: 1 },
-  { unique: true, partialFilterExpression: { emailAddress: { $exists: true } } }
-);
+CustomerSchema.index({ emailAddress: 1 });
 
 CustomerSchema.index({ company: 1, clientId: 1, status: 1, createdAt: -1 });
 CustomerSchema.index({ clientId: 1, status: 1, createdAt: -1 });

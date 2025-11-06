@@ -5,24 +5,22 @@ const ApiError = require("../utils/apiError");
 const ApiResponse = require("../utils/apiResponse");
 const User = require("../models/User");
 const mongoose = require("mongoose");
-const   {createAuditLog}=require("../utils/createAuditLog")
+const { createAuditLog } = require("../utils/createAuditLog");
+const { generateUniqueId } = require("../utils/generate16DigiId");
+const Customer = require("../models/Customer");
 
 // 🔐 Token Generator
 const signToken = (userId, clientID, role) => {
-  return jwt.sign(
-    { id: userId, clientID, role },
-    process.env.JWT_SECRET,
-    { expiresIn: "7d" }
-  );
+  return jwt.sign({ id: userId, clientID, role }, process.env.JWT_SECRET, {
+    expiresIn: "7d",
+  });
 };
 
 // ✅ REGISTER USER
 exports.register = asyncHandler(async (req, res) => {
   const adminId = req?.user?.id;
   const { name, email, password, role } = req.body;
-  console.log(req.body,"req.bopdy")
-  let access=structuredClone(req.body.access)
-   
+  let access = structuredClone(req.body.access);
 
   if (!name || !email || !password || !role) {
     throw new ApiError(400, "Missing required fields");
@@ -33,7 +31,6 @@ exports.register = asyncHandler(async (req, res) => {
 
   const creatorInfo = await User.findById(adminId);
   const hash = await bcrypt.hash(password, 10);
-  
 
   const user = await User.create({
     ...req.body,
@@ -42,8 +39,8 @@ exports.register = asyncHandler(async (req, res) => {
     clientID: creatorInfo?.clientID || adminId,
     createdBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
     parent: creatorInfo?._id || null,
-   
-    access:access,
+
+    access: access,
     auditLogs: [
       {
         action: "create",
@@ -52,8 +49,47 @@ exports.register = asyncHandler(async (req, res) => {
         details: "User created",
       },
     ],
-    
   });
+
+  if (role === "Customer" && Array.isArray(access) && access.length > 0) {
+    console.log("Auto-creating customers for access:", access);
+    for (const acc of access) {
+      const companyId = acc.company;
+
+      if (!companyId) continue;
+
+      const code = await generateUniqueId(Customer, "code");
+
+      const customer = await Customer.create({
+        company: companyId,
+        clientId: creatorInfo?.clientID || adminId,
+
+        // Required fields
+        customerName: name,
+        contactPerson: name,
+        emailAddress: email.toLowerCase(),
+        customerType: "company",
+        code,
+
+        createdBy: adminId,
+        auditLogs: [
+          {
+            action: "create",
+            performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+            timestamp: new Date(),
+            details: "Customer auto-created from user registration",
+          },
+        ],
+      });
+
+      // ✅ Debug log
+      console.log(
+        `✅ Auto-Created Customer --> ID: ${
+          customer._id
+        }, Company: ${companyId}, Code: ${code}, Email: ${email.toLowerCase()}`
+      );
+    }
+  }
 
   const userResponse = user.toObject();
   delete userResponse.password;
@@ -66,8 +102,8 @@ exports.register = asyncHandler(async (req, res) => {
 exports.registerInside = asyncHandler(async (req, res) => {
   const adminId = req?.user?.id;
   const { name, email, password, role } = req.body;
-  let access=structuredClone(req.body.access)
-  console.log(access,"access")
+  let access = structuredClone(req.body.access);
+  console.log(access, "access");
 
   if (!name || !email || !password || !role) {
     throw new ApiError(400, "Missing required fields");
@@ -78,7 +114,6 @@ exports.registerInside = asyncHandler(async (req, res) => {
 
   const creatorInfo = await User.findById(adminId);
   const hash = await bcrypt.hash(password, 10);
-  
 
   const user = await User.create({
     ...req.body,
@@ -88,7 +123,7 @@ exports.registerInside = asyncHandler(async (req, res) => {
     createdBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
     parent: creatorInfo?._id || null,
     lastLogin: new Date(),
-    access:structuredClone(req.body.access),
+    access: structuredClone(req.body.access),
     auditLogs: [
       {
         action: "create",
@@ -103,19 +138,19 @@ exports.registerInside = asyncHandler(async (req, res) => {
   delete userResponse.password;
   let ipAddress =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
+
   // convert ::1 → 127.0.0.1
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
   }
-  
+
   console.log(ipAddress, "ipaddress");
-    await createAuditLog({
+  await createAuditLog({
     module: "User",
     action: "create",
     performedBy: req.user.id,
     referenceId: user._id,
-    clientId:req.user.clientID,
+    clientId: req.user.clientID,
     details: "User created successfully",
     ipAddress,
   });
@@ -124,7 +159,6 @@ exports.registerInside = asyncHandler(async (req, res) => {
     .status(201)
     .json(new ApiResponse(201, userResponse, "User registered successfully"));
 });
-
 
 // ✅ UPDATE USER
 exports.updateUser = asyncHandler(async (req, res) => {
@@ -136,7 +170,9 @@ exports.updateUser = asyncHandler(async (req, res) => {
 
   // Email uniqueness check
   if (updateData.email && updateData.email !== user.email) {
-    const exists = await User.findOne({ email: updateData.email.toLowerCase() });
+    const exists = await User.findOne({
+      email: updateData.email.toLowerCase(),
+    });
     if (exists) throw new ApiError(409, "Email already in use");
     updateData.email = updateData.email.toLowerCase();
   }
@@ -151,20 +187,20 @@ exports.updateUser = asyncHandler(async (req, res) => {
   // Store old data before update
   const oldData = user.toObject();
 
-Object.entries(updateData).forEach(([key, value]) => {
- if (["createdBy", "createdAt", "_id", "password"].includes(key)) return;
+  Object.entries(updateData).forEach(([key, value]) => {
+    if (["createdBy", "createdAt", "_id", "password"].includes(key)) return;
 
- if (["parent",  "company"].includes(key)) {
-  if (value && mongoose.Types.ObjectId.isValid(value)) {
-   user[key] = new mongoose.Types.ObjectId(value);
-  } else {
-   // If empty or invalid, explicitly set to null
-   user[key] = null;
-  }
- } else {
-  user[key] = value;
- }
-});
+    if (["parent", "company"].includes(key)) {
+      if (value && mongoose.Types.ObjectId.isValid(value)) {
+        user[key] = new mongoose.Types.ObjectId(value);
+      } else {
+        // If empty or invalid, explicitly set to null
+        user[key] = null;
+      }
+    } else {
+      user[key] = value;
+    }
+  });
 
   // Track changed fields for audit logs
   const changes = {};
@@ -188,9 +224,9 @@ Object.entries(updateData).forEach(([key, value]) => {
 
   const userResponse = user.toObject();
   delete userResponse.password;
-   let ipAddress =
+  let ipAddress =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
+
   // convert ::1 → 127.0.0.1
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
@@ -210,7 +246,6 @@ Object.entries(updateData).forEach(([key, value]) => {
     .status(200)
     .json(new ApiResponse(200, userResponse, "User updated successfully"));
 });
-
 
 // ✅ DELETE USER (soft delete)
 exports.deleteUser = asyncHandler(async (req, res) => {
@@ -232,12 +267,12 @@ exports.deleteUser = asyncHandler(async (req, res) => {
   await user.save();
   let ipAddress =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
+
   // convert ::1 → 127.0.0.1
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
   }
-    await createAuditLog({
+  await createAuditLog({
     module: "User",
     action: "delete",
     performedBy: req.user.id,
@@ -261,7 +296,7 @@ exports.login = asyncHandler(async (req, res) => {
 
   const user = await User.findOne({ email: email.toLowerCase() }).populate({
     path: "access.company",
-    select: "namePrint logo nameStreet code"
+    select: "namePrint logo nameStreet code",
   });
   if (!user) throw new ApiError(401, "Invalid credentials");
 
@@ -273,6 +308,8 @@ exports.login = asyncHandler(async (req, res) => {
   const safeUser = user.toObject();
   delete safeUser.password;
   delete safeUser.__v;
+  delete safeUser.loginHistory;
+  delete safeUser.auditLogs;
   safeUser.access = [...(user.access || [])];
 
   // Update last login + log it
@@ -289,7 +326,7 @@ exports.login = asyncHandler(async (req, res) => {
 
   await user.save();
 
-  res.status(200).json(
-    new ApiResponse(200, { token, user: safeUser }, "Login successful")
-  );
+  res
+    .status(200)
+    .json(new ApiResponse(200, { token, user: safeUser }, "Login successful"));
 });

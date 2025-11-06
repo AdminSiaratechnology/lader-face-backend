@@ -30,6 +30,7 @@ const stockItemSchema = new mongoose.Schema(
     },
     companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true },
     clientId: { type: mongoose.Schema.Types.ObjectId, ref: "Client", required: true },
+    productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product", required: true },
     status: {
       type: String,
       enum: ["active", "inactive", "delete"],

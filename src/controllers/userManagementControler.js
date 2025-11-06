@@ -252,7 +252,17 @@ exports.updateUserProfile = asyncHandler(async (req, res) => {
   console.log(profileUrl,"profileUrl")
   console.log(req.files,"req.files")
   await user.save();
+  const updatedUser = await User.findById(userId)
+    .populate({
+      path: "access.company",
+      select: "namePrint logo nameStreet code",
+    })
+    .select("-password -__v");
+
+  // Send consistent structure
+  const safeUser = updatedUser.toObject();
+  safeUser.access = [...(updatedUser.access || [])];
   res
     .status(200)
-    .json(new ApiResponse(200, user, "User profile updated successfully"));
+    .json(new ApiResponse(200, safeUser, "User profile updated successfully"));
 });

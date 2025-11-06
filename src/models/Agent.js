@@ -42,7 +42,7 @@ const AgentSchema = new mongoose.Schema(
     designation: { type: String },
     phoneNumber: { type: String },
     mobileNumber: { type: String },
-    emailAddress: { type: String ,unique:true,required:true},
+    emailAddress: { type: String ,required:true},
     faxNumber: { type: String },
 
     addressLine1: { type: String },
@@ -65,6 +65,7 @@ const AgentSchema = new mongoose.Schema(
     tanNumber: { type: String },
     taxCategory: { type: String },
     taxTemplate: { type: String },
+    msmeRegistration: {type: String },
     withholdingTaxCategory: { type: String },
     isTaxExempt: { type: Boolean, default: false },
     reverseCharge: { type: Boolean, default: false },
@@ -102,5 +103,23 @@ const AgentSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+AgentSchema.index({ code: 1 }, { unique: true });
 
+AgentSchema.index({ company: 1, clientId: 1, status: 1, createdAt: -1 });
+
+AgentSchema.index({ clientId: 1, status: 1, createdAt: -1 });
+
+AgentSchema.index({
+  agentName: "text",
+  emailAddress: "text",
+  contactPerson: "text",
+  phoneNumber: "text",
+  code: "text",
+});
+
+AgentSchema.index({ status: 1 });
+
+AgentSchema.index({ createdAt: -1 });
+
+AgentSchema.index({ createdBy: 1 });
 module.exports = mongoose.model("Agent", AgentSchema);

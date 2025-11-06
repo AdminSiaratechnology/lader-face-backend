@@ -41,7 +41,7 @@ const VendorSchema = new mongoose.Schema(
     designation: { type: String },
     phoneNumber: { type: String },
     mobileNumber: { type: String },
-    emailAddress: { type: String ,unique:true,required:true},
+    emailAddress: { type: String , required:true},
     faxNumber: { type: String },
 
     addressLine1: { type: String },
@@ -134,7 +134,6 @@ VendorSchema.index({ clientId: 1, code: 1 }, { unique: true });
 // ---------------------------------
 VendorSchema.index(
   { clientId: 1, emailAddress: 1 },
-  { unique: true, partialFilterExpression: { status: { $in: ["active", "inactive"] } } }
 );
 // 👉 Allows duplicate emails only for "delete" vendors
 // 👉 Enforces unique active emails for real vendors
