@@ -35,83 +35,114 @@ const insertInBatches = async (data, batchSize = 1000) => {
 };
 
 exports.createCustomer = asyncHandler(async (req, res) => {
-  const {
-    customerName,
-    emailAddress,
-    phoneNumber,
-    companyID,
-    registrationDocTypes: rawDocTypes,
-    ...rest
-  } = req.body;
+  try {
+    const {
+      customerName,
+      emailAddress,
+      phoneNumber,
+      companyID,
+      registrationDocTypes: rawDocTypes,
+      ...rest
+    } = req.body;
 
-  const adminId = req?.user?.id;
-  const clientId = req.user.clientID;
+    const adminId = req?.user?.id;
+    const clientId = req.user.clientID;
 
-  if (!customerName) {
-    throw new ApiError(400, "Customer name is required");
-  }
-  if (!clientId) {
-    throw new ApiError(400, "Client ID is required from token");
-  }
-  // Parallelize file processing_
-  const [logoUrl, processedDocs] = await Promise.all([
-    req.files?.logo?.[0]?.location || null,
-    processRegistrationDocs(req.files?.registrationDocs || [], rawDocTypes),
-  ]);
-  const code = await generateUniqueId(Customer, "code");
-  let banks = [];
-  if (req.body.banks) {
-    try {
-      banks =
-        typeof req.body.banks === "string"
-          ? JSON.parse(req.body.banks)
-          : req.body.banks;
-    } catch (err) {
-      throw new ApiError(400, "Invalid banks data format");
+    if (!customerName) {
+      throw new ApiError(400, "Customer name is required");
     }
-  }
+    if (!clientId) {
+      throw new ApiError(400, "Client ID is required from token");
+    }
 
-  const customer = await Customer.create({
-    customerName,
-    code,
-    clientId,
-    emailAddress,
-    phoneNumber,
-    companyID,
-    ...rest,
-    logo: logoUrl || "",
-    registrationDocs: processedDocs,
-    banks,
-    company: companyID,
-    createdBy: adminId,
-    auditLogs: [
-      {
+ 
+
+    // Parallel file processing
+    const [logoUrl, processedDocs] = await Promise.all([
+      req.files?.logo?.[0]?.location || null,
+      processRegistrationDocs(req.files?.registrationDocs || [], rawDocTypes),
+    ]);
+
+    const code = await generateUniqueId(Customer, "code");
+
+    let banks = [];
+    if (req.body.banks) {
+      try {
+        banks =
+          typeof req.body.banks === "string"
+            ? JSON.parse(req.body.banks)
+            : req.body.banks;
+      } catch (err) {
+        throw new ApiError(400, "Invalid banks data format");
+      }
+    }
+
+    const customer = await Customer.create({
+      customerName,
+      code,
+      clientId,
+      emailAddress,
+      phoneNumber,
+      companyID,
+      ...rest,
+      logo: logoUrl || "",
+      registrationDocs: processedDocs,
+      banks,
+      company: companyID,
+      createdBy: adminId,
+      auditLogs: [
+        {
+          action: "create",
+          performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+          timestamp: new Date(),
+          details: "Customer created",
+        },
+      ],
+    });
+
+    // Capture IP Address
+    let ipAddress =
+      req.headers["x-forwarded-for"]?.split(",")[0] ||
+      req.socket.remoteAddress;
+    if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+      ipAddress = "127.0.0.1";
+    }
+
+    // ✅ Run audit log creation in background (non-blocking)
+    Promise.resolve(
+      createAuditLog({
+        module: "Customer",
         action: "create",
-        performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
-        timestamp: new Date(),
-        details: "Customer created",
-      },
-    ],
-  });
-  let ipAddress =
-    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
-    ipAddress = "127.0.0.1";
+        performedBy: req.user.id,
+        referenceId: customer._id,
+        clientId,
+        details: "Customer created successfully",
+        ipAddress,
+      })
+    ).catch((err) => {
+      console.error("Audit log creation failed:", err.message);
+    });
+
+    return res
+      .status(201)
+      .json(new ApiResponse(201, customer, "Customer created successfully"));
+  } catch (error) {
+    // Handle Duplicate Key Error
+    if (error.code === 11000) {
+      const duplicateField = Object.keys(error.keyValue)[0];
+      const duplicateValue = error.keyValue[duplicateField];
+      return res.status(400).json(
+        new ApiResponse(
+          400,
+          null,
+          `Duplicate value found: ${duplicateField} '${duplicateValue}' already exists. Please use a different value.`
+        )
+      );
+    }
+
+    // Other unexpected errors
+    throw error;
   }
-
-  await createAuditLog({
-    module: "Customer",
-    action: "create",
-    performedBy: req.user.id,
-    referenceId: customer._id,
-    clientId,
-    details: "Customer created successfully",
-    ipAddress,
-  });
-
-  res
-    .status(201)
-    .json(new ApiResponse(201, customer, "Customer created successfully"));
 });
 // batch insert helper_
 

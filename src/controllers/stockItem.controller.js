@@ -36,7 +36,9 @@ module.exports.createStockItems = asyncHandler(async (req, res) => {
     console.log("Existing Product:", existingProduct);
 
     if (existingProduct) {
+      item.productId=existingProduct._id
       validItems.push(item);
+      console.log(item,"itemmmmmm")
     } else {
       console.log(
         `❌ Skipping item '${item.ItemCode}' - not found in Product collection for this company`
@@ -83,7 +85,7 @@ module.exports.getAllClientStockItems = asyncHandler(async (req, res) => {
   const stockItems = await StockItem.find({
     clientId: req.user.clientID
     // isDeleted: false,
-  }).sort({ createdAt: -1 });
+  }).sort({ createdAt: -1 }).populate("productId","images");
   console.log("Fetched stock items:", stockItems, req.user.clientID);
 
   res
@@ -98,7 +100,7 @@ module.exports.getStockItemByCode = asyncHandler(async (req, res) => {
   const item = await StockItem.findOne({
     ItemCode: code,
     isDeleted: false,
-  });
+  }).populate("productId", "images");
 
   if (!item) throw new ApiError(404, "Stock item not found");
 
@@ -165,6 +167,162 @@ module.exports.changeStockItemStatus = asyncHandler(async (req, res) => {
   res
     .status(200)
     .json(new ApiResponse(200, updatedItem, `Stock item marked as ${status}`));
+});
+
+module.exports.updateStockItemsBulk = asyncHandler(async (req, res) => {
+  console.log("🛠️ Updating stock items...", req.body);
+  const { StockItems } = req.body;
+
+  if (!StockItems || !Array.isArray(StockItems)) {
+    throw new ApiError(400, "StockItems must be a valid array");
+  }
+
+  const clientId = req.user.clientID;
+  if (!clientId) throw new ApiError(404, "User not found");
+
+  let updatedCount = 0;
+  let skippedCount = 0;
+  const updatedItems = [];
+
+  for (const item of StockItems) {
+    if (!item.ItemCode) {
+      console.log("⚠️ Skipping item with missing ItemCode");
+      skippedCount++;
+      continue;
+    }
+
+    console.log(`🔍 Checking Product for ItemCode: ${item.ItemCode} | Company: ${item.companyId}`);
+    const existingProduct = await Product.findOne({
+      code: item.ItemCode,
+      companyId: item.companyId,
+    }).lean();
+
+    if (!existingProduct) {
+      console.log(`❌ No Product found for ${item.ItemCode}`);
+      skippedCount++;
+      continue;
+    }
+
+    const existingStock = await StockItem.findOne({
+      ItemCode: item.ItemCode,
+      companyId: item.companyId,
+    });
+
+    if (existingStock) {
+      // --- Update stock item ---
+      const updated = await StockItem.findByIdAndUpdate(
+        existingStock._id,
+        {
+          ...item,
+          productId: existingProduct._id,
+          clientId: item.clientId || clientId,
+          status: item.status || existingStock.status || "active",
+        },
+        { new: true }
+      );
+
+      updatedItems.push(updated);
+      updatedCount++;
+      console.log(`✅ Updated StockItem: ${item.ItemCode}`);
+    } else {
+      console.log(`⚠️ No existing StockItem found for ${item.ItemCode}, skipping...`);
+      skippedCount++;
+    }
+  }
+
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        updatedCount,
+        skippedCount,
+        updatedItems,
+      },
+      `${updatedCount} stock items updated successfully, ${skippedCount} skipped.`
+    )
+  );
+});
+
+
+exports.listStockItemByCompanyId = asyncHandler(async (req, res) => {
+  
+  const { 
+    search = "", 
+    status = "", 
+    sortBy = "createdAt", 
+    sortOrder = "desc", 
+    page = 1, 
+    limit = 25,
+    
+    clientId, 
+    stockGroup, 
+    stockCategory,
+    
+
+  } = req.query;
+    const { companyId } = req.params;
+   if (!companyId) throw new ApiError(400, "Company ID is required");
+
+
+  const filter = {};
+
+  if (companyId) filter.companyId = companyId;
+  if (clientId) filter.clientId = clientId;
+  if (stockGroup) filter.stockGroup = stockGroup;
+  if (stockCategory) filter.stockCategory = stockCategory;
+
+  // ✅ Status filter (default: exclude Delete)
+  filter.status = status && status.trim() !== "" ? status : { $ne: "delete" };
+
+  // 🔍 Search filter
+  if (search && search.trim() !== "") {
+    filter.$or = [
+      { name: { $regex: search, $options: "i" } },
+      { code: { $regex: search, $options: "i" } },
+      { partNo: { $regex: search, $options: "i" } },
+    
+    ];
+  }
+
+  // 📑 Pagination setup
+  const perPage = parseInt(limit, 10);
+  const currentPage = Math.max(parseInt(page, 10), 1);
+  const skip = (currentPage - 1) * perPage;
+
+  // ↕️ Sorting
+  const sortDirection = sortOrder === "asc" ? 1 : -1;
+  const sortOptions = { [sortBy]: sortDirection };
+
+  // ✅ Fetch data & total count in parallel
+  const [items, total] = await Promise.all([
+    StockItem.find(filter)
+    // .select("-auditLogs")
+      // .populate("stockGroup", "name")
+      // .populate("stockCategory", "name")
+      // .populate("unit", "name symbol")
+      // .populate("companyId", "namePrint")
+      .populate("productId", "images remarks")
+      .skip(skip)
+      .limit(perPage)
+      .sort(sortOptions),
+    StockItem.countDocuments(filter),
+  ]);
+
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        items,
+        pagination: {
+          total,
+          page: currentPage,
+          limit: perPage,
+          totalPages: Math.ceil(total / perPage),
+        },
+      },
+      items.length ? "Stock Item fetched successfully" : "No stockItme found"
+    )
+  );
 });
 
 // ✅ Soft Delete Stock Item

@@ -518,6 +518,33 @@ exports.getGodownsByCompany = asyncHandler(async (req, res) => {
   {
     $replaceRoot: { newRoot: "$godowns" },
   },
+ {
+  $lookup: {
+    from: "godowns",
+    localField: "parent",
+    foreignField: "_id",
+    as: "parentData",
+    pipeline: [
+      {
+        $project: {
+          _id: 1,
+          name: 1,
+        },
+      },
+    ],
+  },
+},
+{
+  $addFields: {
+    parent: { $arrayElemAt: ["$parentData", 0] },
+  },
+},
+{
+  $project: {
+    parentData: 0, // remove temporary field
+  },
+},
+
   {
     $match: {
       ...(status ? { status } : {}),

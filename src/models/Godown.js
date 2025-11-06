@@ -15,7 +15,7 @@ const godownSchema = new mongoose.Schema(
     },
     code: { type: String, required: true, unique: true },
     name: { type: String, required: true },
-    parent: { type: String },
+    parent: { type: mongoose.Schema.Types.ObjectId, ref: "Godown" },
     address: { type: String },
     state: { type: String },
     city: { type: String },

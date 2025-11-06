@@ -52,7 +52,7 @@ const LedgerSchema = new mongoose.Schema(
     designation: { type: String },
     phoneNumber: { type: String },
     mobileNumber: { type: String },
-    emailAddress: { type: String, unique: true, required: true },
+    emailAddress: { type: String, required: true },
     faxNumber: { type: String },
 
     addressLine1: { type: String },
@@ -72,6 +72,7 @@ const LedgerSchema = new mongoose.Schema(
     tanNumber: { type: String },
     taxCategory: { type: String },
     taxTemplate: { type: String },
+    msmeRegistration: { type: String },
     withholdingTaxCategory: { type: String },
     isTaxExempt: { type: Boolean, default: false },
     reverseCharge: { type: Boolean, default: false },
@@ -103,11 +104,6 @@ const LedgerSchema = new mongoose.Schema(
   { timestamps: true }
 );
 LedgerSchema.index({ ledgerCode: 1 }, { unique: true });
-
-LedgerSchema.index(
-  { emailAddress: 1 },
-  { unique: true, partialFilterExpression: { emailAddress: { $exists: true } } }
-);
 
 LedgerSchema.index({ company: 1, clientId: 1, status: 1, createdAt: -1 });
 
