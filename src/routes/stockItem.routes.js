@@ -16,7 +16,7 @@ const upload = require("../config/s3");
 const router = express.Router();
 
 router.post("/create",upload.none(), createStockItems);
-router.get("/",upload.none(), getAllClientStockItems);
+router.get("/:companyId",upload.none(), getAllClientStockItems);
 router.get("/:code",upload.none(), getStockItemByCode);
 router.put("/:id",upload.none(), updateStockItem);
 router.patch("/:id/status",upload.none(), changeStockItemStatus);

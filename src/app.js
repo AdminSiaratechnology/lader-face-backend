@@ -19,10 +19,8 @@ const ladgerRoute=require("./routes/ladgerRoutes")
 const stockItemRoutes=require("./routes/stockItem.routes")
 const auditLogRoutes=require("./routes/auditLogRoutes")
 const contactRoute=require("./routes/contactFormRoutes")
-
-
-
-
+const orderRoute =require("./routes/order.routes")
+const cartRoute =require("./routes/cartRoutes")
 
 const app = express();
 app.use(cors());
@@ -56,7 +54,7 @@ app.use(express.urlencoded({limit: '50mb', extended: true }));
 
 app.get("/",(req,res)=>{
 
-    res.send("API is working 5/11")
+    res.send("API is working 10/11")
 
 
 })
@@ -84,7 +82,8 @@ app.use("/api/agent/ledgers",ladgerRoute)
 app.use("/api/stock-items",stockItemRoutes)
 app.use("/api/auditLog",auditLogRoutes)
 app.use("/api/contactUs",contactRoute)
-
+app.use("/api/order",orderRoute)
+app.use("/api/cart",cartRoute)
 
 // Not found middleware (for invalid routes)
 app.use(notFound);

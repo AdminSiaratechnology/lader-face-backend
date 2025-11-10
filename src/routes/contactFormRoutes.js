@@ -4,7 +4,7 @@ const constactController = require('../controllers/contactFormController');
 
 
 
-router.post('/',constactController.createContactForm );
+router.post('/create',constactController.createContactForm );
 
 
 

@@ -665,11 +665,11 @@ exports.createBulkProducts = asyncHandler(async (req, res) => {
       if (body.stockCategory && !validIds.stockCategories.has(String(body.stockCategory))) throw new Error("Invalid stockCategory");
       if (body.unit && !validIds.units.has(String(body.unit))) throw new Error("Invalid unit");
       if (body.defaultGodown && !validIds.godowns.has(String(body.defaultGodown))) throw new Error("Invalid defaultGodown");
-
+      const code = await generate6DigitUniqueId(Product, "code");
       const productObj = {
         clientId,
         companyId: body.companyId,
-        code: body.code,
+        code: code,
         name: body.name,
         partNo: body.partNo || undefined,
         stockGroup: body.stockGroup || null,
