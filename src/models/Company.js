@@ -64,7 +64,7 @@ const companySchema = new mongoose.Schema(
     registrationDocs: [registrationDocSchema],
     bookStartingDate: { type: Date, default: Date.now },
     financialDate: { type: Date, default: Date.now },
-
+    autoApprove: { type: Boolean, default: false },
     client: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

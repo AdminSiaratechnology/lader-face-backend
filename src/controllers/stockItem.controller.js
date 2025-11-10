@@ -12,11 +12,11 @@ const puppeteer = require("puppeteer");
 module.exports.createStockItems = asyncHandler(async (req, res) => {
   console.log("Creating stock items...", req.body);
   const { StockItems } = req.body;
-  console.log("Received StockItems:", StockItems, req.body);
+  console.log("Received StockItems:", StockItems);
 
-  if (!StockItems || !Array.isArray(StockItems)) {
-    throw new ApiError(400, "StockItems must be a valid array");
-  }
+  // if (!StockItems || !Array.isArray(StockItems)) {
+  //   throw new ApiError(400, "StockItems must be a valid array");
+  // }
   const clientId = req.user.clientID;
   if (!clientId) throw new ApiError(404, "User not found");
   
@@ -25,6 +25,7 @@ module.exports.createStockItems = asyncHandler(async (req, res) => {
   const validItems = [];
 
   for (const item of StockItems) {
+    
     if (!item.ItemCode) continue;
 
 
@@ -62,10 +63,11 @@ module.exports.createStockItems = asyncHandler(async (req, res) => {
       status: item.status || "active",
     };
   });
+  console.log(preparedItems,"prepareditem")
 
   // --- 🧾 Step 3: Insert all valid items ---
   const createdItems = await StockItem.insertMany(preparedItems, { ordered: false });
-
+console.log(createdItems,"createditem")
   res
     .status(201)
     .json(
@@ -79,18 +81,59 @@ module.exports.createStockItems = asyncHandler(async (req, res) => {
 
 // ✅ Get All Active & Non-Deleted Items
 module.exports.getAllClientStockItems = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user.id).lean();
-  if (!user) throw new ApiError(404, "User not found");
 
-  const stockItems = await StockItem.find({
-    clientId: req.user.clientID
-    // isDeleted: false,
-  }).sort({ createdAt: -1 }).populate("productId","images");
-  console.log("Fetched stock items:", stockItems, req.user.clientID);
+  console.log("companyid ")
+  try {
+    const { companyId } = req.params; // ✅ companyId from params
+    const clientId = req.user?.clientID; // ✅ from authenticated user
+    const userId = req.user?.id;
 
-  res
-    .status(200)
-    .json(new ApiResponse(200, stockItems, "Active stock items fetched"));
+    // 🔒 Validate required fields
+    if (!companyId) {
+      throw new ApiError(400, "companyId is required");
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(companyId)) {
+      throw new ApiError(400, "Invalid companyId format");
+    }
+
+    if (!clientId || !userId) {
+      throw new ApiError(401, "Unauthorized: Missing client or user info");
+    }
+
+    // 🧑‍💼 Validate User
+    const user = await User.findById(userId).lean();
+    if (!user) throw new ApiError(404, "User not found");
+
+    // 📦 Fetch Active Stock Items
+    const stockItems = await StockItem.find({
+      companyId,
+      clientId,
+      // isDeleted: false, // optional if you plan to use it later
+    })
+      .sort({ createdAt: -1 })
+      .populate("productId", "images name price");
+
+    if (!stockItems.length) {
+      throw new ApiError(404, "No stock items found for this client");
+    }
+
+    // ✅ Success Response
+    return res
+      .status(200)
+      .json(new ApiResponse(200, stockItems, "Active stock items fetched successfully"));
+  } catch (error) {
+    console.error("❌ Error fetching stock items:", error);
+    return res
+      .status(error.statusCode || 500)
+      .json(
+        new ApiResponse(
+          error.statusCode || 500,
+          null,
+          error.message || "Internal server error"
+        )
+      );
+  }
 });
 
 // ✅ Get Item by Code
@@ -173,9 +216,9 @@ module.exports.updateStockItemsBulk = asyncHandler(async (req, res) => {
   console.log("🛠️ Updating stock items...", req.body);
   const { StockItems } = req.body;
 
-  if (!StockItems || !Array.isArray(StockItems)) {
-    throw new ApiError(400, "StockItems must be a valid array");
-  }
+  // if (!StockItems || !Array.isArray(StockItems)) {
+  //   throw new ApiError(400, "StockItems must be a valid array");
+  // }
 
   const clientId = req.user.clientID;
   if (!clientId) throw new ApiError(404, "User not found");
@@ -185,11 +228,11 @@ module.exports.updateStockItemsBulk = asyncHandler(async (req, res) => {
   const updatedItems = [];
 
   for (const item of StockItems) {
-    if (!item.ItemCode) {
-      console.log("⚠️ Skipping item with missing ItemCode");
-      skippedCount++;
-      continue;
-    }
+    // if (!item.ItemCode) {
+    //   console.log("⚠️ Skipping item with missing ItemCode");
+    //   skippedCount++;
+    //   continue;
+    // }
 
     console.log(`🔍 Checking Product for ItemCode: ${item.ItemCode} | Company: ${item.companyId}`);
     const existingProduct = await Product.findOne({
@@ -207,7 +250,7 @@ module.exports.updateStockItemsBulk = asyncHandler(async (req, res) => {
       ItemCode: item.ItemCode,
       companyId: item.companyId,
     });
-
+    console.log(existingStock,"existingstokessssss")
     if (existingStock) {
       // --- Update stock item ---
       const updated = await StockItem.findByIdAndUpdate(
@@ -246,6 +289,7 @@ module.exports.updateStockItemsBulk = asyncHandler(async (req, res) => {
 
 exports.listStockItemByCompanyId = asyncHandler(async (req, res) => {
   
+  
   const { 
     search = "", 
     status = "", 
@@ -277,8 +321,8 @@ exports.listStockItemByCompanyId = asyncHandler(async (req, res) => {
   // 🔍 Search filter
   if (search && search.trim() !== "") {
     filter.$or = [
-      { name: { $regex: search, $options: "i" } },
-      { code: { $regex: search, $options: "i" } },
+      { ItemName: { $regex: search, $options: "i" } },
+      { ItemCode: { $regex: search, $options: "i" } },
       { partNo: { $regex: search, $options: "i" } },
     
     ];
