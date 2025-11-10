@@ -119,8 +119,8 @@ orderSchema.pre("validate", async function (next) {
     const Order = mongoose.models.Order || mongoose.model("Order");
 
     const lastOrder = await Order.findOne({
-      companyId: _this_.companyId,
-      clientId: _this_.clientId,
+      companyId: this.companyId,
+      clientId: this.clientId,
     })
       .sort({ createdAt: -1 })
       .select("orderCode");
@@ -131,7 +131,7 @@ orderSchema.pre("validate", async function (next) {
       const nextNum = (lastNum + 1).toString().padStart(12, "0");
       newCode = nextNum;
     }
-    this_.orderCode = newCode;
+    this.orderCode = newCode;
     next();
   } catch (err) {
     console.error("Error generating orderCode:", err);
