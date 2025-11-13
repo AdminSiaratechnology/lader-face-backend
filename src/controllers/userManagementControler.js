@@ -238,7 +238,7 @@ exports.updateUserProfile = asyncHandler(async (req, res) => {
   if (!user) {
     throw new ApiError(404, "User not found");
   }
-  console.log(req.files,"req.files")
+  console.log(req.files, "req.files");
 
   user.name = name;
   user.phone = phone;
@@ -249,8 +249,8 @@ exports.updateUserProfile = asyncHandler(async (req, res) => {
   if (profileUrl) {
     user.profilePicture = profileUrl;
   }
-  console.log(profileUrl,"profileUrl")
-  console.log(req.files,"req.files")
+  console.log(profileUrl, "profileUrl");
+  console.log(req.files, "req.files");
   await user.save();
   const updatedUser = await User.findById(userId)
     .populate({
@@ -265,4 +265,63 @@ exports.updateUserProfile = asyncHandler(async (req, res) => {
   res
     .status(200)
     .json(new ApiResponse(200, safeUser, "User profile updated successfully"));
+});
+
+exports.getPartners = asyncHandler(async (req, res) => {
+  const {
+    search = "",
+    status = "",
+    sortBy = "createdAt",
+    sortOrder = "desc",
+    page = 1,
+    limit = 10,
+  } = req.query;
+
+  const perPage = parseInt(limit, 10);
+  const currentPage = Math.max(parseInt(page, 10), 1);
+  const skip = (currentPage - 1) * perPage;
+  const sortField = sortBy === "name" ? "name" : "createdAt";
+  const sortOrderValue = sortOrder === "desc" ? -1 : 1;
+
+  // Match filters
+  const matchStage = { role: "Partner", status: {$ne : "delete"} }; // always restrict to partners
+
+  if (search?.trim()) {
+    matchStage.$or = [
+      { name: { $regex: search, $options: "i" } },
+      { email: { $regex: search, $options: "i" } },
+    ];
+  }
+
+  if (status) matchStage.status = status;
+
+  // Fetch paginated data
+  const [partners, total] = await Promise.all([
+    User.aggregate([
+      { $match: matchStage },
+      { $sort: { [sortField]: sortOrderValue } },
+      { $skip: skip },
+      { $limit: perPage },
+      { $project: { password: 0, __v: 0 } },
+    ]),
+    User.countDocuments(matchStage),
+  ]);
+
+  const totalPages = Math.ceil(total / perPage);
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        data: partners,
+        pagination: {
+          total,
+          totalPages,
+          currentPage,
+          perPage,
+        },
+      },
+      "Partners fetched successfully"
+    )
+  );
 });

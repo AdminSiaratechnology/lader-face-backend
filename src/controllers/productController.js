@@ -1,19 +1,19 @@
 // src/controllers/productController.js
-const Product = require('../models/Product');
-const Company = require('../models/Company');
-const User = require('../models/User');
-const StockGroup = require('../models/StockGroup');
-const StockCategory = require('../models/StockCategory');
-const Unit = require('../models/Unit');
-const Godown = require('../models/Godown');
+const Product = require("../models/Product");
+const Company = require("../models/Company");
+const User = require("../models/User");
+const StockGroup = require("../models/StockGroup");
+const StockCategory = require("../models/StockCategory");
+const Unit = require("../models/Unit");
+const Godown = require("../models/Godown");
 
-const asyncHandler = require('../utils/asyncHandler');
-const ApiError = require('../utils/apiError');
-const ApiResponse = require('../utils/apiResponse');
+const asyncHandler = require("../utils/asyncHandler");
+const ApiError = require("../utils/apiError");
+const ApiResponse = require("../utils/apiResponse");
 
-const {generate6DigitUniqueId} =require("../utils/generate6DigitUniqueId")
-const mongoose = require('mongoose');
-const   {createAuditLog}=require("../utils/createAuditLog")
+const { generate6DigitUniqueId } = require("../utils/generate6DigitUniqueId");
+const mongoose = require("mongoose");
+const { createAuditLog } = require("../utils/createAuditLog");
 
 // ✅ Batch insert helper
 const insertInBatches = async (data, batchSize = 1000) => {
@@ -36,10 +36,6 @@ const insertInBatches = async (data, batchSize = 1000) => {
   return allInserted;
 };
 
-
-
-
-
 // safeParse util (string ko JSON me parse kare)
 const safeParse = (value, fallback) => {
   try {
@@ -55,7 +51,7 @@ const safeParse = (value, fallback) => {
 exports.createProduct = asyncHandler(async (req, res) => {
   try {
     const body = req.body;
-    
+
     console.log("req.body", req.body);
 
     // Validate required fields
@@ -79,9 +75,9 @@ exports.createProduct = asyncHandler(async (req, res) => {
     const isProductName = await Product.findOne({
       clientId,
       companyId: body.companyId,
-      name: body.name
+      name: body.name,
     });
-    
+
     if (isProductName) {
       throw new ApiError(400, "Product name already exists");
     }
@@ -91,7 +87,7 @@ exports.createProduct = asyncHandler(async (req, res) => {
       Company.findById(body.companyId),
       // future client check
     ]);
-    
+
     if (!company) {
       throw new ApiError(404, "Company not found");
     }
@@ -103,21 +99,21 @@ exports.createProduct = asyncHandler(async (req, res) => {
         throw new ApiError(404, "StockGroup not found");
       }
     }
-    
+
     if (body.stockCategory) {
       const sc = await StockCategory.findById(body.stockCategory);
       if (!sc) {
         throw new ApiError(404, "StockCategory not found");
       }
     }
-    
+
     if (body.unit) {
       const u = await Unit.findById(body.unit);
       if (!u) {
         throw new ApiError(404, "Unit not found");
       }
     }
-    
+
     if (body.defaultGodown) {
       const g = await Godown.findById(body.defaultGodown);
       if (!g) {
@@ -128,22 +124,22 @@ exports.createProduct = asyncHandler(async (req, res) => {
     // Handle registration documents
     let registrationDocTypes = [];
     let registrationDocs = [];
-    
+
     try {
-      registrationDocTypes = JSON.parse(req.body.registrationDocTypes || '[]');
+      registrationDocTypes = JSON.parse(req.body.registrationDocTypes || "[]");
     } catch (e) {
-      console.error('Failed to parse registrationDocTypes:', e);
+      console.error("Failed to parse registrationDocTypes:", e);
       registrationDocTypes = [];
     }
 
-    if (req?.files?.['registrationDocs']) {
-      registrationDocs = req.files['registrationDocs'].map((file, index) => ({
-        type: registrationDocTypes[index] || 'Other',
+    if (req?.files?.["registrationDocs"]) {
+      registrationDocs = req.files["registrationDocs"].map((file, index) => ({
+        type: registrationDocTypes[index] || "Other",
         file: file.location,
-        fileName: file.originalname
+        fileName: file.originalname,
       }));
     }
-    const code=await generate6DigitUniqueId(Product,"code")
+    const code = await generate6DigitUniqueId(Product, "code");
 
     // Build product object
     const productObj = {
@@ -184,9 +180,9 @@ exports.createProduct = asyncHandler(async (req, res) => {
     let productImageTypes = [];
     try {
       console.log(req.body.productImageTypes, "producttypesssss");
-      productImageTypes = JSON.parse(req.body.productImageTypes || '[]');
+      productImageTypes = JSON.parse(req.body.productImageTypes || "[]");
     } catch (e) {
-      console.error('Failed to parse productImageTypes:', e);
+      console.error("Failed to parse productImageTypes:", e);
       productImageTypes = [];
     }
 
@@ -202,15 +198,16 @@ exports.createProduct = asyncHandler(async (req, res) => {
 
     // Create product
     const product = await Product.create(productObj);
-    
+
     // Get IP address
-    let ipAddress = req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-    
+    let ipAddress =
+      req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+
     // Convert ::1 → 127.0.0.1
     if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
       ipAddress = "127.0.0.1";
     }
-    
+
     console.log(ipAddress, "ipaddress");
 
     // Create audit log
@@ -224,16 +221,17 @@ exports.createProduct = asyncHandler(async (req, res) => {
       ipAddress,
     });
 
-    res.status(201).json(new ApiResponse(201, product, "Product created successfully"));
-    
+    res
+      .status(201)
+      .json(new ApiResponse(201, product, "Product created successfully"));
   } catch (error) {
     console.error("Error creating product:", error);
-    
+
     // If it's already an ApiError, throw it as is
     if (error instanceof ApiError) {
       throw error;
     }
-    
+
     // For other errors, wrap in ApiError
     throw new ApiError(
       error.statusCode || 500,
@@ -280,16 +278,15 @@ exports.createProduct = asyncHandler(async (req, res) => {
 // });
 exports.updateProduct = asyncHandler(async (req, res) => {
   const { id } = req.params;
-    const clientId = user.clientID;
+  const clientId = req.user.clientID;
 
   // ✅ Step 0: Validate ID
   if (!id) throw new ApiError(400, "Product ID is required");
-   // Check for duplicate product name
-    
+  // Check for duplicate product name
 
   const product = await Product.findById(id);
   if (!product) throw new ApiError(404, "Product not found");
-
+  const body = req.body;
   if (body.name && body.companyId) {
     const isProductNameExists = await Product.findOne({
       clientId,
@@ -305,11 +302,16 @@ exports.updateProduct = asyncHandler(async (req, res) => {
       );
     }
   }
-  
 
   // ✅ Safe parse nested fields
-  req.body.taxConfiguration = safeParse(req.body.taxConfiguration, product.taxConfiguration);
-  req.body.openingQuantities = safeParse(req.body.openingQuantities, product.openingQuantities);
+  req.body.taxConfiguration = safeParse(
+    req.body.taxConfiguration,
+    product.taxConfiguration
+  );
+  req.body.openingQuantities = safeParse(
+    req.body.openingQuantities,
+    product.openingQuantities
+  );
   req.body.images = safeParse(req.body.images, product.images);
 
   // ✅ Handle product images
@@ -326,13 +328,24 @@ exports.updateProduct = asyncHandler(async (req, res) => {
   // ✅ Track changes for audit log
   const oldData = product.toObject();
   const allowedFields = [
-    "name", "code", "description", "category", "unit", "price",
-    "taxConfiguration", "openingQuantities", "images", "status"
+    "name",
+    "code",
+    "description",
+    "category",
+    "unit",
+    "price",
+    "taxConfiguration",
+    "openingQuantities",
+    "images",
+    "status",
   ];
 
   const changes = {};
-  Object.keys(req.body).forEach(key => {
-    if (allowedFields.includes(key) && JSON.stringify(oldData[key]) !== JSON.stringify(req.body[key])) {
+  Object.keys(req.body).forEach((key) => {
+    if (
+      allowedFields.includes(key) &&
+      JSON.stringify(oldData[key]) !== JSON.stringify(req.body[key])
+    ) {
       changes[key] = { from: oldData[key], to: req.body[key] };
     }
   });
@@ -347,14 +360,14 @@ exports.updateProduct = asyncHandler(async (req, res) => {
     performedBy: req.user?.id || null,
     details: "Product updated",
     changes,
-    timestamp: new Date()
+    timestamp: new Date(),
   });
 
   // ✅ Save product
   await product.save();
-   let ipAddress =
+  let ipAddress =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
+
   // convert ::1 → 127.0.0.1
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
@@ -372,10 +385,6 @@ exports.updateProduct = asyncHandler(async (req, res) => {
 
   res.status(200).json(new ApiResponse(200, product, "Product updated"));
 });
-
-
-
-
 
 // DELETE product
 exports.deleteProduct = asyncHandler(async (req, res) => {
@@ -410,20 +419,20 @@ exports.deleteProduct = asyncHandler(async (req, res) => {
     performedBy: userId,
     details: "Product marked as deleted",
     changes,
-    timestamp: new Date()
+    timestamp: new Date(),
   });
 
   // ✅ Step 6: Save product
   await product.save();
 
-let ipAddress =
+  let ipAddress =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
+
   // convert ::1 → 127.0.0.1
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
   }
-    await createAuditLog({
+  await createAuditLog({
     module: "Product",
     action: "delete",
     performedBy: req.user.id,
@@ -433,49 +442,45 @@ let ipAddress =
     ipAddress,
   });
 
-
   res
     .status(200)
     .json(new ApiResponse(200, product, "Product status updated to Deleted"));
 });
-
-
 
 // GET product by id
 exports.getProductById = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
   const product = await Product.findOne({ _id: id, status: { $ne: "delete" } })
-  .select("-auditLogs")
-    .populate('companyId', 'namePrint')
-    .populate('clientId', 'name email')
-    .populate('stockGroup', 'name')
-    .populate('stockCategory', 'name')
-    .populate('unit', 'name symbol')
-    .populate('alternateUnit', 'name symbol')
-    .populate('defaultGodown', 'name code');
+    .select("-auditLogs")
+    .populate("companyId", "namePrint")
+    .populate("clientId", "name email")
+    .populate("stockGroup", "name")
+    .populate("stockCategory", "name")
+    .populate("unit", "name symbol")
+    .populate("alternateUnit", "name symbol")
+    .populate("defaultGodown", "name code");
 
-  if (!product) throw new ApiError(404, 'Product not found or deleted');
+  if (!product) throw new ApiError(404, "Product not found or deleted");
 
   res.status(200).json(new ApiResponse(200, product));
 });
 
-
 // LIST / SEARCH products
 exports.listProducts = asyncHandler(async (req, res) => {
-  const { 
-    search = "", 
-    status = "", 
-    sortBy = "createdAt", 
-    sortOrder = "desc", 
-    page = 1, 
+  const {
+    search = "",
+    status = "",
+    sortBy = "createdAt",
+    sortOrder = "desc",
+    page = 1,
     limit = 25,
-    // companyId, 
-    clientId, 
-    stockGroup, 
-    stockCategory
+    // companyId,
+    clientId,
+    stockGroup,
+    stockCategory,
   } = req.query;
-   const { companyId } = req.params;
+  const { companyId } = req.params;
 
   const filter = {};
 
@@ -508,7 +513,7 @@ exports.listProducts = asyncHandler(async (req, res) => {
   // ✅ Fetch data & total count in parallel
   const [items, total] = await Promise.all([
     Product.find(filter)
-    .select("-auditLogs")
+      .select("-auditLogs")
       .populate("stockGroup", "name")
       .populate("stockCategory", "name")
       .populate("unit", "name symbol")
@@ -536,24 +541,21 @@ exports.listProducts = asyncHandler(async (req, res) => {
 });
 // LIST / SEARCH products
 exports.listProductsByCompanyId = asyncHandler(async (req, res) => {
-  console.log("hiiiii")
-  const { 
-    search = "", 
-    status = "", 
-    sortBy = "createdAt", 
-    sortOrder = "desc", 
-    page = 1, 
+  console.log("hiiiii");
+  const {
+    search = "",
+    status = "",
+    sortBy = "createdAt",
+    sortOrder = "desc",
+    page = 1,
     limit = 25,
-    
-    clientId, 
-    stockGroup, 
+
+    clientId,
+    stockGroup,
     stockCategory,
-    
-
   } = req.query;
-    const { companyId } = req.params;
-   if (!companyId) throw new ApiError(400, "Company ID is required");
-
+  const { companyId } = req.params;
+  if (!companyId) throw new ApiError(400, "Company ID is required");
 
   const filter = {};
 
@@ -571,7 +573,6 @@ exports.listProductsByCompanyId = asyncHandler(async (req, res) => {
       { name: { $regex: search, $options: "i" } },
       { code: { $regex: search, $options: "i" } },
       { partNo: { $regex: search, $options: "i" } },
-    
     ];
   }
 
@@ -587,7 +588,7 @@ exports.listProductsByCompanyId = asyncHandler(async (req, res) => {
   // ✅ Fetch data & total count in parallel
   const [items, total] = await Promise.all([
     Product.find(filter)
-    .select("-auditLogs")
+      .select("-auditLogs")
       .populate("stockGroup", "name")
       .populate("stockCategory", "name")
       .populate("unit", "name symbol")
@@ -615,8 +616,6 @@ exports.listProductsByCompanyId = asyncHandler(async (req, res) => {
   );
 });
 
-
-
 exports.createBulkProducts = asyncHandler(async (req, res) => {
   const { products } = req.body;
 
@@ -632,13 +631,14 @@ exports.createBulkProducts = asyncHandler(async (req, res) => {
   const clientId = user.clientID;
 
   // ✅ Preload all reference IDs once
-  const [companies, stockGroups, stockCategories, units, godowns] = await Promise.all([
-    Company.find({}, "_id"),
-    StockGroup.find({}, "_id"),
-    StockCategory.find({}, "_id"),
-    Unit.find({}, "_id"),
-    Godown.find({}, "_id"),
-  ]);
+  const [companies, stockGroups, stockCategories, units, godowns] =
+    await Promise.all([
+      Company.find({}, "_id"),
+      StockGroup.find({}, "_id"),
+      StockCategory.find({}, "_id"),
+      Unit.find({}, "_id"),
+      Godown.find({}, "_id"),
+    ]);
 
   const validIds = {
     companies: new Set(companies.map((c) => String(c._id))),
@@ -660,11 +660,22 @@ exports.createBulkProducts = asyncHandler(async (req, res) => {
       }
 
       // Validate references
-      if (!validIds.companies.has(String(body.companyId))) throw new Error("Invalid companyId");
-      if (body.stockGroup && !validIds.stockGroups.has(String(body.stockGroup))) throw new Error("Invalid stockGroup");
-      if (body.stockCategory && !validIds.stockCategories.has(String(body.stockCategory))) throw new Error("Invalid stockCategory");
-      if (body.unit && !validIds.units.has(String(body.unit))) throw new Error("Invalid unit");
-      if (body.defaultGodown && !validIds.godowns.has(String(body.defaultGodown))) throw new Error("Invalid defaultGodown");
+      if (!validIds.companies.has(String(body.companyId)))
+        throw new Error("Invalid companyId");
+      if (body.stockGroup && !validIds.stockGroups.has(String(body.stockGroup)))
+        throw new Error("Invalid stockGroup");
+      if (
+        body.stockCategory &&
+        !validIds.stockCategories.has(String(body.stockCategory))
+      )
+        throw new Error("Invalid stockCategory");
+      if (body.unit && !validIds.units.has(String(body.unit)))
+        throw new Error("Invalid unit");
+      if (
+        body.defaultGodown &&
+        !validIds.godowns.has(String(body.defaultGodown))
+      )
+        throw new Error("Invalid defaultGodown");
       const code = await generate6DigitUniqueId(Product, "code");
       const productObj = {
         clientId,
@@ -727,5 +738,3 @@ exports.createBulkProducts = asyncHandler(async (req, res) => {
     )
   );
 });
-
-

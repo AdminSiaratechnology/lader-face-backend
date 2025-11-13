@@ -86,7 +86,10 @@ const userSchema = new mongoose.Schema(
     clientID: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     company: { type: mongoose.Schema.Types.ObjectId, ref: "Company" },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-
+    country: { type: String },
+    state: { type: String },
+    city: { type: String },
+    region: { type: String },
     phone: { type: String },
     area: { type: String },
     pincode: { type: String },
@@ -103,7 +106,13 @@ const userSchema = new mongoose.Schema(
 
     // 🧾 Maintain full change history here
     auditLogs: [auditLogSchema],
-    profilePicture: { type: String },
+    profilePicture: { type: String , default: ""},
+    documents: [{ type: String }],
+    limit: { type: Number },
+    partnerType: { type: String, enum: ["silver", "gold", "diamond"] },  
+    contactPerson: { type: String },
+    code: { type: String },
+    multiplePhones:[{type: String}]
   },
   { timestamps: true }
 );

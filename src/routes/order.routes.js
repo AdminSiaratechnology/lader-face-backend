@@ -13,5 +13,12 @@ router.get("/:id", orderController.getOrderById);
 router.get("/", orderController.getOrders);
 router.get("/orderByCompany/:companyId", orderController.getOrdersByCompanyId);
 router.get("/orderByUser/:companyId", orderController.getOrdersByCompanyId);
-
+router.get("/state-wise/:companyId", orderController.getStateWiseSales);
+router.get("/party-wise/:companyId", orderController.getPartyWiseSales);
+router.get("/salesman-wise/:companyId", orderController.getSalesmanWiseSales);
+router.get("/today/:companyId", orderController.getTodaySales);
+router.get("/monthly-comparison/:companyId", orderController.getMonthlySalesComparison);
+router.get("/top-customers/:companyId", orderController.getTopCustomers);
+router.get("/top-products/:companyId", orderController.getTopProducts);
+router.get("/total-payment/:companyId", orderController.getTotalPayments);
 module.exports = router;
