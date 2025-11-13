@@ -221,7 +221,7 @@ exports.removeCartItem = async (req, res) => {
       return res.status(400).json({ success: false, message: "Missing required fields" });
     }
 
-    const deleted = await Cart.findById(id)
+    const deleted = await Cart.findByIdAndDelete(id)
 
     if (!deleted) {
       return res.status(404).json({ success: false, message: "No active cart found" });

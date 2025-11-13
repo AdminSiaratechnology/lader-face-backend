@@ -5,61 +5,45 @@ const ApiError = require("../utils/apiError");
 const ApiResponse = require("../utils/apiResponse");
 const Company =require("../models/Company")
 const Cart=require("../models/Cart")
-
+const { Worker } = require("worker_threads");
+const path = require("path");
 // ✅ Create Order
 exports.createOrder = asyncHandler(async (req, res) => {
   try {
-    const {
-      companyId,
-      customerId,
-
-      shippingAddress,
-      items,
-      orderSource,
-    } = req.body;
+    const { companyId, customerId, shippingAddress, items, orderSource } = req.body;
     const clientId = req.user?.clientID;
     const userId = req.user?.id;
-    console.log("createorder")
 
-    // 🧩 Validate required fields
-    if (
-      !companyId ||
-      !clientId ||
-      !customerId ||
-      !userId ||
-      !items?.length ||
-      !orderSource
-    ) {
+    console.log("🧾 Creating order...");
+
+    if (!companyId || !clientId || !customerId || !userId || !items?.length || !orderSource) {
       throw new ApiError(400, "Missing required fields");
     }
 
-    // ✅ Validate items format
     for (const item of items) {
       if (!item.productId || !item.quantity || !item.price) {
-        throw new ApiError(
-          400,
-          "Each item must include productId, quantity, and price"
-        );
+        throw new ApiError(400, "Each item must include productId, quantity, and price");
+      }
+
+      // Ensure discount is not greater than total
+      if (item.discount && item.discount > item.total) {
+        item.discount = item.total;
       }
     }
 
-    // 🔍 Check company auto-approve setting
     const company = await Company.findById(companyId).lean();
-    if (!company) {
-      throw new ApiError(404, "Company not found");
-    }
+    if (!company) throw new ApiError(404, "Company not found");
 
     const isAutoApproved = company.autoApprove === true;
+    console.log(req.body);
 
-    // 🧮 Calculate totals
     const subtotal = items.reduce((acc, item) => acc + (item.total || 0), 0);
-    const totalDiscount = items.reduce(
-      (acc, item) => acc + (item.discount || 0),
-      0
-    );
-    const grandTotal = subtotal - totalDiscount;
+    const totalDiscount = items.reduce((acc, item) => acc + (item.discount || 0), 0);
+    let grandTotal = subtotal - totalDiscount;
 
-    // 🧱 Construct order object
+    // prevent negative total
+    if (grandTotal < 0) grandTotal = 0;
+
     const orderData = {
       companyId,
       clientId,
@@ -77,19 +61,41 @@ exports.createOrder = asyncHandler(async (req, res) => {
       status: isAutoApproved ? "approved" : "pending",
     };
 
-    // 🧾 Create and save order
     const order = await Order.create(orderData);
-    await Cart.findOneAndDelete({clientId,companyId,userId})
+
+    // ✅ Populate limited customer fields
+    const populatedOrder = await Order.findById(order._id)
+      .populate({
+        path: "customerId",
+        select: "customerName emailAddress phone country currency",
+      })
+      .lean();
+
+    // 🧵 Background Cart Clear Worker
+    const workerPath = path.join(__dirname, "../workers/clearCartWorker.js");
+
+    new Worker(workerPath, {
+      workerData: {
+        clientId,
+        companyId,
+        userId,
+        mongoUri: process.env.MONGODB_URI,
+      },
+    })
+      .on("message", (msg) => {
+        if (msg.success) console.log("✅ Cart cleared successfully (worker)");
+        else console.error("❌ Worker failed:", msg.error);
+      })
+      .on("error", (err) => console.error("💥 Worker thread error:", err))
+      .on("exit", (code) => {
+        if (code !== 0) console.error(`⚠️ Worker exited with code ${code}`);
+      });
+      console.log("🧾 Order created with ID:", populatedOrder);
 
     return res
       .status(201)
-      .json(
-        new ApiResponse(
-          201,
-          order,
-          `Order created successfully (${order.status})`
-        )
-      );
+      .json(new ApiResponse(201, populatedOrder, `Order created successfully (${order.status})`));
+
   } catch (error) {
     console.error("❌ Error creating order:", error);
     if (error instanceof ApiError) {
@@ -97,12 +103,13 @@ exports.createOrder = asyncHandler(async (req, res) => {
         .status(error.statusCode || 400)
         .json(new ApiResponse(error.statusCode, null, error.message));
     }
-
     return res
       .status(500)
       .json(new ApiResponse(500, null, "Internal server error", error.message));
   }
 });
+
+
 
 
 //updateOrderStatus
@@ -476,3 +483,362 @@ exports.getOrdersByUser = async (req, res) => {
     });
   }
 };
+
+exports.getStateWiseSales = async (req, res) => {
+  console.log("getStateWiseSales");
+
+  console.log("getStateWiseSales");
+  try {
+    const { companyId} = req.params;
+    const clientId = req.user?.clientID;
+    console.log("getStateWiseSales", companyId, clientId);
+
+    const data = await Order.aggregate([
+      { $match: { companyId: new mongoose.Types.ObjectId(companyId), clientId: new mongoose.Types.ObjectId(clientId) } },
+      {
+        $group: {
+          _id: "$shippingAddress.state",
+          totalSales: { $sum: "$grandTotal" },
+          totalOrders: { $sum: 1 },
+        },
+      },
+      { $sort: { totalSales: -1 } },
+    ]);
+
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.getPartyWiseSales = async (req, res) => {
+  try {
+    const { companyId } = req.params;
+    const clientId = req.user?.clientID;
+
+    const data = await Order.aggregate([
+      {
+        $match: {
+          companyId: new mongoose.Types.ObjectId(companyId),
+          clientId: new mongoose.Types.ObjectId(clientId),
+        },
+      },
+      {
+        $group: {
+          _id: "$customerId",
+          totalSales: { $sum: "$grandTotal" },
+          totalOrders: { $sum: 1 },
+        },
+      },
+      {
+        $lookup: {
+          from: "customers",
+          let: { customerId: "$_id" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$_id", "$$customerId"] } } },
+            {
+              $project: {
+                _id: 1,
+                customerName: 1,
+                contactPerson: 1,
+                emailAddress: 1,
+                country: 1,
+                currency: 1,
+              
+              },
+            },
+          ],
+          as: "customer",
+        },
+      },
+      { $unwind: "$customer" },
+      { $sort: { totalSales: -1 } },
+    ]);
+
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+
+
+exports.getSalesmanWiseSales = async (req, res) => {
+  try {
+    const { companyId } = req.params;
+    const clientId = req.user?.clientID;
+
+    const data = await Order.aggregate([
+      {
+        $match: {
+          companyId: new mongoose.Types.ObjectId(companyId),
+          clientId: new mongoose.Types.ObjectId(clientId),
+        },
+      },
+      {
+        $group: {
+          _id: "$userId",
+          totalSales: { $sum: "$grandTotal" },
+          totalOrders: { $sum: 1 },
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          let: { salesmanId: "$_id" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$_id", "$$salesmanId"] } } },
+            {
+              $project: {
+                _id: 1,
+                firstName: 1,
+                lastName: 1,
+                email: 1,
+                mobile: 1,
+                role: 1,
+              },
+            },
+          ],
+          as: "salesman",
+        },
+      },
+      { $unwind: "$salesman" },
+      { $sort: { totalSales: -1 } },
+    ]);
+
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+
+
+exports.getTodaySales = async (req, res) => {
+
+     const { companyId } = req.params;
+    const clientId = req.user?.clientID;
+  try {
+  
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+
+    const data = await Order.aggregate([
+      { $match: { companyId: new mongoose.Types.ObjectId(companyId), clientId: new mongoose.Types.ObjectId(clientId), createdAt: { $gte: start, $lte: end } } },
+      {
+        $group: {
+          _id: null,
+          totalSales: { $sum: "$grandTotal" },
+          totalOrders: { $sum: 1 },
+        },
+      },
+    ]);
+
+    res.json({ success: true, data: data[0] || { totalSales: 0, totalOrders: 0 } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+
+exports.getMonthlySalesComparison = async (req, res) => {
+  try {
+   const { companyId } = req.params;
+    const clientId = req.user?.clientID;
+    const now = new Date();
+
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const thisMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+    const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+
+    const [thisMonth, prevMonth] = await Promise.all([
+      Order.aggregate([
+        { $match: { companyId: new mongoose.Types.ObjectId(companyId), clientId: new mongoose.Types.ObjectId(clientId), createdAt: { $gte: thisMonthStart, $lte: thisMonthEnd } } },
+        { $group: { _id: null, totalSales: { $sum: "$grandTotal" }, totalOrders: { $sum: 1 } } },
+      ]),
+      Order.aggregate([
+        { $match: { companyId: new mongoose.Types.ObjectId(companyId), clientId: new mongoose.Types.ObjectId(clientId), createdAt: { $gte: prevMonthStart, $lte: prevMonthEnd } } },
+        { $group: { _id: null, totalSales: { $sum: "$grandTotal" }, totalOrders: { $sum: 1 } } },
+      ]),
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        thisMonth: thisMonth[0] || { totalSales: 0, totalOrders: 0 },
+        prevMonth: prevMonth[0] || { totalSales: 0, totalOrders: 0 },
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+
+exports.getTopCustomers = async (req, res) => {
+  try {
+    const { companyId } = req.params;
+    const clientId = req.user?.clientID;
+    const { limit = 5 } = req.query;
+
+    const data = await Order.aggregate([
+      {
+        $match: {
+          companyId: new mongoose.Types.ObjectId(companyId),
+          clientId: new mongoose.Types.ObjectId(clientId),
+        },
+      },
+      {
+        $group: {
+          _id: "$customerId",
+          totalSales: { $sum: "$grandTotal" },
+        },
+      },
+      { $sort: { totalSales: -1 } },
+      { $limit: parseInt(limit) },
+      {
+        $lookup: {
+          from: "customers",
+          let: { customerId: "$_id" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$_id", "$$customerId"] } } },
+            {
+              $project: {
+                _id: 1,
+                customerName: 1,
+                contactPerson: 1,
+                emailAddress: 1,
+                country: 1,
+                currency: 1,
+              },
+            },
+          ],
+          as: "customer",
+        },
+      },
+      { $unwind: "$customer" },
+    ]);
+
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+
+
+exports.getTopProducts = async (req, res) => {
+  try {
+    const { companyId } = req.params;
+    const clientId = req.user?.clientID;
+    const { limit = 5 } = req.query;
+
+    // Logging for debug
+    console.log('Company ID:', companyId);
+    console.log('Client ID:', clientId);
+    console.log('User:', req.user);
+
+    if (!companyId || !clientId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Missing companyId or clientId' 
+      });
+    }
+
+    const topProducts = await Order.aggregate([
+      // Step 1: Match orders for the specific company and client
+      { 
+        $match: { 
+          companyId: new mongoose.Types.ObjectId(companyId), 
+          clientId: new mongoose.Types.ObjectId(clientId) 
+        } 
+      },
+      
+      // Step 2: Unwind items array to process each item separately
+      { $unwind: "$items" },
+      
+      // Step 3: Group by productId and calculate totals
+      { 
+        $group: { 
+          _id: "$items.productId", 
+          totalQuantity: { $sum: "$items.quantity" }, 
+          totalSales: { $sum: "$items.total" },
+          totalOrders: { $sum: 1 }
+        } 
+      },
+      
+      // Step 4: Sort by quantity
+      { $sort: { totalQuantity: -1 } },
+      
+      // Step 5: Limit results
+      { $limit: parseInt(limit) },
+      
+      // Step 6: Lookup product details - TRY DIFFERENT COLLECTION NAMES
+      {
+        $lookup: {
+          from: "products", // Try: "products", "product", or check your actual collection name in MongoDB
+          localField: "_id",
+          foreignField: "_id",
+          as: "productDetails",
+        },
+      },
+      
+      // Step 7: Unwind product details
+      { 
+        $unwind: { 
+          path: "$productDetails", 
+          preserveNullAndEmptyArrays: true 
+        } 
+      },
+      
+      // Step 8: Project final structure
+      {
+        $project: {
+          _id: 0,
+          productId: "$_id",
+          totalQuantity: 1,
+          totalSales: 1,
+          totalOrders: 1,
+          product: "$productDetails"
+        }
+      }
+    ]);
+
+    console.log('Top Products:', topProducts);
+
+    res.json({ 
+      success: true, 
+      data: topProducts,
+      count: topProducts.length 
+    });
+
+  } catch (err) {
+    console.error('Aggregation error:', err);
+    res.status(500).json({ 
+      success: false, 
+      message: err.message 
+    });
+  }
+};
+
+
+exports.getTotalPayments = async (req, res) => {
+  try {
+    const { companyId, clientId } = req.query;
+
+    const data = await Order.aggregate([
+      { $match: { companyId: new mongoose.Types.ObjectId(companyId), clientId: new mongoose.Types.ObjectId(clientId), "payment.status": "completed" } },
+      { $group: { _id: null, totalPayment: { $sum: "$payment.amountPaid" } } },
+    ]);
+
+    res.json({ success: true, data: data[0] || { totalPayment: 0 } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+
+

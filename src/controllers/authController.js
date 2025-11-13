@@ -19,7 +19,20 @@ const signToken = (userId, clientID, role) => {
 // ✅ REGISTER USER
 exports.register = asyncHandler(async (req, res) => {
   const adminId = req?.user?.id;
-  const { name, email, password, role } = req.body;
+  const {
+    name,
+    email,
+    password,
+    role,
+    city,
+    country,
+    state,
+    area,
+    limit,
+    pincode,
+    region,
+    multiplePhones,
+  } = req.body;
   let access = structuredClone(req.body.access);
 
   if (!name || !email || !password || !role) {
@@ -31,6 +44,16 @@ exports.register = asyncHandler(async (req, res) => {
 
   const creatorInfo = await User.findById(adminId);
   const hash = await bcrypt.hash(password, 10);
+  const uploadedDocs = req.files?.documents || [];
+  const uploadedUrls = uploadedDocs.map((file) => file.location);
+
+  // Final documents array (uploaded OR body OR fallback)
+  const finalDocuments =
+    uploadedUrls.length > 0
+      ? uploadedUrls
+      : Array.isArray(req.body.documents)
+      ? req.body.documents
+      : [];
 
   const user = await User.create({
     ...req.body,
@@ -39,8 +62,16 @@ exports.register = asyncHandler(async (req, res) => {
     clientID: creatorInfo?.clientID || adminId,
     createdBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
     parent: creatorInfo?._id || null,
-
+    city,
+    country,
+    state,
+    area,
+    limit,
+    pincode,
+    region,
     access: access,
+    documents: finalDocuments,
+    multiplePhones,
     auditLogs: [
       {
         action: "create",
@@ -90,7 +121,15 @@ exports.register = asyncHandler(async (req, res) => {
       );
     }
   }
-
+  const code = await generateUniqueId(User, "code");
+  await User.updateOne(
+    { _id: user._id },
+    {
+      $set: {
+        code,
+      },
+    }
+  );
   const userResponse = user.toObject();
   delete userResponse.password;
 
@@ -164,7 +203,6 @@ exports.registerInside = asyncHandler(async (req, res) => {
 exports.updateUser = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const updateData = { ...req.body, clientID: req.user.clientID };
-
   const user = await User.findById(id);
   if (!user) throw new ApiError(404, "User not found");
 
@@ -201,7 +239,14 @@ exports.updateUser = asyncHandler(async (req, res) => {
       user[key] = value;
     }
   });
+  // Safely get uploaded documents
+  const uploadedDocs = req.files?.documents || []; // this will be an array
+  const uploadedUrls = uploadedDocs.map(
+    (file) => file.location || file.path || file.originalname
+  );
 
+  // Merge new uploaded files with existing documents
+  user.documents = [...(user.documents || []), ...uploadedUrls];
   // Track changed fields for audit logs
   const changes = {};
   for (const key in updateData) {

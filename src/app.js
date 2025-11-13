@@ -21,7 +21,7 @@ const auditLogRoutes=require("./routes/auditLogRoutes")
 const contactRoute=require("./routes/contactFormRoutes")
 const orderRoute =require("./routes/order.routes")
 const cartRoute =require("./routes/cartRoutes")
-
+const paymentRoute =require("./routes/paymentRoutes")
 const app = express();
 app.use(cors());
 // app.use(
@@ -54,7 +54,7 @@ app.use(express.urlencoded({limit: '50mb', extended: true }));
 
 app.get("/",(req,res)=>{
 
-    res.send("API is working 10/11")
+    res.send("API is working 13/11")
 
 
 })
@@ -84,7 +84,7 @@ app.use("/api/auditLog",auditLogRoutes)
 app.use("/api/contactUs",contactRoute)
 app.use("/api/order",orderRoute)
 app.use("/api/cart",cartRoute)
-
+app.use("/api/payment",paymentRoute)
 // Not found middleware (for invalid routes)
 app.use(notFound);
 
