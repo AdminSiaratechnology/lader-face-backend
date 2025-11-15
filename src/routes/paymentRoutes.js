@@ -8,6 +8,7 @@ const {
   updatePayment,
   deletePayment,
   getPaymnetsForCustomer,
+  getAllPaymentsByCompanyId
 } = require("../controllers/paymentController");
 
 const upload = require('../config/s3');
@@ -32,4 +33,6 @@ router.delete("/:paymentId", deletePayment);
 
 // Get payments for a customer
 router.get("/customer/:customerId", getPaymnetsForCustomer);
+
+router.get("/company/:companyId", getAllPaymentsByCompanyId); 
 module.exports = router;

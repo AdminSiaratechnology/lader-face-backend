@@ -13,7 +13,7 @@ const Cart = require("../models/Cart");
         useUnifiedTopology: true,
       });
 
-      await Cart.findOneAndDelete({ clientId, companyId, userId });
+      await Cart.deleteMany({ clientId, companyId, userId });
       console.log(`🧹 Cart cleared for user ${userId}`);
 
       await mongoose.connection.close();
