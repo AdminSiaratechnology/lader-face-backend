@@ -197,3 +197,19 @@ exports.getPaymnetsForCustomer = async (req, res, next) => {
 //     },
 //   });
 // }
+
+exports.getAllPaymentsByCompanyId = async (req, res, next) => {
+  try {
+    const { companyId } = req.params;
+    const userId = req.user?.id;
+
+    const payments = await Payment.find({ companyId, userId }).sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      data: payments,
+    });
+  } catch (error) {
+    next(error);
+  } 
+};

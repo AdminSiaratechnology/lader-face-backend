@@ -6,7 +6,7 @@ const ApiResponse = require("../utils/apiResponse");
 const User = require("../models/User");
 const mongoose = require("mongoose");
 const { createAuditLog } = require("../utils/createAuditLog");
-const { generateUniqueId } = require("../utils/generate16DigiId");
+const { generate6DigitUniqueId } = require("../utils/generate6DigitUniqueId");
 const Customer = require("../models/Customer");
 
 // 🔐 Token Generator
@@ -32,6 +32,7 @@ exports.register = asyncHandler(async (req, res) => {
     pincode,
     region,
     multiplePhones,
+    clientID,
   } = req.body;
   let access = structuredClone(req.body.access);
 
@@ -59,7 +60,7 @@ exports.register = asyncHandler(async (req, res) => {
     ...req.body,
     email: email.toLowerCase(),
     password: hash,
-    clientID: creatorInfo?.clientID || adminId,
+    clientID: clientID || creatorInfo?.clientID ,
     createdBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
     parent: creatorInfo?._id || null,
     city,
@@ -81,7 +82,91 @@ exports.register = asyncHandler(async (req, res) => {
       },
     ],
   });
+  if (role === "Client") {
+  const assignedLimit = limit || 0;
 
+  // Only check/deduct if creator is Partner
+  if (creatorInfo.role === "Partner") {
+    const partnerRemainingLimit = creatorInfo.limit || 0;
+
+    if (assignedLimit > partnerRemainingLimit) {
+      throw new ApiError(
+        400,
+        `Partner limit exceeded. You have ${partnerRemainingLimit} remaining.`
+      );
+    }
+
+    // Deduct assigned limit from Partner
+    await User.updateOne(
+      { _id: creatorInfo._id },
+      {
+        $inc: { limit: -assignedLimit },
+        $push: {
+          limitHistory: {
+            performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+            requestedTo: user._id,
+            previousLimit: partnerRemainingLimit,
+            newLimit: partnerRemainingLimit - assignedLimit,
+            requestedLimit: assignedLimit,
+            action: "assigned",
+            reason: "Limit assigned to client on creation",
+            timestamp: new Date(),
+          },
+        },
+      }
+    );
+  }
+
+  // Assign initial limit to the Client regardless of creator role
+  if (assignedLimit > 0) {
+    await User.updateOne(
+      { _id: user._id },
+      {
+        $push: {
+          limitHistory: {
+            performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+            initialLimit: assignedLimit,
+            previousLimit: 0,
+            newLimit: assignedLimit,
+            action: "assigned",
+            reason:
+              creatorInfo.role === "Partner"
+                ? "Initial limit assigned by Partner"
+                : "Initial limit assigned by SuperAdmin",
+            timestamp: new Date(),
+          },
+        },
+      }
+    );
+  }
+}
+
+  if (role === "Admin") {    
+    const clientID = user.clientID;
+    console.log("clientID: ", clientID);
+    await User.updateOne(
+      { _id: clientID },
+      { $inc: { limit: -1 } } // Decrease by 1
+    );
+  }
+  if (role === "Partner" && limit) {
+    await User.updateOne(
+      { _id: user._id },
+      {
+        $push: {
+          limitHistory: {
+            performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+            initialLimit: limit,
+            previousLimit: 0,
+            newLimit: limit,
+            action: "assigned",
+            reason: "Initial limit assigned on creation",
+            timestamp: new Date(),
+          },
+        },
+      }
+    );
+  }
   if (role === "Customer" && Array.isArray(access) && access.length > 0) {
     console.log("Auto-creating customers for access:", access);
     for (const acc of access) {
@@ -121,7 +206,7 @@ exports.register = asyncHandler(async (req, res) => {
       );
     }
   }
-  const code = await generateUniqueId(User, "code");
+  const code = await generate6DigitUniqueId(User, "code");
   await User.updateOne(
     { _id: user._id },
     {
@@ -338,11 +423,16 @@ exports.login = asyncHandler(async (req, res) => {
 
   if (!email || !password)
     throw new ApiError(400, "Email and password are required");
+  const user = await User.findOne({ email: email.toLowerCase() })
+    .populate({
+      path: "access.company",
+      select: "namePrint logo nameStreet code",
+    })
+    .populate({
+      path: "createdBy",
+      select: "email name",
+    });
 
-  const user = await User.findOne({ email: email.toLowerCase() }).populate({
-    path: "access.company",
-    select: "namePrint logo nameStreet code",
-  });
   if (!user) throw new ApiError(401, "Invalid credentials");
 
   const isMatch = await bcrypt.compare(password, user.password);

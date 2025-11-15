@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const auditLogSchema = require("../middlewares/auditLogSchema");
+const { init } = require("./Auditlog");
 // Permission schema
 // Permission schema
 const permissionSchema = new mongoose.Schema(
@@ -26,6 +27,27 @@ const accessSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed, // ✅ Changed from Map to Mixed
       default: {},
     },
+  },
+  { _id: false }
+);
+const limitHistorySchema = new mongoose.Schema(
+  {
+    performedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, 
+    requestedTo: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, // NEW FIELD
+    requestedLimit: { type: Number },
+    initialLimit: { type: Number },
+    previousLimit: { type: Number, default: 0 },
+    newLimit: { type: Number },
+    approvedLimit: { type: Number },
+    action: {
+      type: String,
+      enum: ["assigned", "requested", "approved"],
+      required: true,
+    },
+    reason: { type: String, default: "" },
+    remarks: { type: String, default: "" },
+    timestamp: { type: Date, default: Date.now },
+    documents: [{ type: String }],
   },
   { _id: false }
 );
@@ -95,24 +117,24 @@ const userSchema = new mongoose.Schema(
     pincode: { type: String },
     status: {
       type: String,
-      enum: ["active", "inactive", "delete"],
+      enum: ["active", "inactive", "delete", "suspended", "hold"],
       default: "active",
     },
     lastLogin: { type: Date },
     loginHistory: [{ type: Date }],
-
+    limitHistory: [limitHistorySchema],
     allPermissions: { type: Boolean, default: false },
     access: [accessSchema],
 
     // 🧾 Maintain full change history here
     auditLogs: [auditLogSchema],
-    profilePicture: { type: String , default: ""},
+    profilePicture: { type: String, default: "" },
     documents: [{ type: String }],
     limit: { type: Number },
-    partnerType: { type: String, enum: ["silver", "gold", "diamond"] },  
+    partnerType: { type: String, enum: ["silver", "gold", "diamond"] },
     contactPerson: { type: String },
     code: { type: String },
-    multiplePhones:[{type: String}]
+    multiplePhones: [{ type: String }],
   },
   { timestamps: true }
 );

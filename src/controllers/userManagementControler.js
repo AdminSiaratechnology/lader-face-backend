@@ -3,6 +3,7 @@ const ApiResponse = require("../utils/apiResponse");
 const User = require("../models/User");
 const mongoose = require("mongoose");
 const ApiError = require("../utils/apiError");
+const sendEmail = require("../utils/sendEmail");
 
 exports.getAllClientUsersWithCompany = asyncHandler(async (req, res) => {
   const clientId = req.user.clientID; // Logged-in user's client ID
@@ -284,7 +285,7 @@ exports.getPartners = asyncHandler(async (req, res) => {
   const sortOrderValue = sortOrder === "desc" ? -1 : 1;
 
   // Match filters
-  const matchStage = { role: "Partner", status: {$ne : "delete"} }; // always restrict to partners
+  const matchStage = { role: "Partner", status: { $ne: "delete" } }; // always restrict to partners
 
   if (search?.trim()) {
     matchStage.$or = [
@@ -325,3 +326,429 @@ exports.getPartners = asyncHandler(async (req, res) => {
     )
   );
 });
+
+exports.getClients = asyncHandler(async (req, res) => {
+  const {
+    search = "",
+    status = "",
+    sortBy = "createdAt",
+    sortOrder = "desc",
+    page = 1,
+    limit = 10,
+  } = req.query;
+  const userId = req.user.id;
+  const user = await User.findById(userId);
+  const perPage = parseInt(limit, 10);
+  const currentPage = Math.max(parseInt(page, 10), 1);
+  const skip = (currentPage - 1) * perPage;
+  const sortField = sortBy === "name" ? "name" : "createdAt";
+  const sortOrderValue = sortOrder === "desc" ? -1 : 1;
+
+  // Match filters
+  const matchStage = { role: "Client", status: { $ne: "delete" } };
+
+  if (user.role === "Partner") {
+    console.log(userId);
+    matchStage.parent = new mongoose.Types.ObjectId(userId);
+  }
+  if (search?.trim()) {
+    matchStage.$or = [
+      { name: { $regex: search, $options: "i" } },
+      { email: { $regex: search, $options: "i" } },
+    ];
+  }
+  console.log(matchStage)
+
+  if (status) matchStage.status = status;
+console.log(sortOrderValue)
+  // Fetch paginated data
+  const [clients, total] = await Promise.all([
+    User.aggregate([
+      { $match: matchStage },
+      { $sort: { [sortField]: sortOrderValue } },
+      { $skip: skip },
+      { $limit: perPage },
+      { $project: { password: 0, __v: 0 } },
+    ]),
+    User.countDocuments(matchStage),
+  ]);
+
+  const totalPages = Math.ceil(total / perPage);
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        data: clients,
+        pagination: {
+          total,
+          totalPages,
+          currentPage,
+          perPage,
+        },
+      },
+      "Clients fetched successfully"
+    )
+  );
+});
+
+exports.sendEmail = asyncHandler(async (req, res) => {
+  try {
+    const { requestedLimit, reason, toEmail, fromEmail, userId, name, role } =
+      req.body;
+
+    if (!requestedLimit) {
+      return res.status(400).json({
+        success: false,
+        message: "Requested limit required.",
+      });
+    }
+    const supportingDocuments = req.files?.map((file) => file.location) || [];
+
+    const subject = `New Limit Request from ${name || fromEmail}`;
+    const html = `
+      <h3>New Limit Request</h3>
+      <p><strong>User ID:</strong> ${userId}</p>
+      <p><strong>User Name:</strong> ${name}</p>
+      <p><strong>Requested Limit:</strong> ${requestedLimit}</p>
+      <p><strong>Reason:</strong> ${reason}</p>
+      <p><strong>Role:</strong>${role}</p>
+      <hr/>
+      <p>Submitted at: ${new Date().toLocaleString()}</p>
+    `;
+
+    // ✅ Send via Zoho
+    const result = await sendEmail({
+      to: toEmail,
+      from: process.env.ZOHO_USER, // always a verified sender
+      subject,
+      html,
+      attachments: req.files.map((file) => ({
+        filename: file.originalname,
+        path: file.location, // ✅ directly attach from S3
+      })),
+    });
+
+    if (!result.success) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to send email",
+        error: result.error,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Email sent successfully",
+      messageId: result.messageId,
+    });
+  } catch (err) {
+    console.error("❌ Email send API error:", err);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+});
+
+exports.getSubRoleUsers = asyncHandler(async (req, res) => {
+  const {
+    search = "",
+    status = "",
+    sortBy = "createdAt",
+    sortOrder = "desc",
+    page = 1,
+    limit = 10,
+  } = req.query;
+
+  const perPage = parseInt(limit, 10);
+  const currentPage = Math.max(parseInt(page, 10), 1);
+  const skip = (currentPage - 1) * perPage;
+  const sortField = sortBy === "name" ? "name" : "createdAt";
+  const sortOrderValue = sortOrder === "desc" ? -1 : 1;
+
+  // ✅ Match filters
+  const matchStage = {
+    role: "SuperAdmin",
+    status: { $ne: "delete" },
+    allPermissions: true,
+  };
+
+  if (search?.trim()) {
+    matchStage.$or = [
+      { name: { $regex: search, $options: "i" } },
+      { email: { $regex: search, $options: "i" } },
+    ];
+  }
+
+  if (status) matchStage.status = status;
+
+  // ✅ Fetch paginated data
+  const [insideUsers, total] = await Promise.all([
+    User.aggregate([
+      { $match: matchStage },
+      { $sort: { [sortField]: sortOrderValue } },
+      { $skip: skip },
+      { $limit: perPage },
+      { $project: { password: 0, __v: 0 } },
+    ]),
+    User.countDocuments(matchStage),
+  ]);
+
+  const totalPages = Math.ceil(total / perPage);
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        data: insideUsers,
+        pagination: {
+          total,
+          totalPages,
+          currentPage,
+          perPage,
+        },
+      },
+      "Sub-role Admin Users fetched successfully"
+    )
+  );
+});
+exports.requestLimit = asyncHandler(async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Logged-in user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Always request to parent
+    const requestedToId = user.parent;
+    if (!requestedToId) {
+      return res.status(400).json({
+        success: false,
+        message: "Parent (requestedTo) not found for this user.",
+      });
+    }
+
+    const { requestedLimit, reason, name, role } = req.body;
+
+    if (!requestedLimit) {
+      return res.status(400).json({
+        success: false,
+        message: "Requested limit is required.",
+      });
+    }
+
+    // Uploaded documents from S3
+    const supportingDocuments = req.files?.map((file) => file.location) || [];
+
+    // Parent user (email receiver)
+    const requestedToUser = await User.findById(requestedToId);
+    if (!requestedToUser) {
+      return res.status(404).json({
+        success: false,
+        message: "RequestedTo user not found",
+      });
+    }
+
+    const toEmail = requestedToUser.email;
+
+    // 1️⃣ Save Request on User
+    user.requestedLimit = requestedLimit;
+
+    user.limitHistory.push({
+      performedBy: userId,
+      previousLimit: user.limit,
+      requestedLimit: requestedLimit,
+      requestedTo: requestedToId,
+      action: "requested",
+      reason: reason || "",
+      remarks: "",
+      documents: supportingDocuments, // ⬅️ STORE DOCUMENTS HERE
+      timestamp: new Date(),
+    });
+
+    await user.save();
+
+    // 2️⃣ Prepare Email
+    const subject = `New Limit Request from ${user.name}`;
+    const html = `
+      <h3>New Limit Request</h3>
+      <p><strong>User ID:</strong> ${userId}</p>
+      <p><strong>User Name:</strong> ${user.name}</p>
+      <p><strong>Requested Limit:</strong> ${requestedLimit}</p>
+      <p><strong>Reason:</strong> ${reason}</p>
+      <p><strong>Role:</strong> ${role}</p>
+      <p><strong>Requested To:</strong> ${requestedToUser.name}</p>
+      <hr/>
+      <p>Submitted At: ${new Date().toLocaleString()}</p>
+    `;
+
+    const result = await sendEmail({
+      to: toEmail,
+      from: process.env.ZOHO_USER,
+      subject,
+      html,
+      attachments: req.files?.map((file) => ({
+        filename: file.originalname,
+        path: file.location,
+      })),
+    });
+
+    if (!result.success) {
+      return res.status(500).json({
+        success: false,
+        message: "Limit request saved but email failed",
+        error: result.error,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Limit request submitted successfully",
+      requestedTo: requestedToId,
+      messageId: result.messageId,
+    });
+
+  } catch (err) {
+    console.error("❌ Limit Request Error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+});
+
+
+exports.approveLimitRequest = asyncHandler(async (req, res) => {
+  try {
+    const approverId = req.user.id;                 
+    const { userId } = req.params;           
+    const { approvedLimit, comment } = req.body;
+
+    if (!approvedLimit) {
+      return res.status(400).json({
+        success: false,
+        message: "Approved limit is required.",
+      });
+    }
+
+    const user = await User.findById(userId).populate("parent");
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+    // Update actual limit
+    const previousLimit = user.limit;
+    user.limit = approvedLimit + previousLimit;
+
+    // Store approval entry
+    user.limitHistory.push({
+      previousLimit,
+      newLimit: user.limit,
+      approvedLimit: approvedLimit,
+      action: "approved",
+      remarks: comment || "",
+      timestamp: new Date(),
+      performedBy: approverId,
+    });
+
+    // Clear request values
+    user.requestedLimit = null;
+    user.requestedDocuments = [];
+
+    await user.save();
+
+    // Send email to user
+    await sendEmail({
+      to: user.email,
+      from: process.env.ZOHO_USER,
+      subject: "Your Limit Request Has Been Approved",
+      html: `
+        <h3>Limit Approved</h3>
+        <p>Your limit request has been <strong>approved</strong>.</p>
+        <p><strong>Old Limit:</strong> ${previousLimit}</p>
+        <p><strong>New Limit:</strong> ${approvedLimit}</p>
+        <p><strong>Approved By:</strong> ${req.user.email}</p>
+        <p><strong>Comment:</strong> ${comment || "None"}</p>
+      `
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Limit approved successfully.",
+    });
+  } catch (err) {
+    console.error("❌ Approve Error:", err);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+});
+
+
+exports.rejectLimit = asyncHandler(async (req, res) => {
+  const adminId = req.user.id;
+  const { userId, remark } = req.body;
+
+  const user = await User.findById(userId);
+  if (!user) throw new ApiError(404, "User not found");
+
+  const previousLimit = user.limit;
+
+  // Add to history
+  user.limitHistory.push({
+    assignedBy: adminId,
+    previousLimit,
+    newLimit: user.limit,
+    action: "rejected",
+    remark,
+  });
+
+  // reset requested limit
+  user.requestedLimit = 0;
+
+  await user.save();
+
+  res.status(200).json({
+    success: true,
+    message: "Limit rejected",
+    data: {
+      previousLimit,
+      newLimit: user.limit,
+    },
+  });
+});
+
+
+exports.getPendingLimitRequests = asyncHandler(async (req, res) => {
+  try {
+    const adminId = req.user.id;
+
+    // Find all users who requested limit TO this admin
+    const requests = await User.find({
+      "limitHistory": {
+        $elemMatch: {
+          action: "requested",
+          requestedTo: adminId
+        }
+      }
+    })
+    .select("name limit limitHistory");
+
+    return res.status(200).json({
+      success: true,
+      count: requests.length,
+      requests,
+    });
+
+  } catch (err) {
+    console.error("Fetch Assigned Requests Error:", err);
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal Server Error" });
+  }
+});
+
