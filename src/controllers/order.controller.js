@@ -367,7 +367,7 @@ exports.getOrdersByCompanyId = async (req, res) => {
     const userId = req.user?.id;
     const role = req.user?.role;
 
-    const { status, paymentStatus, page = 1, limit = 10 } = req.query;
+    const {search="", status, paymentStatus, page = 1, limit = 10 } = req.query;
 
     // 🔒 Basic Validations
     if (!companyId) {
@@ -402,7 +402,12 @@ exports.getOrdersByCompanyId = async (req, res) => {
     // 📌 Status Filters
     if (status) filter.status = status;
     if (paymentStatus) filter["payment.status"] = paymentStatus;
-
+  if (search && search.trim() !== "") {
+    filter.$or = [
+      { orderCode: { $regex: search, $options: "i" } },
+    ];
+  }
+console.log(filter);
     const skip = (page - 1) * limit;
 
     // 📦 Fetch Data
@@ -423,6 +428,7 @@ exports.getOrdersByCompanyId = async (req, res) => {
       totalRecords: total,
       currentPage: parseInt(page),
       totalPages: Math.ceil(total / limit),
+      limit: parseInt(limit),
       orders,
     });
   } catch (error) {

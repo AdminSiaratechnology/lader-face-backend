@@ -285,7 +285,7 @@ exports.getPartners = asyncHandler(async (req, res) => {
   const sortOrderValue = sortOrder === "desc" ? -1 : 1;
 
   // Match filters
-  const matchStage = { role: "Partner", status: { $ne: "delete" } }; // always restrict to partners
+  const matchStage = { role: "Partner", status: { $ne: "delete" } };
 
   if (search?.trim()) {
     matchStage.$or = [
@@ -296,15 +296,74 @@ exports.getPartners = asyncHandler(async (req, res) => {
 
   if (status) matchStage.status = status;
 
-  // Fetch paginated data
+  // Fetch paginated data + counts
   const [partners, total] = await Promise.all([
     User.aggregate([
       { $match: matchStage },
       { $sort: { [sortField]: sortOrderValue } },
       { $skip: skip },
       { $limit: perPage },
-      { $project: { password: 0, __v: 0 } },
+
+      // 1️⃣ GET ALL CLIENTS CREATED BY THIS PARTNER
+      {
+        $lookup: {
+          from: "users",
+          let: { partnerId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ["$parent", "$$partnerId"] },
+                role: "Client",
+                status: { $ne: "delete" },
+              },
+            },
+          ],
+          as: "clientsList",
+        },
+      },
+
+      // 2️⃣ COUNT CLIENTS
+      {
+        $addFields: {
+          totalClients: { $size: "$clientsList" },
+        },
+      },
+
+      // 3️⃣ GET ALL USERS OF THESE CLIENTS
+      {
+        $lookup: {
+          from: "users",
+          let: { clientIds: "$clientsList._id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $in: ["$clientID", "$$clientIds"] },
+                status: { $ne: "delete" },
+              },
+            },
+          ],
+          as: "clientUsers",
+        },
+      },
+
+      // 4️⃣ COUNT ALL USERS UNDER THOSE CLIENTS
+      {
+        $addFields: {
+          totalUsers: { $size: "$clientUsers" },
+        },
+      },
+
+      // 5️⃣ CLEAN OUTPUT
+      {
+        $project: {
+          password: 0,
+          __v: 0,
+          clientsList: 0,
+          clientUsers: 0,
+        },
+      },
     ]),
+
     User.countDocuments(matchStage),
   ]);
 
@@ -335,6 +394,7 @@ exports.getClients = asyncHandler(async (req, res) => {
     sortOrder = "desc",
     page = 1,
     limit = 10,
+    partnerId = "",
   } = req.query;
   const userId = req.user.id;
   const user = await User.findById(userId);
@@ -357,10 +417,20 @@ exports.getClients = asyncHandler(async (req, res) => {
       { email: { $regex: search, $options: "i" } },
     ];
   }
-  console.log(matchStage)
+  console.log(matchStage);
+  // Partner-based restriction
+  if (user.role === "Partner") {
+    // Partner should only access their own clients
+    matchStage.parent = new mongoose.Types.ObjectId(userId);
+  } else {
+    // Admin / SuperAdmin can filter by partner
+    if (partnerId) {
+      matchStage.parent = new mongoose.Types.ObjectId(partnerId);
+    }
+  }
 
   if (status) matchStage.status = status;
-console.log(sortOrderValue)
+  console.log(sortOrderValue);
   // Fetch paginated data
   const [clients, total] = await Promise.all([
     User.aggregate([
@@ -368,8 +438,30 @@ console.log(sortOrderValue)
       { $sort: { [sortField]: sortOrderValue } },
       { $skip: skip },
       { $limit: perPage },
-      { $project: { password: 0, __v: 0 } },
+
+      // 🔍 Count users belonging to this client
+      {
+        $lookup: {
+          from: "users",
+          localField: "_id",
+          foreignField: "clientID",
+          as: "clientUsers",
+        },
+      },
+      {
+        $addFields: {
+          totalClientUsers: { $size: "$clientUsers" },
+        },
+      },
+      {
+        $project: {
+          password: 0,
+          __v: 0,
+          clientUsers: 0,
+        },
+      },
     ]),
+
     User.countDocuments(matchStage),
   ]);
 
@@ -611,7 +703,6 @@ exports.requestLimit = asyncHandler(async (req, res) => {
       requestedTo: requestedToId,
       messageId: result.messageId,
     });
-
   } catch (err) {
     console.error("❌ Limit Request Error:", err);
     return res.status(500).json({
@@ -621,13 +712,12 @@ exports.requestLimit = asyncHandler(async (req, res) => {
   }
 });
 
-
 exports.approveLimitRequest = asyncHandler(async (req, res) => {
   try {
-    const approverId = req.user.id;                 
-    const { userId } = req.params;           
+    const approverId = req.user.id;
+    const { userId } = req.params;
     const { approvedLimit, comment } = req.body;
-
+const approver = await User.findById(approverId);
     if (!approvedLimit) {
       return res.status(400).json({
         success: false,
@@ -672,10 +762,10 @@ exports.approveLimitRequest = asyncHandler(async (req, res) => {
         <h3>Limit Approved</h3>
         <p>Your limit request has been <strong>approved</strong>.</p>
         <p><strong>Old Limit:</strong> ${previousLimit}</p>
-        <p><strong>New Limit:</strong> ${approvedLimit}</p>
-        <p><strong>Approved By:</strong> ${req.user.email}</p>
+        <p><strong>Approved Limit:</strong> ${approvedLimit}</p>
+        <p><strong>Approved By:</strong> ${approver.email}</p>
         <p><strong>Comment:</strong> ${comment || "None"}</p>
-      `
+      `,
     });
 
     return res.status(200).json({
@@ -687,7 +777,6 @@ exports.approveLimitRequest = asyncHandler(async (req, res) => {
     res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 });
-
 
 exports.rejectLimit = asyncHandler(async (req, res) => {
   const adminId = req.user.id;
@@ -722,28 +811,25 @@ exports.rejectLimit = asyncHandler(async (req, res) => {
   });
 });
 
-
 exports.getPendingLimitRequests = asyncHandler(async (req, res) => {
   try {
     const adminId = req.user.id;
 
     // Find all users who requested limit TO this admin
     const requests = await User.find({
-      "limitHistory": {
+      limitHistory: {
         $elemMatch: {
           action: "requested",
-          requestedTo: adminId
-        }
-      }
-    })
-    .select("name limit limitHistory");
+          requestedTo: adminId,
+        },
+      },
+    }).select("name limit limitHistory");
 
     return res.status(200).json({
       success: true,
       count: requests.length,
       requests,
     });
-
   } catch (err) {
     console.error("Fetch Assigned Requests Error:", err);
     return res
@@ -752,3 +838,29 @@ exports.getPendingLimitRequests = asyncHandler(async (req, res) => {
   }
 });
 
+exports.getAllPartners = asyncHandler(async (req, res) => {
+  const search = req.query.search || "";
+
+  const matchStage = {
+    role: "Partner",
+    status: { $ne: "delete" },
+  };
+
+  if (search.trim()) {
+    matchStage.$or = [
+      { name: { $regex: search, $options: "i" } },
+      { email: { $regex: search, $options: "i" } }
+    ];
+  }
+
+  const partners = await User.find(matchStage)
+    .select("name email _id code status createdAt");
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      partners,
+      "All Partners fetched successfully"
+    )
+  );
+});
