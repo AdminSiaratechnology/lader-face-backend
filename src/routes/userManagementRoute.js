@@ -17,4 +17,6 @@ router.get("/insideUsers", userManagement.getSubRoleUsers)
 router.post("/request-limit",upload.array("supportingDocuments"), userManagement.requestLimit)
 router.get("/limit", userManagement.getPendingLimitRequests)
 router.patch("/limit/:userId", userManagement.approveLimitRequest)
+router.get("/partners/all", userManagement.getAllPartners);
+
 module.exports = router;

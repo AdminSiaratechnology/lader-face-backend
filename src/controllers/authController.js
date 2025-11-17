@@ -8,6 +8,7 @@ const mongoose = require("mongoose");
 const { createAuditLog } = require("../utils/createAuditLog");
 const { generate6DigitUniqueId } = require("../utils/generate6DigitUniqueId");
 const Customer = require("../models/Customer");
+const sendEmail = require("../utils/sendEmail");
 
 // 🔐 Token Generator
 const signToken = (userId, clientID, role) => {
@@ -60,7 +61,7 @@ exports.register = asyncHandler(async (req, res) => {
     ...req.body,
     email: email.toLowerCase(),
     password: hash,
-    clientID: clientID || creatorInfo?.clientID ,
+    clientID: clientID || creatorInfo?.clientID,
     createdBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
     parent: creatorInfo?._id || null,
     city,
@@ -83,65 +84,55 @@ exports.register = asyncHandler(async (req, res) => {
     ],
   });
   if (role === "Client") {
-  const assignedLimit = limit || 0;
+    const assignedLimit = limit || 0;
 
-  // Only check/deduct if creator is Partner
-  if (creatorInfo.role === "Partner") {
-    const partnerRemainingLimit = creatorInfo.limit || 0;
+    // Only check/deduct if creator is Partner
+    if (creatorInfo.role === "Partner") {
+      const partnerRemainingLimit = creatorInfo.limit || 0;
 
-    if (assignedLimit > partnerRemainingLimit) {
-      throw new ApiError(
-        400,
-        `Partner limit exceeded. You have ${partnerRemainingLimit} remaining.`
+      if (assignedLimit > partnerRemainingLimit) {
+        throw new ApiError(
+          400,
+          `Partner limit exceeded. You have ${partnerRemainingLimit} remaining.`
+        );
+      }
+
+      // Deduct assigned limit from Partner
+      await User.updateOne(
+        { _id: creatorInfo._id },
+        {
+          $inc: { limit: -assignedLimit },
+        }
       );
     }
 
-    // Deduct assigned limit from Partner
-    await User.updateOne(
-      { _id: creatorInfo._id },
-      {
-        $inc: { limit: -assignedLimit },
-        $push: {
-          limitHistory: {
-            performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
-            requestedTo: user._id,
-            previousLimit: partnerRemainingLimit,
-            newLimit: partnerRemainingLimit - assignedLimit,
-            requestedLimit: assignedLimit,
-            action: "assigned",
-            reason: "Limit assigned to client on creation",
-            timestamp: new Date(),
+    // Assign initial limit to the Client regardless of creator role
+    if (assignedLimit > 0) {
+      await User.updateOne(
+        { _id: user._id },
+        {
+          $push: {
+            limitHistory: {
+              performedBy: adminId
+                ? new mongoose.Types.ObjectId(adminId)
+                : null,
+              initialLimit: assignedLimit,
+              previousLimit: 0,
+              newLimit: assignedLimit,
+              action: "assigned",
+              reason:
+                creatorInfo.role === "Partner"
+                  ? "Initial limit assigned by Partner"
+                  : "Initial limit assigned by SuperAdmin",
+              timestamp: new Date(),
+            },
           },
-        },
-      }
-    );
+        }
+      );
+    }
   }
 
-  // Assign initial limit to the Client regardless of creator role
-  if (assignedLimit > 0) {
-    await User.updateOne(
-      { _id: user._id },
-      {
-        $push: {
-          limitHistory: {
-            performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
-            initialLimit: assignedLimit,
-            previousLimit: 0,
-            newLimit: assignedLimit,
-            action: "assigned",
-            reason:
-              creatorInfo.role === "Partner"
-                ? "Initial limit assigned by Partner"
-                : "Initial limit assigned by SuperAdmin",
-            timestamp: new Date(),
-          },
-        },
-      }
-    );
-  }
-}
-
-  if (role === "Admin") {    
+  if (role === "Admin") {
     const clientID = user.clientID;
     console.log("clientID: ", clientID);
     await User.updateOne(
@@ -215,6 +206,55 @@ exports.register = asyncHandler(async (req, res) => {
       },
     }
   );
+  // After all role-based updates (Client, Admin deduction, Partner limit history, Customer auto-creation)
+  // BEFORE generating code
+
+  // 📩 Send email to Admin user with credentials
+  if (role === "Admin") {
+    const emailSubject = "Your Admin Account Credentials";
+    const emailText = `
+Hello ${name},
+
+Your admin account has been created successfully.
+
+Login Credentials:
+Email: ${email}
+Password: ${password}
+
+Please log in to continue working.
+
+Regards,
+Team
+`;
+
+    const emailHtml = `
+  <p>Hello <strong>${name}</strong>,</p>
+  <p>Your admin account has been successfully created.</p>
+  <p><strong>Login Credentials:</strong></p>
+  <ul>
+    <li><strong>Email:</strong> ${email}</li>
+    <li><strong>Password:</strong> ${password}</li>
+  </ul>
+  <p>Please change your password after first login.</p>
+  <br/>
+  <p>Regards,<br/>Team</p>
+  `;
+
+    const emailStatus = await sendEmail({
+      to: email,
+      subject: emailSubject,
+      text: emailText,
+      html: emailHtml,
+    });
+
+    if (!emailStatus.success) {
+      console.error(
+        "⚠️ Failed to send admin credentials email:",
+        emailStatus.error
+      );
+    }
+  }
+
   const userResponse = user.toObject();
   delete userResponse.password;
 
@@ -460,8 +500,78 @@ exports.login = asyncHandler(async (req, res) => {
   });
 
   await user.save();
+  // Fetch stats based on role
+  let stats = {};
+
+  if (user.role === "SuperAdmin") {
+    // 1️⃣ Count partners
+    const totalPartners = await User.countDocuments({
+      role: "Partner",
+      status: { $ne: "delete" },
+    });
+
+    // 2️⃣ Clients created by ANY superadmin
+    const clients = await User.find({
+      role: "Client",
+      createdBy: user._id, // superadmin created
+      status: { $ne: "delete" },
+    }).select("_id");
+
+    const clientIDs = clients.map((c) => c._id);
+
+    // 3️⃣ Users under superadmin's clients
+    const totalUsers = await User.countDocuments({
+      clientID: { $in: clientIDs },
+      status: { $ne: "delete" },
+    });
+    const allClients = await User.find({
+      role: "Client",
+      status: { $ne: "delete" },
+    }).select("_id");
+
+    const allClientIDs = allClients.map((c) => c._id);
+
+    // 3️⃣ Users under superadmin's clients
+    const allTotalUsers = await User.countDocuments({
+      clientID: { $in: allClientIDs },
+      status: { $ne: "delete" },
+    });
+
+    stats = {
+      totalPartners,
+      totalClients: clientIDs.length,
+      totalUsers,
+      totalAllClients: allClientIDs.length,
+      totalAllUsers: allTotalUsers,
+    };
+  }
+
+  // PARTNER STATS
+  else if (user.role === "Partner") {
+    // 1️⃣ Clients created by this partner
+    const clients = await User.find({
+      parent: user._id,
+      role: "Client",
+      status: { $ne: "delete" },
+    }).select("_id");
+
+    const clientIDs = clients.map((c) => c._id);
+
+    // 2️⃣ Users under this partner's clients
+    const totalUsers = await User.countDocuments({
+      clientID: { $in: clientIDs },
+      status: { $ne: "delete" },
+    });
+
+    stats = {
+      totalClients: clientIDs.length,
+      totalUsers,
+    };
+  }
 
   res
     .status(200)
-    .json(new ApiResponse(200, { token, user: safeUser }, "Login successful"));
+    .json(
+      new ApiResponse(200, { token, user: safeUser, stats }, "Login successful")
+    );
 });

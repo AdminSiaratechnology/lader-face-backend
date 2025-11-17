@@ -33,7 +33,7 @@ const CustomerSchema = new mongoose.Schema(
       required: true,
     },
 
-    customerType: { type: String, required: true },
+    customerType: { type: String, required: true, default: "company" },
     code: { type: String, required: true, unique: true },
     customerName: { type: String, required: true },
     shortName: { type: String },

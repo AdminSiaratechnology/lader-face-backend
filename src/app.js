@@ -75,7 +75,7 @@ app.use("/api/stock-groups", stockGroupRoutes);
 app.use("/api/units", unitRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/user-management", userManagementRoute);
-app.use("/api/agent/customers",customerRoute)
+app.use("/api/customers",customerRoute)
 app.use("/api/agent/vendors",vendorRoute)
 app.use("/api/agent/agents",agentRoute)
 app.use("/api/agent/ledgers",ladgerRoute)
