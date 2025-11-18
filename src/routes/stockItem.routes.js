@@ -8,7 +8,8 @@ const  {
   softDeleteStockItem,
   listStockItemByCompanyId,
   updateStockItemsBulk,
-  generateStockItemsDocumentationPDF
+  generateStockItemsDocumentationPDF,
+  getStockItemById
 } = require("../controllers/stockItem.controller.js");
 const upload = require("../config/s3");
 
@@ -24,4 +25,5 @@ router.delete("/:id",upload.none(), softDeleteStockItem);
 router.get("/documentation/pdf",upload.none(), generateStockItemsDocumentationPDF);
 router.get("/stockItem/:companyId", upload.none(), listStockItemByCompanyId);
 router.put("/update/:companyId", upload.none(), updateStockItemsBulk);
+router.get("/productById/:id",upload.none(), getStockItemById);
 module.exports = router;

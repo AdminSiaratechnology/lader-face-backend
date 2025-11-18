@@ -610,7 +610,33 @@ exports.getLedgersByCompany = asyncHandler(async (req, res) => {
     Ledger.find(filter).select("-auditLogs").sort(sortOptions).skip(skip).limit(perPage),
     Ledger.countDocuments(filter),
   ]);
+ const [
+    gstRegistered,
+    activeLedgers,
+    msmeRegistered
+  ] = await Promise.all([
+    // GST registered
+    Ledger.countDocuments({
+      clientId: clientID,
+      company: companyId,
+      status: { $ne: "delete" },
+      gstNumber: { $exists: true, $ne: "" }
+    }),
 
+    // Active agents
+    Ledger.countDocuments({
+      clientId: clientID,
+      company: companyId,
+      status: "active"
+    }),
+
+    Ledger.countDocuments({
+      clientId: clientID,
+      company: companyId,
+      status: { $ne: "delete" },
+      msmeRegistration: { $exists: true, $ne: "" }
+    })
+  ]);
   res.status(200).json(
     new ApiResponse(
       200,
@@ -622,6 +648,11 @@ exports.getLedgersByCompany = asyncHandler(async (req, res) => {
           limit: perPage,
           totalPages: Math.ceil(total / perPage),
         },
+        counts: {
+          gstRegistered,
+          activeLedgers,
+          msmeRegistered
+        }
       },
       ledgers.length ? "Ledgers fetched successfully" : "No ledgers found"
     )

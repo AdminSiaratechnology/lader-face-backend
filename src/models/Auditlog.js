@@ -23,7 +23,7 @@ const auditLogSchema = new mongoose.Schema(
     },
     action: {
       type: String,
-      enum: ["create", "update", "delete", "login"],
+      enum: ["create", "update", "delete", "login", "logout"],
       required: true,
     },
     performedBy: {

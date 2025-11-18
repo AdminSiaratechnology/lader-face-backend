@@ -348,7 +348,7 @@ exports.getStockCategoriesByCompanyId = asyncHandler(async (req, res) => {
   const skip = (currentPage - 1) * perPage;
 
   // query with pagination
-  const [categories, total] = await Promise.all([
+  const [categories, total, stats] = await Promise.all([
     StockCategory.find(filter)
       .populate("companyId")
       .populate({ path: "parent", select: "name" })
@@ -357,8 +357,32 @@ exports.getStockCategoriesByCompanyId = asyncHandler(async (req, res) => {
       .skip(skip)
       .limit(perPage),
     StockCategory.countDocuments(filter),
+    StockCategory.aggregate([
+      {
+        $match: {
+          companyId: new mongoose.Types.ObjectId(companyId),
+          status: { $ne: "delete" },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          primaryCount: {
+            $sum: { $cond: [{ $eq: ["$parent", null] }, 1, 0] },
+          },
+          activeCount: {
+            $sum: { $cond: [{ $eq: ["$status", "active"] }, 1, 0] },
+          },
+          inactiveCount: {
+            $sum: { $cond: [{ $eq: ["$status", "inactive"] }, 1, 0] },
+          },
+        },
+      },
+    ]),
   ]);
 
+  const finalStats =
+    stats?.[0] || { primaryCount: 0, activeCount: 0, inactiveCount: 0 };
   res.json(
     new ApiResponse(
       200,
@@ -369,6 +393,11 @@ exports.getStockCategoriesByCompanyId = asyncHandler(async (req, res) => {
           page: currentPage,
           limit: perPage,
           totalPages: Math.ceil(total / perPage),
+        },
+        counts: {
+          totalPrimary: finalStats.primaryCount || 0,
+          totalActive: finalStats.activeCount || 0,
+          totalInactive: finalStats.inactiveCount || 0,
         },
       },
       "Stock Categories fetched successfully"

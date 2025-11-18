@@ -322,6 +322,7 @@ exports.updateCustomer = asyncHandler(async (req, res) => {
 exports.getCustomersByCompany = asyncHandler(async (req, res) => {
   const clientID = req.user.clientID;
   if (!clientID) throw new ApiError(400, "Client ID is required");
+
   const { companyId } = req.params;
   if (!companyId) throw new ApiError(400, "company ID is required");
 
@@ -337,14 +338,14 @@ exports.getCustomersByCompany = asyncHandler(async (req, res) => {
   const perPage = parseInt(limit, 10);
   const currentPage = Math.max(parseInt(page, 10), 1);
   const skip = (currentPage - 1) * perPage;
-  console.log(companyId, "companyidddd");
+
   const filter = {
     clientId: clientID,
     company: companyId,
     status: { $ne: "delete" },
   };
+
   if (status && status.trim() !== "") filter.status = status;
-  console.log(search, "search", "getCustomersByCompany");
 
   if (search && search.trim() !== "") {
     filter.$or = [
@@ -353,10 +354,11 @@ exports.getCustomersByCompany = asyncHandler(async (req, res) => {
       { contactPerson: { $regex: search, $options: "i" } },
     ];
   }
-  console.log(filter, "filter", search);
+
   const sortDirection = sortOrder === "asc" ? 1 : -1;
   const sortOptions = { [sortBy]: sortDirection };
-  console.log(filter, "filter");
+
+  // 🔥 Get paginated customers + total
   const [customers, total] = await Promise.all([
     Customer.find(filter)
       .select("-auditLogs")
@@ -364,7 +366,35 @@ exports.getCustomersByCompany = asyncHandler(async (req, res) => {
       .sort(sortOptions)
       .skip(skip)
       .limit(perPage),
+
     Customer.countDocuments(filter),
+  ]);
+
+  // 🔥 NEW — special counts (full company-level count, not filtered)
+  const [
+    gstRegistered,
+    msmeRegistered,
+    activeCustomers
+  ] = await Promise.all([
+    Customer.countDocuments({
+      clientId: clientID,
+      company: companyId,
+      status: { $ne: "delete" },
+      gstNumber: { $exists: true, $ne: "" }
+    }),
+
+    Customer.countDocuments({
+      clientId: clientID,
+      company: companyId,
+      status: { $ne: "delete" },
+      msmeRegistration: { $exists: true, $ne: "" }
+    }),
+
+    Customer.countDocuments({
+      clientId: clientID,
+      company: companyId,
+      status: "active"
+    })
   ]);
 
   res.status(200).json(
@@ -378,11 +408,17 @@ exports.getCustomersByCompany = asyncHandler(async (req, res) => {
           limit: perPage,
           totalPages: Math.ceil(total / perPage),
         },
+        counts: {
+          gstRegistered,
+          msmeRegistered,
+          activeCustomers,
+        }
       },
       customers.length ? "Customers fetched successfully" : "No customers found"
     )
   );
 });
+
 exports.getCustomersByClient = asyncHandler(async (req, res) => {
   const clientID = req.user.clientID;
   if (!clientID) throw new ApiError(400, "Client ID is required");

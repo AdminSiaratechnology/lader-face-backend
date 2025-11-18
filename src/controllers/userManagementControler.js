@@ -211,9 +211,41 @@ exports.getAllClientUsers = asyncHandler(async (req, res) => {
     ],
     { maxTimeMS: 60000, allowDiskUse: true }
   );
+// 🔥 Extra Count Aggregation (Role Counts + Active Count)
+const countStats = await User.aggregate([
+  {
+    $match: {
+      clientID: new mongoose.Types.ObjectId(clientId),
+      status: { $ne: "delete" }
+    }
+  },
+  {
+    $group: {
+      _id: null,
+      adminCount: {
+        $sum: { $cond: [{ $eq: ["$role", "Admin"] }, 1, 0] }
+      },
+      salesmanCount: {
+        $sum: { $cond: [{ $eq: ["$role", "Salesman"] }, 1, 0] }
+      },
+      customerCount: {
+        $sum: { $cond: [{ $eq: ["$role", "Customer"] }, 1, 0] }
+      },
+      activeUsers: {
+        $sum: { $cond: [{ $eq: ["$status", "active"] }, 1, 0] }
+      }
+    }
+  }
+]);
 
   const users = result?.[0]?.records || [];
   const total = result?.[0]?.totalCount?.[0]?.count || 0;
+const stats = countStats?.[0] || {
+  adminCount: 0,
+  salesmanCount: 0,
+  customerCount: 0,
+  activeUsers: 0
+};
 
   res.status(200).json(
     new ApiResponse(
@@ -226,6 +258,12 @@ exports.getAllClientUsers = asyncHandler(async (req, res) => {
           limit: perPage,
           totalPages: Math.ceil(total / perPage),
         },
+        counts: {
+          adminCount: stats.adminCount,
+          salesmanCount: stats.salesmanCount,
+          customerCount: stats.customerCount,
+          activeUsers: stats.activeUsers
+        }
       },
       users.length ? "Users fetched successfully" : "No users found"
     )

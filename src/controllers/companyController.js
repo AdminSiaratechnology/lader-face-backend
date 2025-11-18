@@ -1,15 +1,15 @@
-const Company = require('../models/Company');
-const asyncHandler = require('../utils/asyncHandler');
-const ApiError = require('../utils/apiError');
-const ApiResponse = require('../utils/apiResponse');
-const User = require('../models/User');
-const {generate6DigitId}=require("../utils/newgenerate16DigiId")
-const {generate6DigitUniqueId} = require("../utils/generate6DigitUniqueId")
+const Company = require("../models/Company");
+const asyncHandler = require("../utils/asyncHandler");
+const ApiError = require("../utils/apiError");
+const ApiResponse = require("../utils/apiResponse");
+const User = require("../models/User");
+const { generate6DigitId } = require("../utils/newgenerate16DigiId");
+const { generate6DigitUniqueId } = require("../utils/generate6DigitUniqueId");
 
 const puppeteer = require("puppeteer");
-const mongoose = require('mongoose');
-const   {createAuditLog}=require("../utils/createAuditLog")
-const processRegistrationDocs =require("../utils/processRegistrationDocs")
+const mongoose = require("mongoose");
+const { createAuditLog } = require("../utils/createAuditLog");
+const processRegistrationDocs = require("../utils/processRegistrationDocs");
 
 const generateUniqueCodeInMemory = (existingSet) => {
   let code;
@@ -30,8 +30,8 @@ async function insertInBatches(Model, docs, batchSize = 1000) {
       inserted.push(...batchInserted);
     } catch (insertError) {
       if (insertError.writeErrors) {
-        insertError.writeErrors.forEach(e => {
-          console.error('Document failed:', e.errmsg, e.getOperation());
+        insertError.writeErrors.forEach((e) => {
+          console.error("Document failed:", e.errmsg, e.getOperation());
         });
       }
     }
@@ -39,34 +39,45 @@ async function insertInBatches(Model, docs, batchSize = 1000) {
   return inserted;
 }
 
-
 // Backend changes - createCompany
 exports.createCompany = asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
-
-  const { namePrint, banks, registrationDocTypes: rawDocTypes, ...rest } = req.body;
-  if (!namePrint) throw new ApiError(400, 'Company name is required');
-
-  // Early client check
+  const {
+    namePrint,
+    banks,
+    registrationDocTypes: rawDocTypes,
+    ...rest
+  } = req.body;
+  if (!namePrint) throw new ApiError(400, "Company name is required");
+  _; // Early client check_
   if (user.role !== "Client" && user.role !== "Admin") {
     throw new ApiError(403, "Only clients and admins can create companies");
   }
-
-  const clientId = user.role === 'Client' ? userId : user.clientID;
-  const isExistWithName = await Company.findOne({ client: clientId, namePrint });
+  const clientId = user.role === "Client" ? userId : user.clientID;
+  const isExistWithName = await Company.findOne({
+    client: clientId,
+    namePrint,
+  });
   if (isExistWithName) throw new ApiError(409, "Company name already in use");
-
-  // Parallelize file processing (minimal overhead, but cleaner)
-  const [logoUrl, processedDocs] = await Promise.all([
-    (req.files?.logo?.[0]?.location || null),
-    processRegistrationDocs(req.files?.registrationDocs || [], rawDocTypes)
+  _; // Parallelize file processing (minimal overhead, but cleaner)_
+  const [logoUrl, processedDocs, brandingFiles] = await Promise.all([
+    req.files?.logo?.[0]?.location || null,
+    processRegistrationDocs(
+      req.files?.registrationDocs || [],
+      rawDocTypes || []
+    ),
+    req.files?.brandingImages || [],
   ]);
-
   const code = await generate6DigitUniqueId(Company, "code");
-  const banksParsed = JSON.parse(banks || '[]');
-
+  const banksParsed = JSON.parse(banks || "[]");
+  const processedBranding = brandingFiles.map((file) => ({
+    type: "banner",
+    file: file.location,
+    fileName: file.originalname,
+    description: "",
+  }));
   const company = await Company.create({
     namePrint,
     ...rest,
@@ -75,19 +86,22 @@ exports.createCompany = asyncHandler(async (req, res) => {
     banks: banksParsed,
     logo: logoUrl,
     registrationDocs: processedDocs,
+    brandingImages: processedBranding,
     createdBy: userId,
-    auditLogs: [{
-      action: "create",
-      performedBy: req.user.id,
-      timestamp: new Date(),
-      details: "company created",
-    }],
+    auditLogs: [
+      {
+        action: "create",
+        performedBy: req.user.id,
+        timestamp: new Date(),
+        details: "company created",
+      },
+    ],
   });
-
-  // Fire audit log async (non-blocking)
+  _; // Fire audit log async (non-blocking)_
   createAuditLogAsync(req, company._id).catch(console.error);
-
-  res.status(201).json(new ApiResponse(201, company, "Company created successfully"));
+  res
+    .status(201)
+    .json(new ApiResponse(201, company, "Company created successfully"));
 });
 
 // Helper: Process docs in parallel
@@ -103,8 +117,10 @@ exports.createCompany = asyncHandler(async (req, res) => {
 
 // Helper: Async audit log
 async function createAuditLogAsync(req, companyId) {
-  const ipAddress = req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  const ip = ipAddress === "::1" || ipAddress === "127.0.0.1" ? "127.0.0.1" : ipAddress;
+  const ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  const ip =
+    ipAddress === "::1" || ipAddress === "127.0.0.1" ? "127.0.0.1" : ipAddress;
   await createAuditLog({
     module: "Company",
     action: "create",
@@ -129,12 +145,12 @@ exports.createBulkCompanies = asyncHandler(async (req, res) => {
   if (!["Client", "Admin"].includes(user.role)) {
     throw new ApiError(403, "Only clients and admins can create companies");
   }
-  const clientId = user.role === 'Client' ? userId : user.clientID;
+  const clientId = user.role === "Client" ? userId : user.clientID;
   if (!clientId) throw new ApiError(400, "Client ID is required from token");
 
   // Preload existing codes
   const existingCompanies = await Company.find({}, "code");
-  const existingCodes = new Set(existingCompanies.map(c => c.code));
+  const existingCodes = new Set(existingCompanies.map((c) => c.code));
 
   const results = [];
   const errors = [];
@@ -147,7 +163,7 @@ exports.createBulkCompanies = asyncHandler(async (req, res) => {
       // Generate or validate unique code
       const code = body.code || generateUniqueCodeInMemory(existingCodes);
 
-      const banks = JSON.parse(body.banks || '[]');
+      const banks = JSON.parse(body.banks || "[]");
 
       const companyObj = {
         ...body,
@@ -157,12 +173,14 @@ exports.createBulkCompanies = asyncHandler(async (req, res) => {
         logo: "",
         registrationDocs: [],
         createdBy: new mongoose.Types.ObjectId(userId),
-        auditLogs: [{
-          action: "create",
-          performedBy: new mongoose.Types.ObjectId(userId),
-          timestamp: new Date(),
-          details: "Bulk company import",
-        }],
+        auditLogs: [
+          {
+            action: "create",
+            performedBy: new mongoose.Types.ObjectId(userId),
+            timestamp: new Date(),
+            details: "Bulk company import",
+          },
+        ],
       };
 
       results.push(companyObj);
@@ -186,7 +204,7 @@ exports.createBulkCompanies = asyncHandler(async (req, res) => {
         totalReceived: companies.length,
         totalInserted: inserted.length,
         totalFailed: errors.length,
-        insertedIds: inserted.map(c => c._id),
+        insertedIds: inserted.map((c) => c._id),
         errors,
       },
       "Bulk company import completed successfully"
@@ -194,51 +212,30 @@ exports.createBulkCompanies = asyncHandler(async (req, res) => {
   );
 });
 
-
 // 🟢 Agent ke liye apne client ki saari companies laana
 exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
-  const agentId = req.user.id; 
-  // console.log("Agent ID from req.user:", agentId);
+  const agentId = req.user.id;
 
-  // 1. Agent nikaalo
   const agent = await User.findById(agentId);
-  if (!agent) {
-    throw new ApiError(404, "Agent not found");
-  }
+  if (!agent) throw new ApiError(404, "Agent not found");
 
-  // 2. Client ID nikaalo
   const clientId = req.user.clientID;
-  if (!clientId) {
-    throw new ApiError(404, "Client not found for this agent");
-  }
+  if (!clientId) throw new ApiError(404, "Client not found for this agent");
 
-  // 3. Query params lo
-  const { search, status, sortBy, sortOrder
-    , 
-    limit = 3, page = 1 
-  } = req.query;
-  // console.log(req.query,"reqqqqqq")
-  // console.log(search, status, sortBy, sortOrder,"fasdfafdasf",clientId)
-  // console.log(clientId,"id")
-  
-  
+  const { search, status, sortBy, sortOrder, limit = 3, page = 1 } = req.query;
 
+  let filter = { client: clientId, isDeleted: false };
 
-  let filter = { client: clientId,isDeleted:false };
-
-  // status filter
   if (status && status !== "") {
     filter.status = status;
   }
 
-  // search filter
   if (search && search.trim() !== "") {
-    const regex = new RegExp(search, "i"); // case-insensitive search
+    const regex = new RegExp(search, "i");
     filter.$or = [
       { namePrint: regex },
       { nameStreet: regex },
       { email: regex },
-      
     ];
   }
 
@@ -249,22 +246,40 @@ exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
     let order = sortOrder === "desc" ? -1 : 1;
     sort[field] = order;
   } else {
-    sort = { createdAt: -1 }; // default latest first
+    sort = { createdAt: -1 };
   }
 
-  // pagination
   const perPage = parseInt(limit, 10);
   const currentPage = parseInt(page, 10);
   const skip = (currentPage - 1) * perPage;
 
-  // console.log("Filter:", filter, "Sort:", sort, "Skip:", skip, "Limit:", perPage);
-
-  // 4. DB se companies nikaalo
+  // Get paginated data + total
   const [companies, total] = await Promise.all([
-    Company.find(filter).select("-auditLogs").sort(sort)
-    .skip(skip).limit(perPage)
-    ,
+    Company.find(filter)
+      .select("-auditLogs")
+      .sort(sort)
+      .skip(skip)
+      .limit(perPage),
     Company.countDocuments(filter),
+  ]);
+
+  // 🔥 NEW: Extra counts
+  const [gstRegistered, msmeRegistered, activeCompanies] = await Promise.all([
+    Company.countDocuments({
+      client: clientId,
+      isDeleted: false,
+      gstNumber: { $exists: true, $ne: "" },
+    }),
+    Company.countDocuments({
+      client: clientId,
+      isDeleted: false,
+      msmeNumber: { $exists: true, $ne: "" },
+    }),
+    Company.countDocuments({
+      client: clientId,
+      isDeleted: false,
+      status: "active",
+    }),
   ]);
 
   res.status(200).json(
@@ -278,13 +293,16 @@ exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
           limit: perPage,
           totalPages: Math.ceil(total / perPage),
         },
+        counts: {
+          gstRegistered,
+          msmeRegistered,
+          activeCompanies,
+        },
       },
       "Companies fetched successfully"
     )
   );
 });
-
-
 
 //Assign salesman to company
 exports.assignSalesman = async (req, res) => {
@@ -315,10 +333,19 @@ exports.setAccess = async (req, res) => {
   try {
     const { companyId, userId, module, permissions } = req.body;
 
-    let access = await CompanyUserAccess.findOne({ company: companyId, user: userId, module });
+    let access = await CompanyUserAccess.findOne({
+      company: companyId,
+      user: userId,
+      module,
+    });
 
     if (!access) {
-      access = new CompanyUserAccess({ company: companyId, user: userId, module, permissions });
+      access = new CompanyUserAccess({
+        company: companyId,
+        user: userId,
+        module,
+        permissions,
+      });
     } else {
       access.permissions = permissions;
     }
@@ -335,7 +362,10 @@ exports.setAccess = async (req, res) => {
 exports.getAccess = async (req, res) => {
   try {
     const { companyId, userId } = req.query;
-    const access = await CompanyUserAccess.find({ company: companyId, user: userId });
+    const access = await CompanyUserAccess.find({
+      company: companyId,
+      user: userId,
+    });
     res.json({ access });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -344,38 +374,36 @@ exports.getAccess = async (req, res) => {
 
 // Backend changes - updateCompany
 exports.updateCompany = asyncHandler(async (req, res) => {
+  console.log("Update Company Request Params:", req.params);
   const { id } = req.params;
-
-  // 1️⃣ Logged-in user check
   const user = await User.findById(req.user.id);
   if (!user) throw new ApiError(404, "User not found");
-
-  // 2️⃣ Fetch company
   const company = await Company.findById(id);
   if (!company) throw new ApiError(404, "Company not found");
-
-  // 3️⃣ Ownership check
-  if (user.role === "Client" && company.client.toString() !== user._id.toString()) {
+  if (
+    user.role === "Client" &&
+    company.client.toString() !== user._id.toString()
+  ) {
     throw new ApiError(403, "You can only update your own companies");
   }
-
-  const { registrationDocTypes: rawDocTypes, ...rest } = req.body; // Destructure like create
-
-  // Parallelize file processing (minimal overhead, but cleaner) - similar to create
-  const [logoUrl, processedNewDocs] = await Promise.all([
-    (req.files?.logo?.[0]?.location || null),
-    processRegistrationDocs(req.files?.registrationDocs || [], rawDocTypes) // Reuse helper from create
+  const {
+    registrationDocTypes: rawDocTypes,
+    keptBrandingUrls: rawKeptUrls,
+    ...rest
+  } = req.body;
+  const [logoUrl, processedNewDocs, brandingFiles] = await Promise.all([
+    req.files?.logo?.[0]?.location || null,
+    processRegistrationDocs(
+      req.files?.registrationDocs || [],
+      rawDocTypes || []
+    ), // Reuse helper from create_
+    req.files?.brandingImages || [],
   ]);
-
-  // 4️⃣ Prepare update data safely
-  const updateData = { ...rest }; // shallow copy
-
-  // Logo update
+  // 4️⃣ Prepare update data
+  const updateData = { ...rest }; // shallow copy_
   if (logoUrl) {
     updateData.logo = logoUrl;
   }
-
-  // Banks parsing
   if (req.body?.banks) {
     try {
       updateData.banks = JSON.parse(req.body.banks) || [];
@@ -383,35 +411,46 @@ exports.updateCompany = asyncHandler(async (req, res) => {
       throw new ApiError(400, "Banks field must be a valid JSON array");
     }
   }
-
-  // Registration docs update - merge with existing (adapted from original)
   if (processedNewDocs.length > 0) {
-    // Filter out existing docs with types that are being updated
+    // Filter out existing docs with types that are being updated_
     const existingDocs = (company.registrationDocs || []).filter(
-      (doc) => !rawDocTypes.includes(doc.type) // Use parsed docTypes
+      (doc) => !(rawDocTypes || []).includes(doc.type) // Use parsed docTypes_
     );
-
-    // Replace matching types with new docs, append others
     updateData.registrationDocs = [...existingDocs, ...processedNewDocs];
   }
-  // If no new files, existing docs remain unchanged
-
-  // 5️⃣ Track changes for audit log
+  //  images update - handle kept + new_
+  const keptBrandingUrls = rawKeptUrls ? JSON.parse(rawKeptUrls) : null;
+  const newBranding = brandingFiles.map((file) => ({
+    type: "banner",
+    file: file.location,
+    fileName: file.originalname,
+    description: "",
+  }));
+  let finalBranding = [];
+  if (keptBrandingUrls !== null) {
+    const existingToKeep = (company.brandingImages || []).filter((img) =>
+      keptBrandingUrls.includes(img.file)
+    );
+    finalBranding = [...existingToKeep, ...newBranding];
+  } else {
+    finalBranding = [...(company.brandingImages || []), ...newBranding];
+  }
+  if (finalBranding.length > 0) {
+    updateData.brandingImages = finalBranding;
+  }
+  // If no new files, existing docs remain unchanged_
   const oldData = company.toObject();
   const changes = {};
-  Object.keys(updateData).forEach(key => {
-    if (key === "auditLogs") return; // ✅ skip auditLogs in update
+  Object.keys(updateData).forEach((key) => {
+    if (key === "auditLogs") return;
+    _; // ✅ skip auditLogs in update_
     if (JSON.stringify(oldData[key]) !== JSON.stringify(updateData[key])) {
       changes[key] = { from: oldData[key], to: updateData[key] };
     }
   });
-
-  // 6️⃣ Apply updates (excluding auditLogs)
-  Object.keys(updateData).forEach(key => {
+  Object.keys(updateData).forEach((key) => {
     if (key !== "auditLogs") company[key] = updateData[key];
   });
-
-  // 7️⃣ Push audit log safely
   if (!company.auditLogs) company.auditLogs = [];
   company.auditLogs.push({
     action: "update",
@@ -420,21 +459,19 @@ exports.updateCompany = asyncHandler(async (req, res) => {
     details: "Company updated",
     changes,
   });
-
-  // 8️⃣ Save company
   await company.save();
-
-  // Fire audit log async (non-blocking) - same as create
   createAuditLogAsyncUpdate(req, company._id, changes).catch(console.error);
-
-  // 9️⃣ Respond
-  res.status(200).json(new ApiResponse(200, company, "Company updated successfully"));
+  res
+    .status(200)
+    .json(new ApiResponse(200, company, "Company updated successfully"));
 });
 
 // Helper: Async audit log for update (adapted from create)
 async function createAuditLogAsyncUpdate(req, companyId, changes) {
-  const ipAddress = req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  const ip = ipAddress === "::1" || ipAddress === "127.0.0.1" ? "127.0.0.1" : ipAddress;
+  const ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  const ip =
+    ipAddress === "::1" || ipAddress === "127.0.0.1" ? "127.0.0.1" : ipAddress;
   await createAuditLog({
     module: "Company",
     action: "update",
@@ -447,7 +484,6 @@ async function createAuditLogAsyncUpdate(req, companyId, changes) {
   });
 }
 
-
 // Get Companies
 exports.getCompanies = asyncHandler(async (req, res) => {
   const { clientId } = req.query;
@@ -456,10 +492,11 @@ exports.getCompanies = asyncHandler(async (req, res) => {
   if (clientId) filter.client = clientId;
 
   const companies = await Company.find(filter).select("-auditLogs");
-  const newcompanies={companies:[...companies]}
+  const newcompanies = { companies: [...companies] };
 
-
-  res.status(200).json(new ApiResponse(200, companies, "Companies fetched successfully"));
+  res
+    .status(200)
+    .json(new ApiResponse(200, companies, "Companies fetched successfully"));
 });
 
 // Delete Company (Soft Delete)
@@ -474,29 +511,31 @@ exports.deleteCompany = asyncHandler(async (req, res) => {
   if (!company) throw new ApiError(404, "Company not found");
 
   // 🔐 Ownership check
-  if (user.role === "Client" && company.client.toString() !== user._id.toString()) {
+  if (
+    user.role === "Client" &&
+    company.client.toString() !== user._id.toString()
+  ) {
     throw new ApiError(403, "You can only delete your own companies");
   }
 
   company.isDeleted = true; // 🟢 Soft delete
-   company.auditLogs.push({
-      action: "delete",
-      performedBy: new mongoose.Types.ObjectId(req.user.id),
-      timestamp: new Date(),
-      details: "User marked as deleted",
-    });
+  company.auditLogs.push({
+    action: "delete",
+    performedBy: new mongoose.Types.ObjectId(req.user.id),
+    timestamp: new Date(),
+    details: "User marked as deleted",
+  });
   await company.save();
   // console.log("Company marked as deleted:", company);
 
-
   let ipAddress =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
+
   // convert ::1 → 127.0.0.1
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
   }
-    await createAuditLog({
+  await createAuditLog({
     module: "Company",
     action: "delete",
     performedBy: req.user.id,
@@ -506,7 +545,9 @@ exports.deleteCompany = asyncHandler(async (req, res) => {
     ipAddress,
   });
 
-  res.status(200).json(new ApiResponse(200, null, "Company deleted successfully"));
+  res
+    .status(200)
+    .json(new ApiResponse(200, null, "Company deleted successfully"));
 });
 
 exports.generateCompanyDocumentationPDF = asyncHandler(async (req, res) => {
@@ -635,7 +676,11 @@ exports.generateCompanyDocumentationPDF = asyncHandler(async (req, res) => {
         <pre><code>${apiDocs.baseUrl}</code></pre>
 
         <h2>Authentication</h2>
-        <pre><code>${JSON.stringify(apiDocs.authentication, null, 2)}</code></pre>
+        <pre><code>${JSON.stringify(
+          apiDocs.authentication,
+          null,
+          2
+        )}</code></pre>
 
         <h2>Endpoints</h2>
         ${apiDocs.apis
@@ -691,11 +736,11 @@ exports.generateCompanyDocumentationPDF = asyncHandler(async (req, res) => {
 
   res.set({
     "Content-Type": "application/pdf",
-    "Content-Disposition": 'attachment; filename="Company_API_Documentation.pdf"',
+    "Content-Disposition":
+      'attachment; filename="Company_API_Documentation.pdf"',
   });
   res.send(pdfBuffer);
 });
-
 
 exports.deleteCompaniesByClientId = asyncHandler(async (req, res) => {
   const { clientId } = req.user.clientID; // e.g., /delete-companies/:clientId
@@ -704,10 +749,12 @@ exports.deleteCompaniesByClientId = asyncHandler(async (req, res) => {
     return res.status(400).json({ message: "Client ID is required" });
   }
 
-  const result = await Company.deleteMany({client: clientId });
+  const result = await Company.deleteMany({ client: clientId });
 
   if (result.deletedCount === 0) {
-    return res.status(404).json({ message: "No companies found for this client ID" });
+    return res
+      .status(404)
+      .json({ message: "No companies found for this client ID" });
   }
 
   res.status(200).json({

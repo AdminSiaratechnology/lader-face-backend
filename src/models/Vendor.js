@@ -3,7 +3,7 @@ const auditLogSchema = require("../middlewares/auditLogSchema");
 
 // Bank schema
 const BankSchema = new mongoose.Schema({
-   accountHolderName: String,
+  accountHolderName: String,
   accountNumber: String,
   ifscCode: String,
   swiftCode: String,
@@ -22,8 +22,16 @@ const RegistrationDocumentSchema = new mongoose.Schema({
 // Vendor schema
 const VendorSchema = new mongoose.Schema(
   {
-    company: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true }, // reference to company
-    clientId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    company: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Company",
+      required: true,
+    }, // reference to company
+    clientId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
 
     vendorType: { type: String, required: true },
     code: { type: String, required: true, unique: true },
@@ -35,13 +43,17 @@ const VendorSchema = new mongoose.Schema(
     procurementPerson: { type: String },
     vendorStatus: { type: String },
     companySize: { type: String },
-     status: { type: String, enum: ["active", "inactive", "delete"], default: "active" },
+    status: {
+      type: String,
+      enum: ["active", "inactive", "delete"],
+      default: "active",
+    },
 
     contactPerson: { type: String },
     designation: { type: String },
     phoneNumber: { type: String },
     mobileNumber: { type: String },
-    emailAddress: { type: String , required:true},
+    emailAddress: { type: String, required: true },
     faxNumber: { type: String },
 
     addressLine1: { type: String },
@@ -76,7 +88,12 @@ const VendorSchema = new mongoose.Schema(
     isTaxExempt: { type: Boolean, default: false },
     reverseCharge: { type: Boolean, default: false },
     exportVendor: { type: Boolean, default: false },
-
+    source: {
+      type: String,
+      enum: ["website", "mobile_app", "pos", "api"],
+      default: "website",
+      index: true,
+    },
     bankName: { type: String },
     branchName: { type: String },
     accountNumber: { type: String },
@@ -132,9 +149,7 @@ VendorSchema.index({ clientId: 1, code: 1 }, { unique: true });
 // ---------------------------------
 // 🔹 3. Unique Email per Client (Active/Inactive Only)
 // ---------------------------------
-VendorSchema.index(
-  { clientId: 1, emailAddress: 1 },
-);
+VendorSchema.index({ clientId: 1, emailAddress: 1 });
 // 👉 Allows duplicate emails only for "delete" vendors
 // 👉 Enforces unique active emails for real vendors
 

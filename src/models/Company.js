@@ -22,7 +22,15 @@ const bankSchema = new mongoose.Schema(
   },
   { _id: false }
 );
-
+const brandingImageSchema = new mongoose.Schema(
+  {
+    type: { type: String, required: true }, // e.g., 'logo', 'favicon', 'banner', 'hero-image', etc._
+    file: { type: String, required: true }, // Path or URL to the branding image_
+    fileName: { type: String, required: true },
+    description: { type: String }, // Optional description for the branding image_
+  },
+  { _id: false }
+);
 const companySchema = new mongoose.Schema(
   {
     namePrint: { type: String, required: true },
@@ -65,6 +73,14 @@ const companySchema = new mongoose.Schema(
     bookStartingDate: { type: Date, default: Date.now },
     financialDate: { type: Date, default: Date.now },
     autoApprove: { type: Boolean, default: false },
+    brandingImages: [brandingImageSchema],
+    maintainAgent: { type: Boolean, default: true },
+    source: {
+      type: String,
+      enum: ["website", "mobile_app", "pos", "api"],
+      default: "website",
+      index: true,
+    },
     client: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

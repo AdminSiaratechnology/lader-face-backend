@@ -1,8 +1,8 @@
 const StockItem = require("../models/stockItem.mode.js");
 const User = require("../models/User.js");
-const  asyncHandler =require("../utils/asyncHandler.js");
-const  ApiResponse = require("../utils/apiResponse.js");
-const  ApiError = require("../utils/apiError.js");
+const asyncHandler = require("../utils/asyncHandler.js");
+const ApiResponse = require("../utils/apiResponse.js");
+const ApiError = require("../utils/apiError.js");
 const Product = require("../models/Product.js");
 const mongoose = require("mongoose");
 const puppeteer = require("puppeteer");
@@ -19,27 +19,26 @@ module.exports.createStockItems = asyncHandler(async (req, res) => {
   // }
   const clientId = req.user.clientID;
   if (!clientId) throw new ApiError(404, "User not found");
-  
 
   // --- 🔍 Step 1: Filter only those items that exist in Product collection ---
   const validItems = [];
 
   for (const item of StockItems) {
-    
     if (!item.ItemCode) continue;
 
-
-    console.log(`Checking existence of item code: ${item.ItemCode} for company: ${item.companyId}`);
+    console.log(
+      `Checking existence of item code: ${item.ItemCode} for company: ${item.companyId}`
+    );
     const existingProduct = await Product.findOne({
       code: item.ItemCode,
-      companyId: item.companyId ,
+      companyId: item.companyId,
     }).lean();
     console.log("Existing Product:", existingProduct);
 
     if (existingProduct) {
-      item.productId=existingProduct._id
+      item.productId = existingProduct._id;
       validItems.push(item);
-      console.log(item,"itemmmmmm")
+      console.log(item, "itemmmmmm");
     } else {
       console.log(
         `❌ Skipping item '${item.ItemCode}' - not found in Product collection for this company`
@@ -53,21 +52,21 @@ module.exports.createStockItems = asyncHandler(async (req, res) => {
 
   // --- 💰 Step 2: Prepare items before inserting ---
   const preparedItems = validItems.map((item) => {
-   
-
     return {
       ...item,
-      
+
       companyId: item.companyId || companyId,
       clientId: item.clientId || clientId,
       status: item.status || "active",
     };
   });
-  console.log(preparedItems,"prepareditem")
+  console.log(preparedItems, "prepareditem");
 
   // --- 🧾 Step 3: Insert all valid items ---
-  const createdItems = await StockItem.insertMany(preparedItems, { ordered: false });
-console.log(createdItems,"createditem")
+  const createdItems = await StockItem.insertMany(preparedItems, {
+    ordered: false,
+  });
+  console.log(createdItems, "createditem");
   res
     .status(201)
     .json(
@@ -81,8 +80,7 @@ console.log(createdItems,"createditem")
 
 // ✅ Get All Active & Non-Deleted Items
 module.exports.getAllClientStockItems = asyncHandler(async (req, res) => {
-
-  console.log("companyid ")
+  console.log("companyid ");
   try {
     const { companyId } = req.params; // ✅ companyId from params
     const clientId = req.user?.clientID; // ✅ from authenticated user
@@ -121,7 +119,13 @@ module.exports.getAllClientStockItems = asyncHandler(async (req, res) => {
     // ✅ Success Response
     return res
       .status(200)
-      .json(new ApiResponse(200, stockItems, "Active stock items fetched successfully"));
+      .json(
+        new ApiResponse(
+          200,
+          stockItems,
+          "Active stock items fetched successfully"
+        )
+      );
   } catch (error) {
     console.error("❌ Error fetching stock items:", error);
     return res
@@ -189,7 +193,6 @@ module.exports.updateStockItem = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, updatedItem, "Stock item updated successfully"));
 });
 
-
 // ✅ Change Status (Active/Inactive)
 module.exports.changeStockItemStatus = asyncHandler(async (req, res) => {
   const { id } = req.params;
@@ -234,7 +237,9 @@ module.exports.updateStockItemsBulk = asyncHandler(async (req, res) => {
     //   continue;
     // }
 
-    console.log(`🔍 Checking Product for ItemCode: ${item.ItemCode} | Company: ${item.companyId}`);
+    console.log(
+      `🔍 Checking Product for ItemCode: ${item.ItemCode} | Company: ${item.companyId}`
+    );
     const existingProduct = await Product.findOne({
       code: item.ItemCode,
       companyId: item.companyId,
@@ -250,7 +255,7 @@ module.exports.updateStockItemsBulk = asyncHandler(async (req, res) => {
       ItemCode: item.ItemCode,
       companyId: item.companyId,
     });
-    console.log(existingStock,"existingstokessssss")
+    console.log(existingStock, "existingstokessssss");
     if (existingStock) {
       // --- Update stock item ---
       const updated = await StockItem.findByIdAndUpdate(
@@ -268,7 +273,9 @@ module.exports.updateStockItemsBulk = asyncHandler(async (req, res) => {
       updatedCount++;
       console.log(`✅ Updated StockItem: ${item.ItemCode}`);
     } else {
-      console.log(`⚠️ No existing StockItem found for ${item.ItemCode}, skipping...`);
+      console.log(
+        `⚠️ No existing StockItem found for ${item.ItemCode}, skipping...`
+      );
       skippedCount++;
     }
   }
@@ -286,27 +293,21 @@ module.exports.updateStockItemsBulk = asyncHandler(async (req, res) => {
   );
 });
 
-
 exports.listStockItemByCompanyId = asyncHandler(async (req, res) => {
-  
-  
-  const { 
-    search = "", 
-    status = "", 
-    sortBy = "createdAt", 
-    sortOrder = "desc", 
-    page = 1, 
+  const {
+    search = "",
+    status = "",
+    sortBy = "createdAt",
+    sortOrder = "desc",
+    page = 1,
     limit = 25,
-    
-    clientId, 
-    stockGroup, 
+
+    clientId,
+    stockGroup,
     stockCategory,
-    
-
   } = req.query;
-    const { companyId } = req.params;
-   if (!companyId) throw new ApiError(400, "Company ID is required");
-
+  const { companyId } = req.params;
+  if (!companyId) throw new ApiError(400, "Company ID is required");
 
   const filter = {};
 
@@ -324,7 +325,6 @@ exports.listStockItemByCompanyId = asyncHandler(async (req, res) => {
       { ItemName: { $regex: search, $options: "i" } },
       { ItemCode: { $regex: search, $options: "i" } },
       { partNo: { $regex: search, $options: "i" } },
-    
     ];
   }
 
@@ -340,7 +340,7 @@ exports.listStockItemByCompanyId = asyncHandler(async (req, res) => {
   // ✅ Fetch data & total count in parallel
   const [items, total] = await Promise.all([
     StockItem.find(filter)
-    // .select("-auditLogs")
+      // .select("-auditLogs")
       // .populate("stockGroup", "name")
       // .populate("stockCategory", "name")
       // .populate("unit", "name symbol")
@@ -383,7 +383,9 @@ module.exports.softDeleteStockItem = asyncHandler(async (req, res) => {
 
   res
     .status(200)
-    .json(new ApiResponse(200, deletedItem, "Stock item soft deleted successfully"));
+    .json(
+      new ApiResponse(200, deletedItem, "Stock item soft deleted successfully")
+    );
 });
 exports.generateStockItemsDocumentationPDF = asyncHandler(async (req, res) => {
   const apiDocs = {
@@ -415,7 +417,11 @@ exports.generateStockItemsDocumentationPDF = asyncHandler(async (req, res) => {
               SyncDate: "2025-10-06T10:00:00Z",
               Status: "active",
               GodownDetails: [
-                { GodownName: "Main Warehouse", BatchName: "BATCH001", Qty: 50 },
+                {
+                  GodownName: "Main Warehouse",
+                  BatchName: "BATCH001",
+                  Qty: 50,
+                },
                 { GodownName: "Showroom", BatchName: "BATCH001", Qty: 25 },
               ],
             },
@@ -544,7 +550,11 @@ exports.generateStockItemsDocumentationPDF = asyncHandler(async (req, res) => {
         <pre><code>${apiDocs.baseUrl}</code></pre>
 
         <h2>Authentication</h2>
-        <pre><code>${JSON.stringify(apiDocs.authentication, null, 2)}</code></pre>
+        <pre><code>${JSON.stringify(
+          apiDocs.authentication,
+          null,
+          2
+        )}</code></pre>
 
         <h2>Endpoints</h2>
         ${apiDocs.apis
@@ -603,8 +613,23 @@ exports.generateStockItemsDocumentationPDF = asyncHandler(async (req, res) => {
 
   res.set({
     "Content-Type": "application/pdf",
-    "Content-Disposition": 'attachment; filename="Stock_Items_API_Documentation.pdf"',
+    "Content-Disposition":
+      'attachment; filename="Stock_Items_API_Documentation.pdf"',
   });
 
   res.send(pdfBuffer);
+});
+
+module.exports.getStockItemById = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const clientId = req.user.clientID;
+
+  if (!clientId) throw new ApiError(404, "User not found");
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    throw new ApiError(400, "Invalid Stock Item ID format");
+  }
+  const item = await StockItem.findById(id).populate("productId", "images");
+  if (!item) throw new ApiError(404, "Stock item not found");
+  res.status(200).json(new ApiResponse(200, item, "Stock item fetched"));
 });
