@@ -51,7 +51,7 @@ exports.createCompany = asyncHandler(async (req, res) => {
     ...rest
   } = req.body;
   if (!namePrint) throw new ApiError(400, "Company name is required");
-  _; // Early client check_
+  // Early client check_
   if (user.role !== "Client" && user.role !== "Admin") {
     throw new ApiError(403, "Only clients and admins can create companies");
   }
@@ -61,7 +61,7 @@ exports.createCompany = asyncHandler(async (req, res) => {
     namePrint,
   });
   if (isExistWithName) throw new ApiError(409, "Company name already in use");
-  _; // Parallelize file processing (minimal overhead, but cleaner)_
+  // Parallelize file processing (minimal overhead, but cleaner)_
   const [logoUrl, processedDocs, brandingFiles] = await Promise.all([
     req.files?.logo?.[0]?.location || null,
     processRegistrationDocs(
@@ -97,7 +97,7 @@ exports.createCompany = asyncHandler(async (req, res) => {
       },
     ],
   });
-  _; // Fire audit log async (non-blocking)_
+  ; // Fire audit log async (non-blocking)_
   createAuditLogAsync(req, company._id).catch(console.error);
   res
     .status(201)
@@ -443,7 +443,7 @@ exports.updateCompany = asyncHandler(async (req, res) => {
   const changes = {};
   Object.keys(updateData).forEach((key) => {
     if (key === "auditLogs") return;
-    _; // ✅ skip auditLogs in update_
+    ; // ✅ skip auditLogs in update_
     if (JSON.stringify(oldData[key]) !== JSON.stringify(updateData[key])) {
       changes[key] = { from: oldData[key], to: updateData[key] };
     }
@@ -551,13 +551,34 @@ exports.deleteCompany = asyncHandler(async (req, res) => {
 });
 
 exports.generateCompanyDocumentationPDF = asyncHandler(async (req, res) => {
+  const companyId = req.query.companyId;
   const apiDocs = {
-    baseUrl: "http://localhost:8000/api",
+    baseUrl: "https://api.ledgerface.com/api/",
     authentication: {
       type: "Bearer Token (JWT)",
       header: "Authorization: Bearer <your_token>",
     },
     apis: [
+      {
+        title: "Login",
+        endpoint: "POST /auth/login",
+        requestType: "application/json",
+        description: "Authenticate user and obtain JWT token.",
+        body: {
+          email: "user@example.com",
+          password: "your_password",
+        },
+        response: {
+          statusCode: 200,
+          message: "Login successful",
+          token: "<JWT_TOKEN>",
+          userData: {
+            id: "68c1503077fd742fa21575df",
+            name: "John Doe",
+            role: "Admin",
+          },
+        },
+      },
       {
         title: "Create Company",
         endpoint: "POST /company/create",
@@ -643,7 +664,6 @@ exports.generateCompanyDocumentationPDF = asyncHandler(async (req, res) => {
       },
     ],
   };
-
   const html = `
     <html>
       <head>
@@ -671,17 +691,11 @@ exports.generateCompanyDocumentationPDF = asyncHandler(async (req, res) => {
       </head>
       <body>
         <h1>Company API Documentation</h1>
-
         <h2>Base URL</h2>
         <pre><code>${apiDocs.baseUrl}</code></pre>
-
         <h2>Authentication</h2>
-        <pre><code>${JSON.stringify(
-          apiDocs.authentication,
-          null,
-          2
-        )}</code></pre>
-
+        <pre><code>${JSON.stringify(apiDocs.authentication, null, 2)}</code></pre>
+        <h2>company ID: ${companyId || "N/A"}</h2>
         <h2>Endpoints</h2>
         ${apiDocs.apis
           .map(
@@ -712,7 +726,6 @@ exports.generateCompanyDocumentationPDF = asyncHandler(async (req, res) => {
           `
           )
           .join("")}
-
         <hr>
         <p style="text-align:center; color:#777; font-size:12px;">
           Generated on ${new Date().toLocaleString()}
@@ -720,7 +733,6 @@ exports.generateCompanyDocumentationPDF = asyncHandler(async (req, res) => {
       </body>
     </html>
   `;
-
   const browser = await puppeteer.launch({
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
     headless: "new",
@@ -733,11 +745,9 @@ exports.generateCompanyDocumentationPDF = asyncHandler(async (req, res) => {
     margin: { top: "15mm", bottom: "15mm", left: "10mm", right: "10mm" },
   });
   await browser.close();
-
   res.set({
     "Content-Type": "application/pdf",
-    "Content-Disposition":
-      'attachment; filename="Company_API_Documentation.pdf"',
+    "Content-Disposition": 'attachment; filename="Company_API_Documentation.pdf"',
   });
   res.send(pdfBuffer);
 });
