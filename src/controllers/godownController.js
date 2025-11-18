@@ -5,20 +5,20 @@ const ApiError = require("../utils/apiError");
 const { default: mongoose } = require("mongoose");
 const User = require("../models/User");
 const { generateUniqueId } = require("../utils/generate16DigiId");
-const   {createAuditLog}=require("../utils/createAuditLog")
+const { createAuditLog } = require("../utils/createAuditLog");
 
 // Generate unique 18-digit code using timestamp and index
 const generateUniqueIdBulk = (index) => {
   const timestamp = Date.now();
   const random = Math.floor(1000 + Math.random() * 9000); // 4-digit random number
-  return `${timestamp}${index.toString().padStart(4, '0')}${random}`.slice(-18); // 18-digit code
+  return `${timestamp}${index.toString().padStart(4, "0")}${random}`.slice(-18); // 18-digit code
 };
 
 // Insert records in batches with robust error handling
 // Insert records in batches with robust error handling
 const insertInBatches = async (data, batchSize) => {
   if (!data || !Array.isArray(data) || data.length === 0) {
-    console.error('No valid data to insert');
+    console.error("No valid data to insert");
     return [];
   }
 
@@ -37,18 +37,28 @@ const insertInBatches = async (data, batchSize) => {
         results.push(...inserted);
         console.log(`Inserted ${inserted.length} records in batch`);
       } else {
-        console.error('No records inserted in batch');
+        console.error("No records inserted in batch");
       }
     } catch (error) {
-      if (error.name === 'MongoBulkWriteError' && error.code === 11000) {
-        const failedDocs = error.writeResult?.result?.writeErrors?.map(err => ({
-          code: err.op.code,
-          error: err.errmsg
-        })) || [];
-        const successfulDocs = batch.filter(doc => !failedDocs.some(f => f.code === doc.code));
-        results.push(...successfulDocs.map(doc => ({ ...doc, _id: doc._id || new mongoose.Types.ObjectId() })));
-        failedDocs.forEach(failed => {
-          console.error(`Failed to insert record with code ${failed.code}: ${failed.error}`);
+      if (error.name === "MongoBulkWriteError" && error.code === 11000) {
+        const failedDocs =
+          error.writeResult?.result?.writeErrors?.map((err) => ({
+            code: err.op.code,
+            error: err.errmsg,
+          })) || [];
+        const successfulDocs = batch.filter(
+          (doc) => !failedDocs.some((f) => f.code === doc.code)
+        );
+        results.push(
+          ...successfulDocs.map((doc) => ({
+            ...doc,
+            _id: doc._id || new mongoose.Types.ObjectId(),
+          }))
+        );
+        failedDocs.forEach((failed) => {
+          console.error(
+            `Failed to insert record with code ${failed.code}: ${failed.error}`
+          );
         });
       } else {
         console.error(`Batch insertion failed: ${error.message}`);
@@ -57,8 +67,11 @@ const insertInBatches = async (data, batchSize) => {
   }
 
   // Verify inserted records
-  const insertedIds = results.map(doc => doc._id);
-  const verifiedDocs = insertedIds.length > 0 ? await Godown.find({ _id: { $in: insertedIds } }) : [];
+  const insertedIds = results.map((doc) => doc._id);
+  const verifiedDocs =
+    insertedIds.length > 0
+      ? await Godown.find({ _id: { $in: insertedIds } })
+      : [];
   console.log(`Verified ${verifiedDocs.length} records in database`);
   return verifiedDocs;
 };
@@ -70,7 +83,7 @@ exports.createGodown = asyncHandler(async (req, res) => {
     address,
     capacity,
     city,
-    
+
     company,
     contactNumber,
     country,
@@ -81,7 +94,7 @@ exports.createGodown = asyncHandler(async (req, res) => {
     state,
     status,
   } = req.body;
-  let code=await generateUniqueId(Godown,"code")
+  let code = await generateUniqueId(Godown, "code");
 
   // ✅ Required fields check
   if (!company || !name) {
@@ -122,19 +135,19 @@ exports.createGodown = asyncHandler(async (req, res) => {
   });
   let ipAddress =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
+
   // convert ::1 → 127.0.0.1
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
   }
-  
+
   console.log(ipAddress, "ipaddress");
-    await createAuditLog({
+  await createAuditLog({
     module: "Godown",
     action: "create",
     performedBy: req.user.id,
     referenceId: godown._id,
-    clientId:req.user.clientID,
+    clientId: req.user.clientID,
     details: "godown created successfully",
     ipAddress,
   });
@@ -168,7 +181,7 @@ exports.createBulkGodowns = asyncHandler(async (req, res) => {
 
   // Preload existing godown codes
   const existingGodowns = await Godown.find({}, "code");
-  const existingCodes = new Set(existingGodowns.map(godown => godown.code));
+  const existingCodes = new Set(existingGodowns.map((godown) => godown.code));
 
   const results = [];
   const errors = [];
@@ -202,9 +215,12 @@ exports.createBulkGodowns = asyncHandler(async (req, res) => {
       seenCodes.add(code);
 
       // Generate unique values for optional fields if not provided
-      const address = body.address || `Address ${index + 1}, ${body.city || 'Unknown'}`;
+      const address =
+        body.address || `Address ${index + 1}, ${body.city || "Unknown"}`;
       const city = body.city || "Unknown";
-      const contactNumber = body.contactNumber || `+919${(973884720 + index).toString().padStart(9, '0')}`;
+      const contactNumber =
+        body.contactNumber ||
+        `+919${(973884720 + index).toString().padStart(9, "0")}`;
       const country = body.country || "India";
       const state = body.state || "Unknown";
       const status = body.status || "Active";
@@ -294,72 +310,67 @@ exports.updateGodown = asyncHandler(async (req, res) => {
     "state",
     "status",
   ];
-  try{
+  try {
+    const body = req.body || {}; // safeguard
+    console.log("Request Body:", body);
+    const updateData = {};
+    Object.keys(body).forEach((key) => {
+      if (allowedFields.includes(key)) updateData[key] = body[key];
+    });
 
-  const body = req.body || {}; // safeguard
-  console.log("Request Body:", body);
-  const updateData = {};
-  Object.keys(body).forEach(key => {
-    if (allowedFields.includes(key)) updateData[key] = body[key];
-  });
+    // Track changes for audit log
+    const oldData = godown.toObject();
+    const changes = {};
+    Object.keys(updateData).forEach((key) => {
+      if (JSON.stringify(oldData[key]) !== JSON.stringify(updateData[key])) {
+        changes[key] = { from: oldData[key], to: updateData[key] };
+      }
+    });
 
-  // Track changes for audit log
-  const oldData = godown.toObject();
-  const changes = {};
-  Object.keys(updateData).forEach(key => {
-    if (JSON.stringify(oldData[key]) !== JSON.stringify(updateData[key])) {
-      changes[key] = { from: oldData[key], to: updateData[key] };
+    // Apply updates
+    Object.assign(godown, updateData);
+    console.log("Godown before save:", godown);
+
+    // Audit log
+    if (!godown.auditLogs) godown.auditLogs = [];
+    godown.auditLogs.push({
+      action: "update",
+      performedBy: req.user.id,
+      details: "Godown updated",
+      changes,
+      timestamp: new Date(),
+    });
+    console.log("Godown after update:", godown);
+    console.log("Changes:", oldData, godown);
+
+    await godown.save();
+
+    let ipAddress =
+      req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+
+    // convert ::1 → 127.0.0.1
+    if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+      ipAddress = "127.0.0.1";
     }
-  });
+    await createAuditLog({
+      module: "Godown",
+      action: "update",
+      performedBy: req.user.id,
+      referenceId: godown._id,
+      clientId: req.user.clientID,
+      details: "godown updated successfully",
+      changes,
+      ipAddress,
+    });
 
-  // Apply updates
-  Object.assign(godown, updateData);
-  console.log("Godown before save:", godown);
-
-  // Audit log
-  if (!godown.auditLogs) godown.auditLogs = [];
-  godown.auditLogs.push({
-    action: "update",
-    performedBy: req.user.id,
-    details: "Godown updated",
-    changes,
-    timestamp: new Date()
-  });
-  console.log("Godown after update:", godown);
-  console.log("Changes:",oldData,godown);   
-
-  await godown.save();
-
-
- let ipAddress =
-    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
-  // convert ::1 → 127.0.0.1
-  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
-    ipAddress = "127.0.0.1";
+    res
+      .status(200)
+      .json(new ApiResponse(200, godown, "Godown updated successfully"));
+  } catch (err) {
+    console.log(err);
+    res.status(500).json(new ApiResponse(500, err, "Something went wrong"));
   }
-  await createAuditLog({
-    module: "Godown",
-    action: "update",
-    performedBy: req.user.id,
-    referenceId: godown._id,
-    clientId: req.user.clientID,
-    details: "godown updated successfully",
-    changes,
-    ipAddress,
-  });
-
-  res.status(200).json(new ApiResponse(200, godown, "Godown updated successfully"));
-}
-catch(err){
-  console.log(err);
-  res.status(500).json(new ApiResponse(500, err, "Something went wrong"));
-}
 });
-
-
-
-
 
 // ✅ Get all godowns
 exports.getGodowns = asyncHandler(async (req, res) => {
@@ -367,7 +378,14 @@ exports.getGodowns = asyncHandler(async (req, res) => {
     const userId = req.user.id;
     // const userId = "68c1503077fd742fa21575df"; // hardcoded for now
 
-    const { search, status, sortBy, sortOrder, limit = 3, page = 1 } = req.query;
+    const {
+      search,
+      status,
+      sortBy,
+      sortOrder,
+      limit = 3,
+      page = 1,
+    } = req.query;
 
     const perPage = parseInt(limit, 10);
     const currentPage = parseInt(page, 10);
@@ -424,13 +442,8 @@ exports.getGodowns = asyncHandler(async (req, res) => {
       },
       {
         $facet: {
-          records: [
-            { $skip: skip },
-            { $limit: perPage },
-          ],
-          totalCount: [
-            { $count: "count" },
-          ],
+          records: [{ $skip: skip }, { $limit: perPage }],
+          totalCount: [{ $count: "count" }],
         },
       },
     ]);
@@ -458,11 +471,10 @@ exports.getGodowns = asyncHandler(async (req, res) => {
   }
 });
 
-
 // ✅ Get godown by ID
 exports.getGodownById = asyncHandler(async (req, res) => {
   const godown = await Godown.findById(req.params.id)
-  .select("-auditLogs")
+    .select("-auditLogs")
     .populate("company", "namePrint")
     .populate("client", "name email");
 
@@ -473,13 +485,20 @@ exports.getGodownById = asyncHandler(async (req, res) => {
 
 // ✅ Get godowns by Company
 exports.getGodownsByCompany = asyncHandler(async (req, res) => {
-  console.log("gooodcom")
+  console.log("gooodcom");
   try {
     const userId = req.user.id;
     // const userId = "68c1503077fd742fa21575df"; // hardcoded for now
- const { companyId } = req.params;
-       if (!companyId) throw new ApiError(400, "Company ID is required");
-    const { search, status, sortBy, sortOrder, limit = 3, page = 1 } = req.query;
+    const { companyId } = req.params;
+    if (!companyId) throw new ApiError(400, "Company ID is required");
+    const {
+      search,
+      status,
+      sortBy,
+      sortOrder,
+      limit = 3,
+      page = 1,
+    } = req.query;
 
     const perPage = parseInt(limit, 10);
     const currentPage = parseInt(page, 10);
@@ -495,99 +514,122 @@ exports.getGodownsByCompany = asyncHandler(async (req, res) => {
       sort = { createdAt: -1 };
     }
 
-   const result = await User.aggregate([
-  {
-    $match: {
-      _id: new mongoose.Types.ObjectId(userId)
-    },
-  },
-  {
-    $lookup: {
-      from: "godowns",
-      localField: "clientID",
-      foreignField: "client",
-      as: "godowns",
-    },
-  },
-  {
-    $unwind: {
-      path: "$godowns",
-      preserveNullAndEmptyArrays: false,
-    },
-  },
-  {
-    $replaceRoot: { newRoot: "$godowns" },
-  },
- {
-  $lookup: {
-    from: "godowns",
-    localField: "parent",
-    foreignField: "_id",
-    as: "parentData",
-    pipeline: [
+    const result = await User.aggregate([
       {
-        $project: {
-          _id: 1,
-          name: 1,
+        $match: {
+          _id: new mongoose.Types.ObjectId(userId),
         },
       },
-    ],
-  },
-},
-{
-  $addFields: {
-    parent: { $arrayElemAt: ["$parentData", 0] },
-  },
-},
-{
-  $project: {
-    parentData: 0, // remove temporary field
-  },
-},
+      {
+        $lookup: {
+          from: "godowns",
+          localField: "clientID",
+          foreignField: "client",
+          as: "godowns",
+        },
+      },
+      {
+        $unwind: {
+          path: "$godowns",
+          preserveNullAndEmptyArrays: false,
+        },
+      },
+      {
+        $replaceRoot: { newRoot: "$godowns" },
+      },
+      {
+        $lookup: {
+          from: "godowns",
+          localField: "parent",
+          foreignField: "_id",
+          as: "parentData",
+          pipeline: [
+            {
+              $project: {
+                _id: 1,
+                name: 1,
+              },
+            },
+          ],
+        },
+      },
+      {
+        $addFields: {
+          parent: { $arrayElemAt: ["$parentData", 0] },
+        },
+      },
+      {
+        $project: {
+          parentData: 0, // remove temporary field
+        },
+      },
 
-  {
-    $match: {
-      ...(status ? { status } : {}),
-      ...(search
-        ? {
-            $or: [
-              { name: { $regex: search, $options: "i" } },
-              { location: { $regex: search, $options: "i" } },
-            ],
-          }
-        : {}),
-      company: new mongoose.Types.ObjectId(companyId),
-      $and: [
-    {
-      status: {
-        $ne: "delete"
-      }
-    }
-  ]
-    },
-  },
-  {
-    $sort: sort,
-  },
+      {
+        $match: {
+          ...(status ? { status } : {}),
+          ...(search
+            ? {
+                $or: [
+                  { name: { $regex: search, $options: "i" } },
+                  { location: { $regex: search, $options: "i" } },
+                ],
+              }
+            : {}),
+          company: new mongoose.Types.ObjectId(companyId),
+          $and: [
+            {
+              status: {
+                $ne: "delete",
+              },
+            },
+          ],
+        },
+      },
+      {
+        $sort: sort,
+      },
 
-  // 🧹 Exclude auditLogs here
-  {
-    $project: {
-      auditLogs: 0, // 0 = exclude field
-    },
-  },
+      // 🧹 Exclude auditLogs here
+      {
+        $project: {
+          auditLogs: 0, // 0 = exclude field
+        },
+      },
 
-  {
-    $facet: {
-      records: [{ $skip: skip }, { $limit: perPage }],
-      totalCount: [{ $count: "count" }],
-    },
-  },
-]);
+      {
+        $facet: {
+          records: [{ $skip: skip }, { $limit: perPage }],
 
+          totalCount: [{ $count: "count" }],
+
+          stats: [
+            {
+              $group: {
+                _id: null,
+                totalPrimary: {
+                  $sum: { $cond: [{ $eq: ["$isPrimary", true] }, 1, 0] },
+                },
+                totalActive: {
+                  $sum: { $cond: [{ $eq: ["$status", "active"] }, 1, 0] },
+                },
+                totalCapacity: {
+                  // capacity stored as String, so convert
+                  $sum: {
+                    $toDouble: {
+                      $ifNull: ["$capacity", 0],
+                    },
+                  },
+                },
+              },
+            },
+          ],
+        },
+      },
+    ]);
 
     const records = result?.[0]?.records || [];
     const total = result?.[0]?.totalCount?.[0]?.count || 0;
+    const stats = result?.[0]?.stats?.[0] || {};
 
     res.status(200).json(
       new ApiResponse(
@@ -600,6 +642,11 @@ exports.getGodownsByCompany = asyncHandler(async (req, res) => {
             limit: perPage,
             totalPages: Math.ceil(total / perPage),
           },
+          counts: {
+            totalPrimary: stats.totalPrimary || 0,
+            totalActive: stats.totalActive || 0,
+            totalCapacity: stats.totalCapacity || 0,
+          },
         },
         records.length ? "Godowns fetched successfully" : "No godowns found"
       )
@@ -608,7 +655,6 @@ exports.getGodownsByCompany = asyncHandler(async (req, res) => {
     throw new ApiError(500, error.message || "Internal server error");
   }
 });
-
 
 // // ✅ Update godown
 // exports.updateGodown = asyncHandler(async (req, res) => {
@@ -652,12 +698,12 @@ exports.deleteGodown = asyncHandler(async (req, res) => {
 
   let ipAddress =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
+
   // convert ::1 → 127.0.0.1
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
   }
-    await createAuditLog({
+  await createAuditLog({
     module: "Godown",
     action: "delete",
     performedBy: req.user.id,
@@ -672,4 +718,3 @@ exports.deleteGodown = asyncHandler(async (req, res) => {
     .status(200)
     .json(new ApiResponse(200, deletedGodown, "Godown deleted successfully"));
 });
-

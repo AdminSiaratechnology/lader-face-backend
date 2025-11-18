@@ -1,31 +1,43 @@
 const Order = require("../models/order.model");
 const mongoose = require("mongoose");
+const Customer = require("../models/Customer");
 const asyncHandler = require("../utils/asyncHandler");
 const ApiError = require("../utils/apiError");
 const ApiResponse = require("../utils/apiResponse");
-const Company =require("../models/Company")
-const Cart=require("../models/Cart")
+const Company = require("../models/Company");
+const Cart = require("../models/Cart");
 const { Worker } = require("worker_threads");
 const path = require("path");
 const { logAudit } = require("../utils/orderAuditLog");
-const calculateChanges=require("../utils/calculateChanges")
+const calculateChanges = require("../utils/calculateChanges");
 
 // ✅ Create Order
 exports.createOrder = asyncHandler(async (req, res) => {
   try {
-    const { companyId, customerId, shippingAddress, items, orderSource } = req.body;
+    const { companyId, customerId, shippingAddress, items, orderSource } =
+      req.body;
     const clientId = req.user?.clientID;
     const userId = req.user?.id;
 
     console.log("🧾 Creating order...");
 
-    if (!companyId || !clientId || !customerId || !userId || !items?.length || !orderSource) {
+    if (
+      !companyId ||
+      !clientId ||
+      !customerId ||
+      !userId ||
+      !items?.length ||
+      !orderSource
+    ) {
       throw new ApiError(400, "Missing required fields");
     }
 
     for (const item of items) {
       if (!item.productId || !item.quantity || !item.price) {
-        throw new ApiError(400, "Each item must include productId, quantity, and price");
+        throw new ApiError(
+          400,
+          "Each item must include productId, quantity, and price"
+        );
       }
 
       // Ensure discount is not greater than total
@@ -41,7 +53,10 @@ exports.createOrder = asyncHandler(async (req, res) => {
     console.log(req.body);
 
     const subtotal = items.reduce((acc, item) => acc + (item.total || 0), 0);
-    const totalDiscount = items.reduce((acc, item) => acc + (item.discount || 0), 0);
+    const totalDiscount = items.reduce(
+      (acc, item) => acc + (item.discount || 0),
+      0
+    );
     let grandTotal = subtotal - totalDiscount;
 
     // prevent negative total
@@ -66,7 +81,15 @@ exports.createOrder = asyncHandler(async (req, res) => {
 
     const order = await Order.create(orderData);
     console.log("✅ Order created with ID:", order._id);
-    logAudit(order._id, 'created', userId, clientId, companyId, null, order.toObject()); // No await!
+    logAudit(
+      order._id,
+      "created",
+      userId,
+      clientId,
+      companyId,
+      null,
+      order.toObject()
+    ); // No await!
 
     // ✅ Populate limited customer fields
     const populatedOrder = await Order.findById(order._id)
@@ -75,8 +98,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
         select: "customerName emailAddress phone country currency",
       })
       .lean();
-      // In createOrder (after order.save()):
-
+    // In createOrder (after order.save()):
 
     // 🧵 Background Cart Clear Worker
     const workerPath = path.join(__dirname, "../workers/clearCartWorker.js");
@@ -97,12 +119,17 @@ exports.createOrder = asyncHandler(async (req, res) => {
       .on("exit", (code) => {
         if (code !== 0) console.error(`⚠️ Worker exited with code ${code}`);
       });
-      console.log("🧾 Order created with ID:", populatedOrder);
+    console.log("🧾 Order created with ID:", populatedOrder);
 
     return res
       .status(201)
-      .json(new ApiResponse(201, populatedOrder, `Order created successfully (${order.status})`));
-
+      .json(
+        new ApiResponse(
+          201,
+          populatedOrder,
+          `Order created successfully (${order.status})`
+        )
+      );
   } catch (error) {
     console.error("❌ Error creating order:", error);
     if (error instanceof ApiError) {
@@ -116,9 +143,6 @@ exports.createOrder = asyncHandler(async (req, res) => {
   }
 });
 
-
-
-
 //updateOrderStatus
 exports.updateOrderStatus = asyncHandler(async (req, res) => {
   const { id } = req.params;
@@ -126,11 +150,21 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
 
   const clientId = req.user.clientID;
   const userId = req.user.id;
-  if(!clientId || !userId){
-    return res.status(401).json(new ApiResponse(401, null, "Unauthorized access — user credentials missing"));
+  if (!clientId || !userId) {
+    return res
+      .status(401)
+      .json(
+        new ApiResponse(
+          401,
+          null,
+          "Unauthorized access — user credentials missing"
+        )
+      );
   }
-  if(!status || !id){
-    return res.status(400).json(new ApiResponse(400, null, "Invalid order ID or status"));
+  if (!status || !id) {
+    return res
+      .status(400)
+      .json(new ApiResponse(400, null, "Invalid order ID or status"));
   }
 
   const order = await Order.findById(id);
@@ -144,7 +178,16 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
   const newData = order.toObject();
   const changes = calculateChanges(oldData, newData);
 
-  logAudit(order._id, "status_updated", userId, clientId, order.companyId, oldData, newData, changes);
+  logAudit(
+    order._id,
+    "status_updated",
+    userId,
+    clientId,
+    order.companyId,
+    oldData,
+    newData,
+    changes
+  );
 
   res.status(200).json(new ApiResponse(200, order, "Status updated"));
 });
@@ -152,7 +195,13 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
 exports.updateOrderDetails = asyncHandler(async (req, res) => {
   try {
     const { id } = req.params;
-    const { shippingAddress, items = [], remarks, payment, updatedBy } = req.body;
+    const {
+      shippingAddress,
+      items = [],
+      remarks,
+      payment,
+      updatedBy,
+    } = req.body;
 
     const clientId = req.user?.clientID;
     const userId = req.user?.id;
@@ -181,7 +230,10 @@ exports.updateOrderDetails = asyncHandler(async (req, res) => {
       );
 
       if (extraProducts.length > 0) {
-        throw new ApiError(400, "New products cannot be added to an existing order");
+        throw new ApiError(
+          400,
+          "New products cannot be added to an existing order"
+        );
       }
 
       // 🔍 Keep only products that still exist in new payload
@@ -242,10 +294,7 @@ exports.updateOrderDetails = asyncHandler(async (req, res) => {
       0
     );
 
-    order.discount = order.items.reduce(
-      (acc, i) => acc + (i.discount || 0),
-      0
-    );
+    order.discount = order.items.reduce((acc, i) => acc + (i.discount || 0), 0);
 
     order.grandTotal = order.subtotal - order.discount;
 
@@ -264,12 +313,11 @@ exports.updateOrderDetails = asyncHandler(async (req, res) => {
         .json(new ApiResponse(error.statusCode, null, error.message));
     }
 
-    res.status(500).json(
-      new ApiResponse(500, null, "Internal server error", error.message)
-    );
+    res
+      .status(500)
+      .json(new ApiResponse(500, null, "Internal server error", error.message));
   }
 });
-
 
 // ✅ Update Order
 exports.updateOrder = async (req, res) => {
@@ -330,7 +378,7 @@ exports.getOrders = async (req, res) => {
     if (clientId) filter.clientId = clientId;
     if (status) filter.status = status;
     if (paymentStatus) filter["payment.status"] = paymentStatus;
-    if( role === "Salesman" || role === "Customer"){
+    if (role === "Salesman" || role === "Customer") {
       filter.userId = userId;
     }
 
@@ -367,7 +415,13 @@ exports.getOrdersByCompanyId = async (req, res) => {
     const userId = req.user?.id;
     const role = req.user?.role;
 
-    const {search="", status, paymentStatus, page = 1, limit = 10 } = req.query;
+    const {
+      search = "",
+      status,
+      paymentStatus,
+      page = 1,
+      limit = 10,
+    } = req.query;
 
     // 🔒 Basic Validations
     if (!companyId) {
@@ -402,12 +456,34 @@ exports.getOrdersByCompanyId = async (req, res) => {
     // 📌 Status Filters
     if (status) filter.status = status;
     if (paymentStatus) filter["payment.status"] = paymentStatus;
-  if (search && search.trim() !== "") {
-    filter.$or = [
-      { orderCode: { $regex: search, $options: "i" } },
-    ];
-  }
-console.log(filter);
+if (search && search.trim() !== "") {
+  console.log("🔎 Searching orders with:", search);
+
+  console.log("➡️ Looking for customers with name like:", search);
+  const customerMatches = await Customer.find(
+    {
+      customerName: { $regex: search, $options: "i" },
+  company: companyId,       clientId,
+    },
+    "_id customerName"
+  );
+
+  console.log("🟩 Customers found matching search:", customerMatches);
+
+  const customerIds = customerMatches.map((c) => c._id);
+
+  console.log("🆔 Extracted customer IDs:", customerIds);
+
+  filter.$or = [
+    { orderCode: { $regex: search, $options: "i" } },
+    { customerId: { $in: customerIds } },
+  ];
+
+  console.log("📌 Final $or search filter:", filter.$or);
+}
+
+
+    console.log(filter);
     const skip = (page - 1) * limit;
 
     // 📦 Fetch Data
@@ -422,6 +498,33 @@ console.log(filter);
         .limit(parseInt(limit)),
       Order.countDocuments(filter),
     ]);
+    // 🔥 Get order status counts (pending, completed, approved)
+    const statusCounts = await Order.aggregate([
+      {
+        $match: {
+          companyId: new mongoose.Types.ObjectId(companyId),
+          clientId: new mongoose.Types.ObjectId(clientId),
+        },
+      },
+      {
+        $group: {
+          _id: "$status",
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    // Convert aggregation result to normal object
+    let orderStats = {
+      pending: 0,
+      completed: 0,
+      approved: 0,
+      cancelled: 0,
+    };
+
+    statusCounts.forEach((s) => {
+      orderStats[s._id] = s.count;
+    });
 
     return res.status(200).json({
       success: true,
@@ -430,6 +533,12 @@ console.log(filter);
       totalPages: Math.ceil(total / limit),
       limit: parseInt(limit),
       orders,
+      counts: {
+        pending: orderStats.pending,
+        completed: orderStats.completed,
+        approved: orderStats.approved,
+        cancelled: orderStats.cancelled,
+      },
     });
   } catch (error) {
     console.error("❌ Error fetching orders:", error);
@@ -440,7 +549,6 @@ console.log(filter);
     });
   }
 };
-
 
 exports.getOrdersByUser = async (req, res) => {
   console.log("📦 Fetching Orders by Company ID");
@@ -465,12 +573,10 @@ exports.getOrdersByUser = async (req, res) => {
     }
 
     if (!clientId || !userId) {
-      return res
-        .status(401)
-        .json({
-          success: false,
-          message: "Unauthorized: Missing client or user info",
-        });
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized: Missing client or user info",
+      });
     }
 
     // 🧾 Build Filter
@@ -517,17 +623,17 @@ exports.getStateWiseSales = async (req, res) => {
 
     let match = { companyId: new mongoose.Types.ObjectId(companyId) };
 
-    if (role === 'Admin') {
+    if (role === "Admin") {
       // Full access
-    } else if (role === 'Salesman') {
+    } else if (role === "Salesman") {
       match.userId = new mongoose.Types.ObjectId(userId);
-    } else if (role === 'Customer') {
+    } else if (role === "Customer") {
       match.customerId = new mongoose.Types.ObjectId(customerId);
     } else {
-      return res.status(403).json({ success: false, message: 'Unauthorized' });
+      return res.status(403).json({ success: false, message: "Unauthorized" });
     }
 
-    if (role !== 'Admin') {
+    if (role !== "Admin") {
       match.clientId = new mongoose.Types.ObjectId(clientId);
     }
 
@@ -582,7 +688,6 @@ exports.getPartyWiseSales = async (req, res) => {
                 emailAddress: 1,
                 country: 1,
                 currency: 1,
-              
               },
             },
           ],
@@ -599,12 +704,10 @@ exports.getPartyWiseSales = async (req, res) => {
   }
 };
 
-
-
 exports.getSalesmanWiseSales = async (req, res) => {
   try {
     const { companyId } = req.params;
-    const { period = 'month' } = req.query; // day, week, month, year
+    const { period = "month" } = req.query; // day, week, month, year
     const clientId = req.user?.clientID;
 
     // Calculate date range based on period
@@ -612,11 +715,19 @@ exports.getSalesmanWiseSales = async (req, res) => {
     let startDate, endDate;
 
     switch (period) {
-      case 'day':
+      case "day":
         startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        endDate = new Date(
+          now.getFullYear(),
+          now.getMonth(),
+          now.getDate(),
+          23,
+          59,
+          59,
+          999
+        );
         break;
-      case 'week':
+      case "week":
         const dayOfWeek = now.getDay();
         const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // adjust when day is sunday
         startDate = new Date(now.setDate(diff));
@@ -625,22 +736,38 @@ exports.getSalesmanWiseSales = async (req, res) => {
         endDate.setDate(startDate.getDate() + 6);
         endDate.setHours(23, 59, 59, 999);
         break;
-      case 'month':
+      case "month":
         startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-        endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+        endDate = new Date(
+          now.getFullYear(),
+          now.getMonth() + 1,
+          0,
+          23,
+          59,
+          59,
+          999
+        );
         break;
-      case 'year':
+      case "year":
         startDate = new Date(now.getFullYear(), 0, 1);
         endDate = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
         break;
       default:
         startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-        endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+        endDate = new Date(
+          now.getFullYear(),
+          now.getMonth() + 1,
+          0,
+          23,
+          59,
+          59,
+          999
+        );
     }
 
     const matchConditions = {
       companyId: new mongoose.Types.ObjectId(companyId),
-      status: { $ne: 'cancelled' } // Exclude cancelled orders
+      status: { $ne: "cancelled" }, // Exclude cancelled orders
     };
 
     // Add clientId if available
@@ -651,7 +778,7 @@ exports.getSalesmanWiseSales = async (req, res) => {
     // Add date filter
     matchConditions.createdAt = {
       $gte: startDate,
-      $lte: endDate
+      $lte: endDate,
     };
 
     const data = await Order.aggregate([
@@ -666,7 +793,7 @@ exports.getSalesmanWiseSales = async (req, res) => {
           averageOrderValue: { $avg: "$grandTotal" },
           // Additional metrics
           totalItems: { $sum: { $size: "$items" } },
-          lastOrderDate: { $max: "$createdAt" }
+          lastOrderDate: { $max: "$createdAt" },
         },
       },
       {
@@ -691,7 +818,7 @@ exports.getSalesmanWiseSales = async (req, res) => {
         },
       },
       { $unwind: "$salesman" },
-      { 
+      {
         $project: {
           _id: 1,
           totalSales: 1,
@@ -701,50 +828,55 @@ exports.getSalesmanWiseSales = async (req, res) => {
           lastOrderDate: 1,
           salesman: 1,
           status: "$salesman.status",
-          salesPerOrder: { $divide: ["$totalSales", "$totalOrders"] }
-
-        }
+          salesPerOrder: { $divide: ["$totalSales", "$totalOrders"] },
+        },
       },
       { $sort: { totalSales: -1 } },
     ]);
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       data,
       period,
       dateRange: {
         start: startDate,
-        end: endDate
-      }
+        end: endDate,
+      },
     });
   } catch (err) {
-    console.error('Error in salesman wise sales:', err);
+    console.error("Error in salesman wise sales:", err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
 
-
-
 exports.getTodaySales = async (req, res) => {
-
-     const { companyId } = req.params;
-    const clientId = req.user?.clientID;
-    const userId = req.user?.id;
-    const role = req.user?.role;
-    if(!companyId || !clientId||!userId || role === "Customer"){
-      return res.status(403).json({ success: false, message: 'Unauthorized' });
-    }
+  const { companyId } = req.params;
+  const clientId = req.user?.clientID;
+  const userId = req.user?.id;
+  const role = req.user?.role;
+  if (!companyId || !clientId || !userId || role === "Customer") {
+    return res.status(403).json({ success: false, message: "Unauthorized" });
+  }
   try {
-  
     const start = new Date();
     start.setHours(0, 0, 0, 0);
     const end = new Date();
     end.setHours(23, 59, 59, 999);
-   
 
     const data = await Order.aggregate([
-      { $match: { companyId: new mongoose.Types.ObjectId(companyId), clientId: new mongoose.Types.ObjectId(clientId), createdAt: { $gte: start, $lte: end },  ...(role !== 'Salesman' && { userId: new mongoose.Types.ObjectId(userId) }),
-          ...(role !== 'Customer' && { userId: new mongoose.Types.ObjectId(userId) })} },
+      {
+        $match: {
+          companyId: new mongoose.Types.ObjectId(companyId),
+          clientId: new mongoose.Types.ObjectId(clientId),
+          createdAt: { $gte: start, $lte: end },
+          ...(role !== "Salesman" && {
+            userId: new mongoose.Types.ObjectId(userId),
+          }),
+          ...(role !== "Customer" && {
+            userId: new mongoose.Types.ObjectId(userId),
+          }),
+        },
+      },
       {
         $group: {
           _id: null,
@@ -754,7 +886,10 @@ exports.getTodaySales = async (req, res) => {
       },
     ]);
 
-    res.json({ success: true, data: data[0] || { totalSales: 0, totalOrders: 0 } });
+    res.json({
+      success: true,
+      data: data[0] || { totalSales: 0, totalOrders: 0 },
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -762,65 +897,69 @@ exports.getTodaySales = async (req, res) => {
 
 // Get sales data for a specific date range
 exports.getSalesByDateRange = async (req, res) => {
-     const userId = req.user?.id;
-    const role = req.user?.role;
-   
+  const userId = req.user?.id;
+  const role = req.user?.role;
+
   try {
     const { companyId } = req.params;
     const clientId = req.user?.clientID;
     const { fromDate, toDate } = req.query;
-     if(!companyId || !clientId||!userId || role === "Customer"){
-      return res.status(403).json({ success: false, message: 'Unauthorized' });
+    if (!companyId || !clientId || !userId || role === "Customer") {
+      return res.status(403).json({ success: false, message: "Unauthorized" });
     }
 
     // Validation
     if (!companyId || !clientId) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Missing companyId or clientId' 
+      return res.status(400).json({
+        success: false,
+        message: "Missing companyId or clientId",
       });
     }
 
     if (!fromDate || !toDate) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Please provide fromDate and toDate in query params' 
+      return res.status(400).json({
+        success: false,
+        message: "Please provide fromDate and toDate in query params",
       });
     }
 
     // Parse and set date range
     const start = new Date(fromDate);
     start.setHours(0, 0, 0, 0);
-    
+
     const end = new Date(toDate);
     end.setHours(23, 59, 59, 999);
 
     // Validate dates
     if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Invalid date format. Use YYYY-MM-DD' 
+      return res.status(400).json({
+        success: false,
+        message: "Invalid date format. Use YYYY-MM-DD",
       });
     }
 
     if (start > end) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'fromDate cannot be greater than toDate' 
+      return res.status(400).json({
+        success: false,
+        message: "fromDate cannot be greater than toDate",
       });
     }
 
-    console.log('Date Range:', { start, end });
+    console.log("Date Range:", { start, end });
 
     const data = await Order.aggregate([
-      { 
-        $match: { 
-          companyId: new mongoose.Types.ObjectId(companyId), 
-          clientId: new mongoose.Types.ObjectId(clientId), 
-          createdAt: { $gte: start, $lte: end } ,
-          ...(role !== 'Salesman' && { userId: new mongoose.Types.ObjectId(userId) }),
-          ...(role !== 'Customer' && { userId: new mongoose.Types.ObjectId(userId) })
-        } 
+      {
+        $match: {
+          companyId: new mongoose.Types.ObjectId(companyId),
+          clientId: new mongoose.Types.ObjectId(clientId),
+          createdAt: { $gte: start, $lte: end },
+          ...(role !== "Salesman" && {
+            userId: new mongoose.Types.ObjectId(userId),
+          }),
+          ...(role !== "Customer" && {
+            userId: new mongoose.Types.ObjectId(userId),
+          }),
+        },
       },
       {
         $group: {
@@ -838,63 +977,99 @@ exports.getSalesByDateRange = async (req, res) => {
           totalOrders: 1,
           totalDiscount: 1,
           totalTax: 1,
-          averageOrderValue: { 
+          averageOrderValue: {
             $cond: {
               if: { $gt: ["$totalOrders", 0] },
               then: { $divide: ["$totalSales", "$totalOrders"] },
-              else: 0
-            }
-          }
-        }
-      }
+              else: 0,
+            },
+          },
+        },
+      },
     ]);
 
-    const result = data[0] || { 
-      totalSales: 0, 
+    const result = data[0] || {
+      totalSales: 0,
       totalOrders: 0,
       totalDiscount: 0,
       totalTax: 0,
-      averageOrderValue: 0
+      averageOrderValue: 0,
     };
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       data: result,
       dateRange: {
         from: start,
-        to: end
-      }
+        to: end,
+      },
     });
-
   } catch (err) {
-    console.error('Date range sales error:', err);
-    res.status(500).json({ 
-      success: false, 
-      message: err.message 
+    console.error("Date range sales error:", err);
+    res.status(500).json({
+      success: false,
+      message: err.message,
     });
   }
 };
 
-
 exports.getMonthlySalesComparison = async (req, res) => {
   try {
-   const { companyId } = req.params;
+    const { companyId } = req.params;
     const clientId = req.user?.clientID;
     const now = new Date();
 
     const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const thisMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+    const thisMonthEnd = new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      0,
+      23,
+      59,
+      59
+    );
     const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+    const prevMonthEnd = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      0,
+      23,
+      59,
+      59
+    );
 
     const [thisMonth, prevMonth] = await Promise.all([
       Order.aggregate([
-        { $match: { companyId: new mongoose.Types.ObjectId(companyId), clientId: new mongoose.Types.ObjectId(clientId), createdAt: { $gte: thisMonthStart, $lte: thisMonthEnd } } },
-        { $group: { _id: null, totalSales: { $sum: "$grandTotal" }, totalOrders: { $sum: 1 } } },
+        {
+          $match: {
+            companyId: new mongoose.Types.ObjectId(companyId),
+            clientId: new mongoose.Types.ObjectId(clientId),
+            createdAt: { $gte: thisMonthStart, $lte: thisMonthEnd },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalSales: { $sum: "$grandTotal" },
+            totalOrders: { $sum: 1 },
+          },
+        },
       ]),
       Order.aggregate([
-        { $match: { companyId: new mongoose.Types.ObjectId(companyId), clientId: new mongoose.Types.ObjectId(clientId), createdAt: { $gte: prevMonthStart, $lte: prevMonthEnd } } },
-        { $group: { _id: null, totalSales: { $sum: "$grandTotal" }, totalOrders: { $sum: 1 } } },
+        {
+          $match: {
+            companyId: new mongoose.Types.ObjectId(companyId),
+            clientId: new mongoose.Types.ObjectId(clientId),
+            createdAt: { $gte: prevMonthStart, $lte: prevMonthEnd },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalSales: { $sum: "$grandTotal" },
+            totalOrders: { $sum: 1 },
+          },
+        },
       ]),
     ]);
 
@@ -910,8 +1085,6 @@ exports.getMonthlySalesComparison = async (req, res) => {
   }
 };
 
-
-
 exports.getTopCustomers = async (req, res) => {
   try {
     const { companyId } = req.params;
@@ -919,8 +1092,8 @@ exports.getTopCustomers = async (req, res) => {
     const { limit = 5 } = req.query;
     const role = req.user?.role;
     const userId = req.user?.id;
-    if(role==="Customer"){
-      return  res.status(403).json({ success: false, message: 'Unauthorized' });
+    if (role === "Customer") {
+      return res.status(403).json({ success: false, message: "Unauthorized" });
     }
 
     const data = await Order.aggregate([
@@ -928,7 +1101,9 @@ exports.getTopCustomers = async (req, res) => {
         $match: {
           companyId: new mongoose.Types.ObjectId(companyId),
           clientId: new mongoose.Types.ObjectId(clientId),
-          ...(role !== 'Salesman' && { userId: new mongoose.Types.ObjectId(userId) }),
+          ...(role !== "Salesman" && {
+            userId: new mongoose.Types.ObjectId(userId),
+          }),
         },
       },
       {
@@ -972,79 +1147,93 @@ exports.getTopProducts = async (req, res) => {
     const { companyId } = req.params;
     const clientId = req.user?.clientID;
     const userId = req.user?.id;
-   
+
     const role = req.user?.role;
-    const { limit = 5, period = 'month' } = req.query;
+    const { limit = 5, period = "month" } = req.query;
     // Logging for debug
-    console.log('Company ID:', companyId);
-    console.log('Client ID:', clientId);
-    console.log('User role:', role);
-    console.log('Period:', period);
-    if (!companyId || (role !== 'Admin' && !clientId)) {
+    console.log("Company ID:", companyId);
+    console.log("Client ID:", clientId);
+    console.log("User role:", role);
+    console.log("Period:", period);
+    if (!companyId || (role !== "Admin" && !clientId)) {
       return res.status(400).json({
         success: false,
-        message: 'Missing companyId or clientId'
+        message: "Missing companyId or clientId",
       });
     }
     // Calculate date range based on period
     const now = new Date();
     let startDate, endDate;
-    endDate = new Date(now.getTime() + (24 * 60 * 60 * 1000)); // End of day
+    endDate = new Date(now.getTime() + 24 * 60 * 60 * 1000); // End of day
     switch (period) {
-      case 'day':
+      case "day":
         startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         break;
-      case 'week':
+      case "week":
         const dayOfWeek = now.getDay();
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek);
+        startDate = new Date(
+          now.getFullYear(),
+          now.getMonth(),
+          now.getDate() - dayOfWeek
+        );
         break;
-      case 'month':
+      case "month":
         startDate = new Date(now.getFullYear(), now.getMonth(), 1);
         break;
-      case 'year':
+      case "year":
         startDate = new Date(now.getFullYear(), 0, 1);
         break;
       default:
         startDate = new Date(now.getFullYear(), now.getMonth(), 1);
     }
     const dateMatch = {
-      createdAt: { // Assuming the field is createdAt; change if it's orderDate
+      createdAt: {
+        // Assuming the field is createdAt; change if it's orderDate
         $gte: startDate,
-        $lte: endDate
-      }
+        $lte: endDate,
+      },
     };
-    console.log('Date Range for aggregation:', { startDate, endDate },role,userId);
+    console.log(
+      "Date Range for aggregation:",
+      { startDate, endDate },
+      role,
+      userId
+    );
     const topProducts = await Order.aggregate([
       // Step 1: Match orders for the specific company, client (if not admin), and date range
       {
         $match: {
           companyId: new mongoose.Types.ObjectId(companyId),
-           clientId: new mongoose.Types.ObjectId(clientId) ,
-          ...(role !== 'Salesman' && { userId: new mongoose.Types.ObjectId(userId) }),
-          ...(role !== 'Customer' && { userId: new mongoose.Types.ObjectId(userId) }),
-          ...dateMatch
-        }
+          clientId: new mongoose.Types.ObjectId(clientId),
+          ...(role !== "Salesman" && {
+            userId: new mongoose.Types.ObjectId(userId),
+          }),
+          ...(role !== "Customer" && {
+            userId: new mongoose.Types.ObjectId(userId),
+          }),
+          ...dateMatch,
+        },
       },
-     
+
       // Step 2: Unwind items array to process each item separately
       { $unwind: "$items" },
-     
+
       // Step 3: Group by productId and calculate totals
       {
         $group: {
           _id: "$items.productId",
           totalQuantity: { $sum: "$items.quantity" },
           totalSales: { $sum: "$items.total" },
-          totalOrders: { $sum: 1 }
-        }
+          totalOrders: { $sum: 1 },
+        },
       },
-     
+
       // Step 4: Sort by totalSales (descending) for revenue-based ranking
       { $sort: { totalSales: -1 } },
-     
+
       // Step 5: Limit results
       { $limit: parseInt(limit) },
-     
+
       // Step 6: Lookup stockitems (first level)
       {
         $lookup: {
@@ -1054,15 +1243,15 @@ exports.getTopProducts = async (req, res) => {
           as: "productDetails",
         },
       },
-     
+
       // Step 7: Unwind product details
       {
         $unwind: {
           path: "$productDetails",
-          preserveNullAndEmptyArrays: true
-        }
+          preserveNullAndEmptyArrays: true,
+        },
       },
-     
+
       // Step 8: Lookup products collection (nested productId) - keeping as is, though may not be used
       {
         $lookup: {
@@ -1072,15 +1261,15 @@ exports.getTopProducts = async (req, res) => {
           as: "nestedProductDetails",
         },
       },
-     
+
       // Step 9: Unwind nested product details
       {
         $unwind: {
           path: "$nestedProductDetails",
-          preserveNullAndEmptyArrays: true
-        }
+          preserveNullAndEmptyArrays: true,
+        },
       },
-     
+
       // Step 10: Project final structure with limited fields
       {
         $project: {
@@ -1107,12 +1296,12 @@ exports.getTopProducts = async (req, res) => {
               description: "$nestedProductDetails.remarks",
               image: "$nestedProductDetails.images",
               // add jo bhi fields chahiye
-            }
-          }
-        }
-      }
+            },
+          },
+        },
+      },
     ]);
-    console.log('Top Products:', JSON.stringify(topProducts, null, 2));
+    console.log("Top Products:", JSON.stringify(topProducts, null, 2));
     res.json({
       success: true,
       data: topProducts,
@@ -1120,25 +1309,30 @@ exports.getTopProducts = async (req, res) => {
       period: period,
       dateRange: {
         start: startDate.toISOString(),
-        end: endDate.toISOString()
-      }
+        end: endDate.toISOString(),
+      },
     });
   } catch (err) {
-    console.error('Aggregation error:', err);
+    console.error("Aggregation error:", err);
     res.status(500).json({
       success: false,
-      message: err.message
+      message: err.message,
     });
   }
 };
-
 
 exports.getTotalPayments = async (req, res) => {
   try {
     const { companyId, clientId } = req.query;
 
     const data = await Order.aggregate([
-      { $match: { companyId: new mongoose.Types.ObjectId(companyId), clientId: new mongoose.Types.ObjectId(clientId), "payment.status": "completed" } },
+      {
+        $match: {
+          companyId: new mongoose.Types.ObjectId(companyId),
+          clientId: new mongoose.Types.ObjectId(clientId),
+          "payment.status": "completed",
+        },
+      },
       { $group: { _id: null, totalPayment: { $sum: "$payment.amountPaid" } } },
     ]);
 
@@ -1148,17 +1342,13 @@ exports.getTotalPayments = async (req, res) => {
   }
 };
 
-
-
-
-
 /**
  * GET /api/orders/salesman-personal-stats/:companyId
  * Query: ?period=day|week|month|year
  */
 exports.getSalesmanPersonalStats = asyncHandler(async (req, res) => {
   const { companyId } = req.params;
-  const { period = "month" } = req.query ;
+  const { period = "month" } = req.query;
   const userId = req.user?.id;
 
   // ---------- 1. Validation ----------
@@ -1173,11 +1363,23 @@ exports.getSalesmanPersonalStats = asyncHandler(async (req, res) => {
   const now = new Date();
 
   // Today
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfToday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate()
+  );
 
   // Last month
   const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+  const endOfLastMonth = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    0,
+    23,
+    59,
+    59,
+    999
+  );
 
   // Period filter (day/week/month/year)
   let periodFilter = {};
@@ -1255,9 +1457,15 @@ exports.getSalesmanPersonalStats = asyncHandler(async (req, res) => {
   ]);
 
   // ---------- 4. Normalise results ----------
-  const periodStats = periodAgg[0] || { totalSales: 0, totalOrders: 0, totalItems: 0 };
+  const periodStats = periodAgg[0] || {
+    totalSales: 0,
+    totalOrders: 0,
+    totalItems: 0,
+  };
   const averageOrderValue =
-    periodStats.totalOrders > 0 ? periodStats.totalSales / periodStats.totalOrders : 0;
+    periodStats.totalOrders > 0
+      ? periodStats.totalSales / periodStats.totalOrders
+      : 0;
 
   const responseData = {
     // Period-specific
@@ -1273,9 +1481,15 @@ exports.getSalesmanPersonalStats = asyncHandler(async (req, res) => {
   };
 
   // ---------- 5. Send response ----------
-  res.status(200).json(
-    new ApiResponse(200, responseData, "Salesman personal stats fetched successfully")
-  );
+  res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        responseData,
+        "Salesman personal stats fetched successfully"
+      )
+    );
 });
 
 exports.getMyOrders = async (req, res) => {
@@ -1283,17 +1497,17 @@ exports.getMyOrders = async (req, res) => {
     const { companyId, customerId } = req.params;
     const role = req.user?.role;
 
-    if (role === 'customer' && req.user.customerId !== customerId) {
-      return res.status(403).json({ success: false, message: 'Unauthorized' });
+    if (role === "customer" && req.user.customerId !== customerId) {
+      return res.status(403).json({ success: false, message: "Unauthorized" });
     }
 
-    const filter = { 
+    const filter = {
       companyId: new mongoose.Types.ObjectId(companyId),
-      customerId: new mongoose.Types.ObjectId(customerId)
+      customerId: new mongoose.Types.ObjectId(customerId),
     };
 
     const orders = await Order.find(filter)
-      .populate('items.productId', 'ItemName')
+      .populate("items.productId", "ItemName")
       .sort({ createdAt: -1 })
       .limit(10);
 
@@ -1308,12 +1522,14 @@ exports.getProducts = async (req, res) => {
     const { companyId } = req.params;
     const role = req.user?.role;
 
-    if (role !== 'customer' && role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Unauthorized' });
+    if (role !== "customer" && role !== "admin") {
+      return res.status(403).json({ success: false, message: "Unauthorized" });
     }
 
-    const products = await StockItem.find({ companyId: new mongoose.Types.ObjectId(companyId), status: 'active' })
-      .select('ItemName ItemCode Price MRP Group Category _id');
+    const products = await StockItem.find({
+      companyId: new mongoose.Types.ObjectId(companyId),
+      status: "active",
+    }).select("ItemName ItemCode Price MRP Group Category _id");
 
     res.json({ success: true, data: products });
   } catch (err) {
@@ -1322,7 +1538,7 @@ exports.getProducts = async (req, res) => {
 };
 
 exports.getCustomerSalesStats = asyncHandler(async (req, res) => {
-  const { companyId, customerId } = req.query 
+  const { companyId, customerId } = req.query;
 
   // ---------- 1. Validation ----------
   if (!companyId || !customerId) {
@@ -1343,11 +1559,7 @@ exports.getCustomerSalesStats = asyncHandler(async (req, res) => {
   );
 
   // Last month – first day 00:00:00 → last day 23:59:59.999
-  const startOfLastMonth = new Date(
-    now.getFullYear(),
-    now.getMonth() - 1,
-    1
-  );
+  const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const endOfLastMonth = new Date(
     now.getFullYear(),
     now.getMonth(),
@@ -1431,7 +1643,6 @@ exports.getCustomerSalesStats = asyncHandler(async (req, res) => {
     );
 });
 
-
 // controllers/orderController.ts
 exports.getSalesTrend = asyncHandler(async (req, res) => {
   const { companyId } = req.params;
@@ -1470,7 +1681,32 @@ exports.getSalesTrend = asyncHandler(async (req, res) => {
         _id: 0,
         name: {
           $concat: [
-            { $substr: [{ $arrayElemAt: [["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"], "$_id.month"] }, 0, 3] },
+            {
+              $substr: [
+                {
+                  $arrayElemAt: [
+                    [
+                      "",
+                      "Jan",
+                      "Feb",
+                      "Mar",
+                      "Apr",
+                      "May",
+                      "Jun",
+                      "Jul",
+                      "Aug",
+                      "Sep",
+                      "Oct",
+                      "Nov",
+                      "Dec",
+                    ],
+                    "$_id.month",
+                  ],
+                },
+                0,
+                3,
+              ],
+            },
             " ",
             { $toString: "$_id.year" },
           ],
@@ -1484,12 +1720,27 @@ exports.getSalesTrend = asyncHandler(async (req, res) => {
   const result = await Order.aggregate(pipeline);
 
   // Fill missing months with 0
-  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const monthNames = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
   const filledData = [];
   let current = new Date(twelveMonthsAgo);
 
   for (let i = 0; i < 12; i++) {
-    const monthKey = `${monthNames[current.getMonth()]} ${current.getFullYear()}`;
+    const monthKey = `${
+      monthNames[current.getMonth()]
+    } ${current.getFullYear()}`;
     const existing = result.find((r) => r.name === monthKey);
     filledData.push(existing || { name: monthKey, sales: 0, orders: 0 });
     current.setMonth(current.getMonth() + 1);
@@ -1500,5 +1751,3 @@ exports.getSalesTrend = asyncHandler(async (req, res) => {
     data: filledData,
   });
 });
-
-

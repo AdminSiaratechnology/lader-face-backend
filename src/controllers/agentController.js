@@ -448,6 +448,33 @@ exports.getAgentsByCompany = asyncHandler(async (req, res) => {
       .limit(perPage),
     Agent.countDocuments(filter),
   ]);
+ const [
+    gstRegistered,
+    activeAgents,
+    msmeRegistered
+  ] = await Promise.all([
+    // GST registered
+    Agent.countDocuments({
+      clientId,
+      company: companyId,
+      status: { $ne: "delete" },
+      gstNumber: { $exists: true, $ne: "" }
+    }),
+
+    // Active agents
+    Agent.countDocuments({
+      clientId,
+      company: companyId,
+      status: "active"
+    }),
+
+    Agent.countDocuments({
+      clientId,
+      company: companyId,
+      status: { $ne: "delete" },
+      msmeRegistration: { $exists: true, $ne: "" }
+    })
+  ]);
 
   res.status(200).json(
     new ApiResponse(
@@ -460,6 +487,11 @@ exports.getAgentsByCompany = asyncHandler(async (req, res) => {
           limit: perPage,
           totalPages: Math.ceil(total / perPage),
         },
+        counts: {
+          gstRegistered,
+          activeAgents,
+          msmeRegistered
+        }
       },
       agents.length ? "Agents fetched successfully" : "No agents found"
     )

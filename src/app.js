@@ -54,7 +54,7 @@ app.use(express.urlencoded({limit: '50mb', extended: true }));
 
 app.get("/",(req,res)=>{
 
-    res.send("API is working 15/11")
+    res.send("API is working 18/11")
 
 
 })
@@ -76,12 +76,12 @@ app.use("/api/units", unitRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/user-management", userManagementRoute);
 app.use("/api/customers",customerRoute)
-app.use("/api/agent/vendors",vendorRoute)
-app.use("/api/agent/agents",agentRoute)
-app.use("/api/agent/ledgers",ladgerRoute)
+app.use("/api/vendors",vendorRoute)
+app.use("/api/agents",agentRoute)
+app.use("/api/ledgers",ladgerRoute)
 app.use("/api/stock-items",stockItemRoutes)
 app.use("/api/auditLog",auditLogRoutes)
-app.use("/api/contactUs",contactRoute)
+// app.use("/api/contactUs",contactRoute)
 app.use("/api/order",orderRoute)
 app.use("/api/cart",cartRoute)
 app.use("/api/payment",paymentRoute)

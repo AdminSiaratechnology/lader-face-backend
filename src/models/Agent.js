@@ -3,7 +3,7 @@ const auditLogSchema = require("../middlewares/auditLogSchema");
 
 // Bank schema
 const BankSchema = new mongoose.Schema({
-   accountHolderName: String,
+  accountHolderName: String,
   accountNumber: String,
   ifscCode: String,
   swiftCode: String,
@@ -22,8 +22,16 @@ const RegistrationDocumentSchema = new mongoose.Schema({
 // Agent schema
 const AgentSchema = new mongoose.Schema(
   {
-    company: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true }, // reference to company
-    clientId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    company: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Company",
+      required: true,
+    }, // reference to company
+    clientId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
 
     agentType: { type: String, required: true },
     code: { type: String, required: true, unique: true },
@@ -35,14 +43,17 @@ const AgentSchema = new mongoose.Schema(
     supervisor: { type: String },
     agentStatus: { type: String },
     experienceLevel: { type: String },
-     status: { type: String, enum: [ "active", "inactive", "delete"], default: "active" },
-
+    status: {
+      type: String,
+      enum: ["active", "inactive", "delete"],
+      default: "active",
+    },
 
     contactPerson: { type: String },
     designation: { type: String },
     phoneNumber: { type: String },
     mobileNumber: { type: String },
-    emailAddress: { type: String ,required:true},
+    emailAddress: { type: String, required: true },
     faxNumber: { type: String },
 
     addressLine1: { type: String },
@@ -65,11 +76,16 @@ const AgentSchema = new mongoose.Schema(
     tanNumber: { type: String },
     taxCategory: { type: String },
     taxTemplate: { type: String },
-    msmeRegistration: {type: String },
+    msmeRegistration: { type: String },
     withholdingTaxCategory: { type: String },
     isTaxExempt: { type: Boolean, default: false },
     reverseCharge: { type: Boolean, default: false },
-
+    source: {
+      type: String,
+      enum: ["website", "mobile_app", "pos", "api"],
+      default: "website",
+      index: true,
+    },
     bankName: { type: String },
     branchName: { type: String },
     accountNumber: { type: String },
@@ -99,7 +115,7 @@ const AgentSchema = new mongoose.Schema(
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
 
     performanceRating: { type: Number, default: 0 },
-    activeContracts: { type: Number, default: 0 }
+    activeContracts: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

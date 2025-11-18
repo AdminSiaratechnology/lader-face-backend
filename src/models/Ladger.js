@@ -62,7 +62,12 @@ const LedgerSchema = new mongoose.Schema(
     zipCode: { type: String },
     country: { type: String },
     website: { type: String },
-
+    source: {
+      type: String,
+      enum: ["website", "mobile_app", "pos", "api"],
+      default: "website",
+      index: true,
+    },
     currency: { type: String },
 
     taxId: { type: String },

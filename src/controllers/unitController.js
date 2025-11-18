@@ -369,8 +369,7 @@ exports.getUnits = asyncHandler(async (req, res) => {
   );
 });
 exports.getUnitsByCompanyId = asyncHandler(async (req, res) => {
-    const { companyId, search, status, sortBy, sortOrder, limit = 10, page = 1 } = req.query;
-   
+  const { companyId, search, status, sortBy, sortOrder, limit = 10, page = 1 } = req.query;
 
   const userId = req.user.id;
   const user = await User.findById(userId);
@@ -379,6 +378,7 @@ exports.getUnitsByCompanyId = asyncHandler(async (req, res) => {
   let clientId = user.clientID;
 
   const filter = {};
+
   if (clientId) filter.clientId = clientId;
   if (companyId) filter.companyId = companyId;
   if (status && status !== "") filter.status = status;
@@ -401,7 +401,20 @@ exports.getUnitsByCompanyId = asyncHandler(async (req, res) => {
   const sortDirection = sortOrder === "desc" ? -1 : 1;
   const sortOptions = { [sortField]: sortDirection };
 
-  // Fetch records with pagination
+  // -----------------------------------------
+  // ⭐ GET COUNTS (simple, compound, active)
+  // -----------------------------------------
+  const countFilter = { ...filter }; // without pagination
+
+  const [simpleCount, compoundCount, activeCount] = await Promise.all([
+    Unit.countDocuments({ ...countFilter, type: "simple" }),
+    Unit.countDocuments({ ...countFilter, type: "compound" }),
+    Unit.countDocuments({ ...countFilter, status: "active" }),
+  ]);
+
+  // -----------------------------------------
+  // Fetch paginated units
+  // -----------------------------------------
   const [units, total] = await Promise.all([
     Unit.find(filter).sort(sortOptions).skip(skip).limit(perPage),
     Unit.countDocuments(filter),
@@ -412,6 +425,12 @@ exports.getUnitsByCompanyId = asyncHandler(async (req, res) => {
       200,
       {
         units,
+        counts: {
+          totalUnits: total,
+          simpleUnits: simpleCount,
+          compoundUnits: compoundCount,
+          activeUnits: activeCount,
+        },
         pagination: {
           total,
           page: currentPage,
@@ -423,4 +442,5 @@ exports.getUnitsByCompanyId = asyncHandler(async (req, res) => {
     )
   );
 });
+
 

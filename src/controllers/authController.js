@@ -11,10 +11,14 @@ const Customer = require("../models/Customer");
 const sendEmail = require("../utils/sendEmail");
 
 // 🔐 Token Generator
-const signToken = (userId, clientID, role) => {
-  return jwt.sign({ id: userId, clientID, role }, process.env.JWT_SECRET, {
-    expiresIn: "7d",
-  });
+const signToken = (userId, clientID, role, deviceId) => {
+  return jwt.sign(
+    { id: userId, clientID, role, deviceId },
+    process.env.JWT_SECRET,
+    {
+      expiresIn: "7d",
+    }
+  );
 };
 
 // ✅ REGISTER USER
@@ -459,10 +463,13 @@ exports.deleteUser = asyncHandler(async (req, res) => {
 
 // ✅ LOGIN USER
 exports.login = asyncHandler(async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, deviceId } = req.body;
 
   if (!email || !password)
     throw new ApiError(400, "Email and password are required");
+  if (!deviceId) {
+    throw new ApiError(400, "Device ID is required");
+  }
   const user = await User.findOne({ email: email.toLowerCase() })
     .populate({
       path: "access.company",
@@ -478,7 +485,7 @@ exports.login = asyncHandler(async (req, res) => {
   const isMatch = await bcrypt.compare(password, user.password);
   if (!isMatch) throw new ApiError(401, "Invalid credentials");
 
-  const token = signToken(user._id, user.clientID, user.role);
+  const token = signToken(user._id, user.clientID, user.role, deviceId);
 
   const safeUser = user.toObject();
   delete safeUser.password;
@@ -490,6 +497,8 @@ exports.login = asyncHandler(async (req, res) => {
   // Update last login + log it
   const now = new Date();
 
+  user.currentDeviceId = deviceId;
+  user.currentToken = token;
   user.lastLogin = now;
   user.loginHistory.push(now);
   user.auditLogs.push({
@@ -574,4 +583,25 @@ exports.login = asyncHandler(async (req, res) => {
     .json(
       new ApiResponse(200, { token, user: safeUser, stats }, "Login successful")
     );
+});
+exports.logout = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  const user = await User.findById(id);
+  if (!user) throw new ApiError(404, "User not found");
+
+  user.currentToken = null;
+  user.currentDeviceId = null;
+
+  user.auditLogs.push({
+    action: "logout",
+    performedBy: new mongoose.Types.ObjectId(userId),
+    timestamp: new Date(),
+    details: "User logged out",
+  });
+  await user.save();
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, null, "User logged out successfully"));
 });

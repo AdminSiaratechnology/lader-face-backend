@@ -670,6 +670,32 @@ exports.getVendorsByCompany = asyncHandler(async (req, res) => {
     Vendor.find(filter).select("-auditLogs").sort(sortOptions).skip(skip).limit(perPage),
     Vendor.countDocuments(filter),
   ]);
+    const [
+      gstRegistered,
+      msmeRegistered,
+      activeVendors
+    ] = await Promise.all([
+      Vendor.countDocuments({
+        clientId: clientID,
+        company: companyId,
+        status: { $ne: "delete" },
+        gstNumber: { $exists: true, $ne: "" }
+      }),
+  
+      Vendor.countDocuments({
+        clientId: clientID,
+        company: companyId,
+        status: { $ne: "delete" },
+        msmeRegistration: { $exists: true, $ne: "" }
+      }),
+  
+      Vendor.countDocuments({
+        clientId: clientID,
+        company: companyId,
+        status: "active"
+      })
+    ]);
+  
 console.log(vendors)
   res.status(200).json(
     new ApiResponse(
@@ -682,6 +708,11 @@ console.log(vendors)
           limit: perPage,
           totalPages: Math.ceil(total / perPage),
         },
+        counts: {
+          gstRegistered,
+          msmeRegistered,
+          activeVendors
+        }
       },
       vendors.length ? "Vendors fetched successfully" : "No vendors found"
     )

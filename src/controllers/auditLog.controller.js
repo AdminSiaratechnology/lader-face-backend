@@ -295,3 +295,89 @@ exports.restoreRecord = async (req, res) => {
     });
   }
 };
+
+exports.getAllAuditLogs = async (req, res) => {
+  try {
+    const { search = "", role, action, startDate, endDate, page = 1, limit = 20 } = req.query;
+
+    const skip = (page - 1) * limit;
+
+    const match = {};
+
+    // Filter by action (create, update, delete, login)
+    if (action) {
+      match["auditLogs.action"] = action;
+    }
+
+    // Date filters
+    if (startDate && endDate) {
+      match["auditLogs.timestamp"] = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate)
+      };
+    }
+
+    // Flatten logs using aggregation
+    const logs = await User.aggregate([
+      { $unwind: "$auditLogs" },
+
+      // Global filtering
+      { $match: match },
+
+      // If searching by user name/email
+      {
+        $lookup: {
+          from: "users",
+          localField: "auditLogs.performedBy",
+          foreignField: "_id",
+          as: "performedByUser"
+        }
+      },
+      { $unwind: "$performedByUser" },
+
+      // Filter by role (Partner, Client, etc.)
+      role ? { $match: { "performedByUser.role": role } } : { $match: {} },
+
+      // Search by name / email
+      search
+        ? {
+            $match: {
+              $or: [
+                { "performedByUser.name": { $regex: search, $options: "i" } },
+                { "performedByUser.email": { $regex: search, $options: "i" } }
+              ]
+            }
+          }
+        : { $match: {} },
+
+      // Final projection
+      {
+        $project: {
+          _id: 0,
+          moduleUserId: "$_id", // the user on whom action occurred
+          action: "$auditLogs.action",
+          timestamp: "$auditLogs.timestamp",
+          details: "$auditLogs.details",
+          changes: "$auditLogs.changes",
+          performedBy: {
+            _id: "$performedByUser._id",
+            name: "$performedByUser.name",
+            email: "$performedByUser.email",
+            role: "$performedByUser.role",
+            subRole: "$performedByUser.subRole"
+          }
+        }
+      },
+
+      { $sort: { timestamp: -1 } },
+
+      { $skip: skip },
+      { $limit: parseInt(limit) }
+    ]);
+
+    res.json({ success: true, logs });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};

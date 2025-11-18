@@ -541,7 +541,6 @@ exports.listProducts = asyncHandler(async (req, res) => {
 });
 // LIST / SEARCH products
 exports.listProductsByCompanyId = asyncHandler(async (req, res) => {
-  console.log("hiiiii");
   const {
     search = "",
     status = "",
@@ -549,11 +548,11 @@ exports.listProductsByCompanyId = asyncHandler(async (req, res) => {
     sortOrder = "desc",
     page = 1,
     limit = 25,
-
     clientId,
     stockGroup,
     stockCategory,
   } = req.query;
+
   const { companyId } = req.params;
   if (!companyId) throw new ApiError(400, "Company ID is required");
 
@@ -564,10 +563,10 @@ exports.listProductsByCompanyId = asyncHandler(async (req, res) => {
   if (stockGroup) filter.stockGroup = stockGroup;
   if (stockCategory) filter.stockCategory = stockCategory;
 
-  // ✅ Status filter (default: exclude Delete)
+  // status filter
   filter.status = status && status.trim() !== "" ? status : { $ne: "delete" };
 
-  // 🔍 Search filter
+  // search filter
   if (search && search.trim() !== "") {
     filter.$or = [
       { name: { $regex: search, $options: "i" } },
@@ -576,16 +575,37 @@ exports.listProductsByCompanyId = asyncHandler(async (req, res) => {
     ];
   }
 
-  // 📑 Pagination setup
+  // pagination
   const perPage = parseInt(limit, 10);
   const currentPage = Math.max(parseInt(page, 10), 1);
   const skip = (currentPage - 1) * perPage;
 
-  // ↕️ Sorting
+  // sorting
   const sortDirection = sortOrder === "asc" ? 1 : -1;
   const sortOptions = { [sortBy]: sortDirection };
 
-  // ✅ Fetch data & total count in parallel
+  // ---------------------------------------------
+  // ⭐ COUNTS (Using same filter, but without pagination)
+  // ---------------------------------------------
+  const baseCountFilter = { ...filter };
+
+  const [activeCount, batchCount, taxableCount] = await Promise.all([
+    // Active products
+    Product.countDocuments({ ...baseCountFilter, status: "active" }),
+
+    // Batch-managed products (correct field = batch)
+    Product.countDocuments({ ...baseCountFilter, batch: true }),
+
+    // Taxable products (correct field = taxConfiguration.applicable)
+    Product.countDocuments({
+      ...baseCountFilter,
+      "taxConfiguration.applicable": true,
+    }),
+  ]);
+
+  // ---------------------------------------------
+  // Fetch products with pagination
+  // ---------------------------------------------
   const [items, total] = await Promise.all([
     Product.find(filter)
       .select("-auditLogs")
@@ -596,6 +616,7 @@ exports.listProductsByCompanyId = asyncHandler(async (req, res) => {
       .skip(skip)
       .limit(perPage)
       .sort(sortOptions),
+
     Product.countDocuments(filter),
   ]);
 
@@ -604,6 +625,12 @@ exports.listProductsByCompanyId = asyncHandler(async (req, res) => {
       200,
       {
         items,
+        counts: {
+          activeProducts: activeCount,
+          batchManagedProducts: batchCount,
+          taxableProducts: taxableCount,
+          totalProducts: total,
+        },
         pagination: {
           total,
           page: currentPage,
@@ -611,10 +638,13 @@ exports.listProductsByCompanyId = asyncHandler(async (req, res) => {
           totalPages: Math.ceil(total / perPage),
         },
       },
-      items.length ? "Products fetched successfully" : "No products found"
+      items.length
+        ? "Products fetched successfully"
+        : "No products found"
     )
   );
 });
+
 
 exports.createBulkProducts = asyncHandler(async (req, res) => {
   const { products } = req.body;

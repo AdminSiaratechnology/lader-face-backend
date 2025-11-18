@@ -32,7 +32,7 @@ const accessSchema = new mongoose.Schema(
 );
 const limitHistorySchema = new mongoose.Schema(
   {
-    performedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, 
+    performedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     requestedTo: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, // NEW FIELD
     requestedLimit: { type: Number },
     initialLimit: { type: Number },
@@ -135,6 +135,8 @@ const userSchema = new mongoose.Schema(
     contactPerson: { type: String },
     code: { type: String },
     multiplePhones: [{ type: String }],
+    currentDeviceId: { type: String, default: null },
+    currentToken: { type: String, default: null },
   },
   { timestamps: true }
 );
