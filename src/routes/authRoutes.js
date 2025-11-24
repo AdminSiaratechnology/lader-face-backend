@@ -9,7 +9,13 @@ router.post('/register', authMiddleware,upload.fields([{ name: "documents", maxC
 router.post('/registerInside',authMiddleware, authController.registerInside);
 router.post('/login', authController.login);
 router.patch("/updateUser/:id",authMiddleware, upload.fields([{ name: "documents", maxCount: 10 }]), authController.updateUser)
-router.delete("/deleteUser/:id",authMiddleware,authController.deleteUser)
-router.get("/logout/:id", authController.logout);
+router.delete("/deleteUser/:id",authMiddleware,authController.deleteUser);
+router.put("/logout/:id", authController.logout);
+router.post("/send-otp", authController.sendResetOTP);
+router.post("/verify-otp",authController.verifyOTP );
+// reset password (requires verified OTP)_
+router.post("/reset-password", authController.resetPassword);
+
+
 module.exports = router;
 

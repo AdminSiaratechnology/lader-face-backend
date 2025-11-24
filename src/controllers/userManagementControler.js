@@ -329,6 +329,7 @@ exports.getPartners = asyncHandler(async (req, res) => {
     matchStage.$or = [
       { name: { $regex: search, $options: "i" } },
       { email: { $regex: search, $options: "i" } },
+      { code: {$regex: search, $options: "i" }}
     ];
   }
 
@@ -453,6 +454,7 @@ exports.getClients = asyncHandler(async (req, res) => {
     matchStage.$or = [
       { name: { $regex: search, $options: "i" } },
       { email: { $regex: search, $options: "i" } },
+      { code: {$regex: search, $options: "i" }}
     ];
   }
   console.log(matchStage);
@@ -605,6 +607,7 @@ exports.getSubRoleUsers = asyncHandler(async (req, res) => {
     matchStage.$or = [
       { name: { $regex: search, $options: "i" } },
       { email: { $regex: search, $options: "i" } },
+      { code: {$regex: search, $options: "i" }}
     ];
   }
 
@@ -861,7 +864,7 @@ exports.getPendingLimitRequests = asyncHandler(async (req, res) => {
           requestedTo: adminId,
         },
       },
-    }).select("name limit limitHistory");
+    }).select("name limit limitHistory email");
 
     return res.status(200).json({
       success: true,
@@ -899,6 +902,125 @@ exports.getAllPartners = asyncHandler(async (req, res) => {
       200,
       partners,
       "All Partners fetched successfully"
+    )
+  );
+});
+
+exports.getSubPartners = asyncHandler(async (req, res) => {
+  const {
+    search = "",
+    status = "",
+    sortBy = "createdAt",
+    sortOrder = "desc",
+    page = 1,
+    limit = 10,
+  } = req.query;
+
+  const perPage = parseInt(limit, 10);
+  const currentPage = Math.max(parseInt(page, 10), 1);
+  const skip = (currentPage - 1) * perPage;
+  const sortField = sortBy === "name" ? "name" : "createdAt";
+  const sortOrderValue = sortOrder === "desc" ? -1 : 1;
+
+  // Match filters
+  const matchStage = { role: "SubPartner", status: { $ne: "delete" } };
+
+  if (search?.trim()) {
+    matchStage.$or = [
+      { name: { $regex: search, $options: "i" } },
+      { email: { $regex: search, $options: "i" } },
+      { code: {$regex: search, $options: "i" }}
+    ];
+  }
+
+  if (status) matchStage.status = status;
+
+  // Fetch paginated data + counts
+  const [partners, total] = await Promise.all([
+    User.aggregate([
+      { $match: matchStage },
+      { $sort: { [sortField]: sortOrderValue } },
+      { $skip: skip },
+      { $limit: perPage },
+
+      // 1️⃣ GET ALL CLIENTS CREATED BY THIS PARTNER
+      {
+        $lookup: {
+          from: "users",
+          let: { subPartnerId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ["$parent", "$$subPartnerId"] },
+                role: "Client",
+                status: { $ne: "delete" },
+              },
+            },
+          ],
+          as: "clientsList",
+        },
+      },
+
+      // 2️⃣ COUNT CLIENTS
+      {
+        $addFields: {
+          totalClients: { $size: "$clientsList" },
+        },
+      },
+
+      // 3️⃣ GET ALL USERS OF THESE CLIENTS
+      {
+        $lookup: {
+          from: "users",
+          let: { clientIds: "$clientsList._id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $in: ["$clientID", "$$clientIds"] },
+                status: { $ne: "delete" },
+              },
+            },
+          ],
+          as: "clientUsers",
+        },
+      },
+
+      // 4️⃣ COUNT ALL USERS UNDER THOSE CLIENTS
+      {
+        $addFields: {
+          totalUsers: { $size: "$clientUsers" },
+        },
+      },
+
+      // 5️⃣ CLEAN OUTPUT
+      {
+        $project: {
+          password: 0,
+          __v: 0,
+          clientsList: 0,
+          clientUsers: 0,
+        },
+      },
+    ]),
+
+    User.countDocuments(matchStage),
+  ]);
+
+  const totalPages = Math.ceil(total / perPage);
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        data: partners,
+        pagination: {
+          total,
+          totalPages,
+          currentPage,
+          perPage,
+        },
+      },
+      "Sub Partners fetched successfully"
     )
   );
 });

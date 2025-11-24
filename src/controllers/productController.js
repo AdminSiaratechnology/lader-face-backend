@@ -14,6 +14,7 @@ const ApiResponse = require("../utils/apiResponse");
 const { generate6DigitUniqueId } = require("../utils/generate6DigitUniqueId");
 const mongoose = require("mongoose");
 const { createAuditLog } = require("../utils/createAuditLog");
+const StockItem =require("../models/stockItem.mode")
 
 // ✅ Batch insert helper
 const insertInBatches = async (data, batchSize = 1000) => {
@@ -353,6 +354,21 @@ exports.updateProduct = asyncHandler(async (req, res) => {
   // ✅ Apply updates
   Object.assign(product, req.body);
 
+  // ⭐ Save old tax history only when taxConfiguration is changed
+if (
+req.body.taxConfiguration &&
+JSON.stringify(product.taxConfiguration) !== JSON.stringify(req.body.taxConfiguration)
+) {
+if (!product.taxConfigurationHistory) {
+product.taxConfigurationHistory = [];
+}
+product.taxConfigurationHistory.push({
+previous: product.taxConfiguration,
+updatedBy: req.user?.id || null,
+updatedAt: new Date()
+});
+}
+
   // ✅ Push audit log
   if (!product.auditLogs) product.auditLogs = [];
   product.auditLogs.push({
@@ -432,6 +448,8 @@ exports.deleteProduct = asyncHandler(async (req, res) => {
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
   }
+
+  await StockItem.updateMany({clientId: clientID, productId:id}, ({status:"delete"}))
   await createAuditLog({
     module: "Product",
     action: "delete",
@@ -608,7 +626,7 @@ exports.listProductsByCompanyId = asyncHandler(async (req, res) => {
   // ---------------------------------------------
   const [items, total] = await Promise.all([
     Product.find(filter)
-      .select("-auditLogs")
+      .select("-auditLogs -taxConfigurationHistory")
       .populate("stockGroup", "name")
       .populate("stockCategory", "name")
       .populate("unit", "name symbol")

@@ -5,7 +5,8 @@ const ApiError = require("../utils/apiError");
 const { default: mongoose } = require("mongoose");
 const User = require("../models/User");
 const { generateUniqueId } = require("../utils/generate16DigiId");
-const { createAuditLog } = require("../utils/createAuditLog");
+// const { createAuditLog } = require("../utils/createAuditLog");
+const  createAuditLog  = require("../utils/createAuditLogMain");
 
 // Generate unique 18-digit code using timestamp and index
 const generateUniqueIdBulk = (index) => {

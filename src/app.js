@@ -22,6 +22,7 @@ const contactRoute=require("./routes/contactFormRoutes")
 const orderRoute =require("./routes/order.routes")
 const cartRoute =require("./routes/cartRoutes")
 const paymentRoute =require("./routes/paymentRoutes")
+const projectRoute = require("./routes/projectRoutes")
 const app = express();
 app.use(cors());
 // app.use(
@@ -66,6 +67,7 @@ app.get("/",(req,res)=>{
 
 app.use('/api/auth', authRoutes);
 app.use("/api/contactUs",contactRoute)
+app.use("/api/project", projectRoute);
 app.use(authMiddleware);
 app.use('/api/company', companyRoutes);
 app.use('/api/salesman', salesmanRoutes);
