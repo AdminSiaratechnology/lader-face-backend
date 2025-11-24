@@ -18,5 +18,6 @@ router.post("/request-limit",upload.array("supportingDocuments"), userManagement
 router.get("/limit", userManagement.getPendingLimitRequests)
 router.patch("/limit/:userId", userManagement.approveLimitRequest)
 router.get("/partners/all", userManagement.getAllPartners);
+router.get("/subPartners", userManagement.getSubPartners);
 
 module.exports = router;

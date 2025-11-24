@@ -451,7 +451,8 @@ exports.getAgentsByCompany = asyncHandler(async (req, res) => {
  const [
     gstRegistered,
     activeAgents,
-    msmeRegistered
+    msmeRegistered,
+    vatRegistered
   ] = await Promise.all([
     // GST registered
     Agent.countDocuments({
@@ -473,7 +474,14 @@ exports.getAgentsByCompany = asyncHandler(async (req, res) => {
       company: companyId,
       status: { $ne: "delete" },
       msmeRegistration: { $exists: true, $ne: "" }
-    })
+    }),
+
+    Agent.countDocuments({
+      clientId,
+      company: companyId,
+      status: { $ne: "delete" },
+      vatNumber: { $exists: true, $ne: "" }
+    }),
   ]);
 
   res.status(200).json(
@@ -490,7 +498,8 @@ exports.getAgentsByCompany = asyncHandler(async (req, res) => {
         counts: {
           gstRegistered,
           activeAgents,
-          msmeRegistered
+          msmeRegistered,
+          vatRegistered
         }
       },
       agents.length ? "Agents fetched successfully" : "No agents found"

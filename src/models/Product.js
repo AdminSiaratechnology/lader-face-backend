@@ -18,6 +18,15 @@ const TaxConfigurationSchema = new Schema(
   { _id: false }
 );
 
+const TaxConfigurationHistorySchema = new Schema(
+ {
+ previous: { type: Object }, // old tax data
+ updatedBy: { type: Schema.Types.ObjectId, ref: "User" },
+ updatedAt: { type: Date, default: Date.now }
+},
+{ _id: false }
+);
+
 // OpeningQuantity sub-schema
 const OpeningQuantitySchema = new Schema(
   {
@@ -66,6 +75,9 @@ const ProductSchema = new Schema(
     defaultSupplier: { type: String },
     minimumRate: { type: Number },
     maximumRate: { type: Number },
+
+    taxConfigurationHistory: [TaxConfigurationHistorySchema],
+    priceIncludesTax: { type: Boolean, default: false },
 
     defaultGodown: { type: Schema.Types.ObjectId, ref: "Godown" },
     productType: { type: String },

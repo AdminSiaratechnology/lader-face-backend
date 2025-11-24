@@ -8,7 +8,8 @@ const { generate6DigitUniqueId } = require("../utils/generate6DigitUniqueId");
 
 const puppeteer = require("puppeteer");
 const mongoose = require("mongoose");
-const { createAuditLog } = require("../utils/createAuditLog");
+// const { createAuditLog } = require("../utils/createAuditLog");
+const createAuditLog  = require("../utils/createAuditLogMain");
 const processRegistrationDocs = require("../utils/processRegistrationDocs");
 
 const generateUniqueCodeInMemory = (existingSet) => {
@@ -224,7 +225,7 @@ exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
 
   const { search, status, sortBy, sortOrder, limit = 3, page = 1 } = req.query;
 
-  let filter = { client: clientId, isDeleted: false };
+  let filter = { client: clientId, status: { $ne: "delete" } };
 
   if (status && status !== "") {
     filter.status = status;
@@ -264,7 +265,7 @@ exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
   ]);
 
   // 🔥 NEW: Extra counts
-  const [gstRegistered, msmeRegistered, activeCompanies] = await Promise.all([
+  const [gstRegistered, msmeRegistered, activeCompanies, vatRegistered] = await Promise.all([
     Company.countDocuments({
       client: clientId,
       isDeleted: false,
@@ -279,6 +280,11 @@ exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
       client: clientId,
       isDeleted: false,
       status: "active",
+    }),
+    Company.countDocuments({
+      client: clientId,
+      isDeleted: false,
+      vatNumber: { $exists: true, $ne: "" },
     }),
   ]);
 
@@ -297,6 +303,7 @@ exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
           gstRegistered,
           msmeRegistered,
           activeCompanies,
+          vatRegistered
         },
       },
       "Companies fetched successfully"
@@ -488,7 +495,7 @@ async function createAuditLogAsyncUpdate(req, companyId, changes) {
 exports.getCompanies = asyncHandler(async (req, res) => {
   const { clientId } = req.query;
 
-  const filter = { isDeleted: false }; // 🟢 sirf active companies
+  const filter = {client:clientId, status: { $ne: "delete" } }; // 🟢 sirf active companies
   if (clientId) filter.client = clientId;
 
   const companies = await Company.find(filter).select("-auditLogs");
@@ -503,6 +510,7 @@ exports.getCompanies = asyncHandler(async (req, res) => {
 exports.deleteCompany = asyncHandler(async (req, res) => {
   // console.log("Delete Company Request Params:", req.params);
   const { id } = req.params;
+  const clientID = req.user.clientID;
   const user = await User.findById(req.user.id);
 
   if (!user) throw new ApiError(404, "User not found");
@@ -518,7 +526,7 @@ exports.deleteCompany = asyncHandler(async (req, res) => {
     throw new ApiError(403, "You can only delete your own companies");
   }
 
-  company.isDeleted = true; // 🟢 Soft delete
+  company.status = "delete"; // 🟢 Soft delete
   company.auditLogs.push({
     action: "delete",
     performedBy: new mongoose.Types.ObjectId(req.user.id),
@@ -535,6 +543,15 @@ exports.deleteCompany = asyncHandler(async (req, res) => {
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
   }
+
+  await User.updateMany(
+    {"access.company": id},
+    {
+      $pull: {
+        access: { company: id },
+      },
+    }
+  )
   await createAuditLog({
     module: "Company",
     action: "delete",
@@ -759,7 +776,7 @@ exports.deleteCompaniesByClientId = asyncHandler(async (req, res) => {
     return res.status(400).json({ message: "Client ID is required" });
   }
 
-  const result = await Company.deleteMany({ client: clientId });
+  const result = await Company.updateMany({ client: clientId },{status: "delete"});
 
   if (result.deletedCount === 0) {
     return res

@@ -123,9 +123,12 @@ exports.createCustomer = asyncHandler(async (req, res) => {
       console.error("Audit log creation failed:", err.message);
     });
 
+    const safeCustomer=customer.toObject();
+delete safeCustomer.auditLogs
+
     return res
       .status(201)
-      .json(new ApiResponse(201, customer, "Customer created successfully"));
+      .json(new ApiResponse(201, safeCustomer, "Customer created successfully"));
   } catch (error) {
     // Handle Duplicate Key Error
     if (error.code === 11000) {
@@ -374,7 +377,8 @@ exports.getCustomersByCompany = asyncHandler(async (req, res) => {
   const [
     gstRegistered,
     msmeRegistered,
-    activeCustomers
+    activeCustomers,
+    vatRegistered
   ] = await Promise.all([
     Customer.countDocuments({
       clientId: clientID,
@@ -394,7 +398,14 @@ exports.getCustomersByCompany = asyncHandler(async (req, res) => {
       clientId: clientID,
       company: companyId,
       status: "active"
-    })
+    }),
+
+    Customer.countDocuments({
+      clientId: clientID,
+      company: companyId,
+      status: { $ne: "delete" },
+      vatNumber: { $exists: true, $ne: "" }
+    }),
   ]);
 
   res.status(200).json(
@@ -412,6 +423,7 @@ exports.getCustomersByCompany = asyncHandler(async (req, res) => {
           gstRegistered,
           msmeRegistered,
           activeCustomers,
+          vatRegistered
         }
       },
       customers.length ? "Customers fetched successfully" : "No customers found"

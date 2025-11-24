@@ -296,88 +296,155 @@ exports.restoreRecord = async (req, res) => {
   }
 };
 
-exports.getAllAuditLogs = async (req, res) => {
+exports.getAllAuditLogs = asyncHandler(async (req, res) => {
   try {
-    const { search = "", role, action, startDate, endDate, page = 1, limit = 20 } = req.query;
+    const {
+      search = "",
+      role,
+      action,
+      startDate,
+      endDate,
+      page = 1,
+      limit = 20,
+      sortBy = "timestamp",
+      sortOrder = "desc",
+    } = req.query;
 
-    const skip = (page - 1) * limit;
+    const perPage = parseInt(limit, 10);
+    const currentPage = Math.max(parseInt(page, 10), 1);
+    const skip = (currentPage - 1) * perPage;
 
+    // ------------ MATCH FILTERS ------------
     const match = {};
 
-    // Filter by action (create, update, delete, login)
-    if (action) {
-      match["auditLogs.action"] = action;
-    }
+    // Action filter
+    match.action = action ? action : { $in: ["create", "update", "delete"] }; // default actions
 
-    // Date filters
+    // Date filter
     if (startDate && endDate) {
-      match["auditLogs.timestamp"] = {
+      match.timestamp = {
         $gte: new Date(startDate),
-        $lte: new Date(endDate)
+        $lte: new Date(endDate),
       };
     }
 
-    // Flatten logs using aggregation
-    const logs = await User.aggregate([
-      { $unwind: "$auditLogs" },
-
-      // Global filtering
+    // ------------ BASE AGGREGATION ------------
+    const basePipeline = [
       { $match: match },
 
-      // If searching by user name/email
+      // Populate performedBy
       {
         $lookup: {
           from: "users",
-          localField: "auditLogs.performedBy",
+          localField: "performedBy",
           foreignField: "_id",
-          as: "performedByUser"
-        }
+          as: "performedByUser",
+        },
       },
       { $unwind: "$performedByUser" },
 
-      // Filter by role (Partner, Client, etc.)
+      // Only SuperAdmin & Partner logs
+      {
+        $match: {
+          "performedByUser.role": { $in: ["SuperAdmin", "Partner"] },
+        },
+      },
+
+      // Optional specific role filter
       role ? { $match: { "performedByUser.role": role } } : { $match: {} },
 
-      // Search by name / email
+      // Search text in name/email/details
       search
         ? {
             $match: {
               $or: [
                 { "performedByUser.name": { $regex: search, $options: "i" } },
-                { "performedByUser.email": { $regex: search, $options: "i" } }
-              ]
-            }
+                { "performedByUser.email": { $regex: search, $options: "i" } },
+                { details: { $regex: search, $options: "i" } },
+              ],
+            },
           }
         : { $match: {} },
+    ];
 
-      // Final projection
+    // ------------ COUNT ------------
+    const totalResult = await AuditLog.aggregate([
+      ...basePipeline,
+      { $count: "total" },
+    ]);
+    const total = totalResult[0]?.total || 0;
+
+    // Sort order
+    const sortDirection = sortOrder === "desc" ? -1 : 1;
+
+    // ------------ PAGINATED DATA ------------
+    const logs = await AuditLog.aggregate([
+      ...basePipeline,
       {
         $project: {
           _id: 0,
-          moduleUserId: "$_id", // the user on whom action occurred
-          action: "$auditLogs.action",
-          timestamp: "$auditLogs.timestamp",
-          details: "$auditLogs.details",
-          changes: "$auditLogs.changes",
+          auditLogId: "$_id",
+          moduleUserId: "$referenceId",
+          action: "$action",
+          timestamp: "$timestamp",
+          details: "$details",
+          changes: "$changes",
           performedBy: {
             _id: "$performedByUser._id",
             name: "$performedByUser.name",
             email: "$performedByUser.email",
             role: "$performedByUser.role",
-            subRole: "$performedByUser.subRole"
-          }
-        }
+            subRole: "$performedByUser.subRole",
+          },
+        },
       },
-
-      { $sort: { timestamp: -1 } },
-
+      { $sort: { [sortBy]: sortDirection } },
       { $skip: skip },
-      { $limit: parseInt(limit) }
+      { $limit: perPage },
     ]);
 
-    res.json({ success: true, logs });
+    // ------------ RESPONSE ------------
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          auditLogs: logs,
+          pagination: {
+            total,
+            currentPage,
+            perPage,
+            totalPages: Math.ceil(total / perPage),
+          },
+        },
+        logs.length ? "Audit logs fetched successfully" : "No audit logs found"
+      )
+    );
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: err.message });
+    return res
+      .status(500)
+      .json(new ApiResponse(500, null, err.message || "Server error"));
   }
-};
+});
+
+exports.getAuditLogById = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json(new ApiResponse(400, null, "Invalid log ID"));
+  }
+
+  const log = await AuditLog.findById(id)
+    .populate("performedBy", "name email role subRole") // populate user info
+    .populate("referenceId") // populate referenced module (dynamic)
+    .exec();
+
+  if (!log) {
+    return res
+      .status(404)
+      .json(new ApiResponse(404, null, "Audit log not found"));
+  }
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, log, "Audit log fetched successfully"));
+});

@@ -106,7 +106,6 @@ const userSchema = new mongoose.Schema(
 
     parent: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     clientID: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-    company: { type: mongoose.Schema.Types.ObjectId, ref: "Company" },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     country: { type: String },
     state: { type: String },
@@ -137,6 +136,12 @@ const userSchema = new mongoose.Schema(
     multiplePhones: [{ type: String }],
     currentDeviceId: { type: String, default: null },
     currentToken: { type: String, default: null },
+    projects: [
+      {
+        projectId: { type: mongoose.Schema.Types.ObjectId, ref: "Project" },
+        projectCode: {type: String}
+      },
+    ],
   },
   { timestamps: true }
 );
@@ -149,6 +154,7 @@ userSchema.index({ status: 1 });
 userSchema.index({ "access.company": 1 });
 userSchema.index({ lastLogin: -1 });
 userSchema.index({ name: "text", email: "text" });
+userSchema.index({ clientID: 1, "access.company":1 });
 
 userSchema.index({ clientID: 1 });
 userSchema.index({ status: 1 });

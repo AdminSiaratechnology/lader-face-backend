@@ -5,7 +5,8 @@ const ApiError = require("../utils/apiError");
 const ApiResponse = require("../utils/apiResponse");
 // const { generateUniqueId } = require('../utils/generate16DigiId');
 const mongoose = require("mongoose");
-const { createAuditLog } = require("../utils/createAuditLog");
+// const { createAuditLog } = require("../utils/createAuditLog");
+const createAuditLog  = require("../utils/createAuditLogMain");
 const { generateUniqueId } = require("../utils/generate16DigiId");
 const processRegistrationDocs =require("../utils/processRegistrationDocs")
 
@@ -673,7 +674,8 @@ exports.getVendorsByCompany = asyncHandler(async (req, res) => {
     const [
       gstRegistered,
       msmeRegistered,
-      activeVendors
+      activeVendors,
+      vatRegistered
     ] = await Promise.all([
       Vendor.countDocuments({
         clientId: clientID,
@@ -693,6 +695,13 @@ exports.getVendorsByCompany = asyncHandler(async (req, res) => {
         clientId: clientID,
         company: companyId,
         status: "active"
+      }),
+  
+      Vendor.countDocuments({
+        clientId: clientID,
+        company: companyId,
+        status: { $ne: "delete" },
+        vatNumber: { $exists: true, $ne: "" }
       })
     ]);
   
@@ -711,7 +720,8 @@ console.log(vendors)
         counts: {
           gstRegistered,
           msmeRegistered,
-          activeVendors
+          activeVendors,
+          vatRegistered
         }
       },
       vendors.length ? "Vendors fetched successfully" : "No vendors found"

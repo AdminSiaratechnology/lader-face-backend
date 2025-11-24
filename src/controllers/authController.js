@@ -9,6 +9,8 @@ const { createAuditLog } = require("../utils/createAuditLog");
 const { generate6DigitUniqueId } = require("../utils/generate6DigitUniqueId");
 const Customer = require("../models/Customer");
 const sendEmail = require("../utils/sendEmail");
+const OTP = require("../models/OTP");
+const generateOTPTemplate =require("../utils/pdfTemplates/generateOTPTemplate")
 
 // 🔐 Token Generator
 const signToken = (userId, clientID, role, deviceId) => {
@@ -39,8 +41,31 @@ exports.register = asyncHandler(async (req, res) => {
     multiplePhones,
     clientID,
   } = req.body;
-  let access = structuredClone(req.body.access);
+  // Backend - parse each projects entry
+  let projects = req.body.projects || [];
 
+  // If it's a single JSON string
+  if (typeof projects === "string") {
+    projects = [projects];
+  }
+
+  if (Array.isArray(projects)) {
+    projects = projects
+      .map((p) => {
+        if (typeof p === "string") {
+          try {
+            return JSON.parse(p);
+          } catch (e) {
+            return null;
+          }
+        }
+        return p;
+      })
+      .filter(Boolean);
+  }
+
+  // Now projects will be properly formatted array of objects
+  let access = structuredClone(req.body.access);
   if (!name || !email || !password || !role) {
     throw new ApiError(400, "Missing required fields");
   }
@@ -49,6 +74,28 @@ exports.register = asyncHandler(async (req, res) => {
   if (exists) throw new ApiError(409, "Email already in use");
 
   const creatorInfo = await User.findById(adminId);
+  if (creatorInfo.role === "SuperAdmin" || creatorInfo.role === "Partner") {
+    req.body.projects = projects;
+  }
+
+  if (creatorInfo.role !== "SuperAdmin") {
+    if (creatorInfo.role === "Admin") {
+      // Admin can only create users under their assigned client
+      if (!clientID)
+        throw new ApiError(
+          400,
+          "Client ID is required for Admin-created users"
+        );
+
+      const client = await User.findById(clientID);
+      if (!client) throw new ApiError(404, "Client not found");
+
+      if (client.limit <= 0) {
+        throw new ApiError(400, "Client limit exceeded");
+      }
+    }
+  }
+
   const hash = await bcrypt.hash(password, 10);
   const uploadedDocs = req.files?.documents || [];
   const uploadedUrls = uploadedDocs.map((file) => file.location);
@@ -134,17 +181,39 @@ exports.register = asyncHandler(async (req, res) => {
         }
       );
     }
+    // If client is being created, attach project list given
+    user.projects = projects;
+    await user.save();
+  }
+  if (role === "Admin") {
+    const client = await User.findById(clientID).select("projects");
+
+    user.projects = client?.projects || [];
+    await user.save();
+
+    // Deduct 1 license from Client
+    await User.updateOne({ _id: user.clientID }, { $inc: { limit: -1 } });
   }
 
-  if (role === "Admin") {
-    const clientID = user.clientID;
-    console.log("clientID: ", clientID);
+  if (role === "Partner" && limit) {
     await User.updateOne(
-      { _id: clientID },
-      { $inc: { limit: -1 } } // Decrease by 1
+      { _id: user._id },
+      {
+        $push: {
+          limitHistory: {
+            performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+            initialLimit: limit,
+            previousLimit: 0,
+            newLimit: limit,
+            action: "assigned",
+            reason: "Initial limit assigned on creation",
+            timestamp: new Date(),
+          },
+        },
+      }
     );
   }
-  if (role === "Partner" && limit) {
+    if (role === "Sub Partner" && limit) {
     await User.updateOne(
       { _id: user._id },
       {
@@ -192,6 +261,9 @@ exports.register = asyncHandler(async (req, res) => {
           },
         ],
       });
+      // Customer inherits creator's projects (client projects)
+      user.projects = creatorInfo.projects || [];
+      await user.save();
 
       // ✅ Debug log
       console.log(
@@ -261,7 +333,22 @@ Team
 
   const userResponse = user.toObject();
   delete userResponse.password;
+  let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
 
+  // convert ::1 → 127.0.0.1
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+  await createAuditLog({
+    module: "User",
+    action: "create",
+    performedBy: req.user.id,
+    referenceId: user._id,
+    clientId: req.user.clientID,
+    details: "User created successfully",
+    ipAddress,
+  });
   res
     .status(201)
     .json(new ApiResponse(201, userResponse, "User registered successfully"));
@@ -383,6 +470,35 @@ exports.updateUser = asyncHandler(async (req, res) => {
     if (String(oldData?.[key]) !== String(updateData?.[key])) {
       changes[key] = { from: oldData?.[key], to: updateData?.[key] };
     }
+  }
+  // Ensure projects is always an array
+  let projects = req.body.projects || [];
+
+  // If single project sent as string/object, wrap in array
+  if (!Array.isArray(projects)) {
+    projects = [projects];
+  }
+
+  // Parse stringified projects (from FormData)
+  projects = projects
+    .map((p) => {
+      if (typeof p === "string") {
+        try {
+          return JSON.parse(p);
+        } catch (e) {
+          return null;
+        }
+      }
+      return p;
+    })
+    .filter(Boolean); // remove nulls
+
+  // Assign to user.projects if there are valid entries
+  if (projects.length > 0) {
+    user.projects = projects.map((proj) => ({
+      projectId: proj.projectId,
+      projectCode: proj.projectCode,
+    }));
   }
 
   // Add audit log entry
@@ -595,7 +711,7 @@ exports.logout = asyncHandler(async (req, res) => {
 
   user.auditLogs.push({
     action: "logout",
-    performedBy: new mongoose.Types.ObjectId(userId),
+    performedBy: new mongoose.Types.ObjectId(id),
     timestamp: new Date(),
     details: "User logged out",
   });
@@ -605,3 +721,167 @@ exports.logout = asyncHandler(async (req, res) => {
     .status(200)
     .json(new ApiResponse(200, null, "User logged out successfully"));
 });
+
+const WINDOW = 5 * 60 * 1000; 
+const MAX_ATTEMPTS = 3; 
+
+
+exports.sendResetOTP = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    const user = await User.findOne({ email });
+
+   
+    if (!user) {
+      console.log(`Attempted OTP request for non-existent email: ${email}`);
+      return res.status(200).json({ 
+        message: "If the email is registered, an OTP has been sent.", 
+        attemptsLeft: MAX_ATTEMPTS, 
+        window: WINDOW / 1000 
+      });
+    }
+
+    const now = Date.now();
+    let otpRecord = await OTP.findOne({ email });
+    let attemptsLeft = MAX_ATTEMPTS;
+
+
+    if (otpRecord) {
+      if (now - otpRecord.firstRequestAt < WINDOW) {
+        // Still within the 5-minute window
+        if (otpRecord.attempts >= MAX_ATTEMPTS) {
+          attemptsLeft = 0;
+          return res.status(429).json({
+            message: `Too many OTP requests (${MAX_ATTEMPTS} attempts). Try again after 5 minutes.`,
+            attemptsLeft: 0
+          });
+        }
+        
+        // Increase counter and overwrite OTP
+        otpRecord.attempts += 1;
+        attemptsLeft = MAX_ATTEMPTS - otpRecord.attempts;
+      } else {
+        // Window expired, reset counter
+        otpRecord.attempts = 1;
+        otpRecord.firstRequestAt = now;
+        attemptsLeft = MAX_ATTEMPTS - 1;
+      }
+
+      // Generate New OTP and Expiration
+      otpRecord.otp = Math.floor(100000 + Math.random() * 900000).toString();
+      otpRecord.expiresAt = now + WINDOW;
+      otpRecord.isVerified = false; // Reset verification status
+      await otpRecord.save();
+    }
+
+    // --- Create New OTP Record ---
+    else {
+      otpRecord = await OTP.create({
+        email,
+        otp: Math.floor(100000 + Math.random() * 900000).toString(),
+        expiresAt: now + WINDOW,
+        attempts: 1,
+        firstRequestAt: now,
+        isVerified: false,
+      });
+      attemptsLeft = MAX_ATTEMPTS - 1;
+    }
+
+    // --- Send Email ---
+    await sendEmail({
+      to: email,
+      subject: "Your Password Reset Verification Code",
+      html: generateOTPTemplate(otpRecord.otp, WINDOW / 60000), // Send time in minutes
+    });
+
+    return res.json({ 
+      message: "OTP sent successfully.", 
+      attemptsLeft, 
+      window: WINDOW / 1000 // Return window in seconds
+    });
+
+  } catch (err) {
+    console.error("Error sending OTP:", err);
+    res.status(500).json({ message: "An error occurred while sending the OTP." });
+  }
+};
+
+
+exports.verifyOTP = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    const now = Date.now();
+
+    const record = await OTP.findOne({ email });
+
+    if (!record) {
+      return res.status(400).json({ message: "Invalid or expired OTP." });
+    }
+
+    // 1. Check for expiration
+    if (now > record.expiresAt) {
+      // Optional: Delete expired record
+      await OTP.deleteOne({ _id: record._id }); 
+      return res.status(400).json({ message: "OTP has expired. Please request a new code." });
+    }
+
+    // 2. Check for matching OTP value
+    if (record.otp !== otp) {
+      return res.status(400).json({ message: "Invalid OTP." });
+    }
+    
+    // 3. Mark as verified and save
+    record.isVerified = true;
+    await record.save();
+
+    // Note: The OTP record is not deleted here; it's needed for the resetPassword step.
+    // It is deleted after the password is successfully reset.
+
+    return res.json({ message: "OTP verified successfully. Proceed to set new password." });
+  } catch (err) {
+    console.error("Error verifying OTP:", err);
+    res.status(500).json({ message: "An error occurred during verification." });
+  }
+};
+
+
+exports.resetPassword = async (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+
+    // --- Modern Password Validation ---
+    // Min 8 chars, 1 uppercase, 1 lowercase, 1 number, 1 special char
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+    
+    if (!passwordRegex.test(newPassword)) {
+      return res.status(400).json({
+        message: "Password must be at least 8 characters, and contain uppercase, lowercase, number, and special characters."
+      });
+    }
+
+    // Step 1: Check verified OTP
+    const otpRecord = await OTP.findOne({ email, isVerified: true });
+
+    if (!otpRecord) {
+      return res.status(400).json({
+        message: "OTP not verified or has expired. Please verify the code again."
+      });
+    }
+
+    // Step 2: Hash new password
+    const hashed = await bcrypt.hash(newPassword, 10);
+
+    // Step 3: Update user password
+    await User.findOneAndUpdate({ email }, { password: hashed });
+
+    // Step 4: Delete OTP record after successful use
+    await OTP.deleteMany({ email });
+
+    return res.json({ message: "Password reset successful" });
+
+  } catch (err) {
+    console.error("Error resetting password:", err);
+    res.status(500).json({ message: "An error occurred while resetting the password." });
+  }
+};

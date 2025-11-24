@@ -613,7 +613,8 @@ exports.getLedgersByCompany = asyncHandler(async (req, res) => {
  const [
     gstRegistered,
     activeLedgers,
-    msmeRegistered
+    msmeRegistered,
+    vatRegistered
   ] = await Promise.all([
     // GST registered
     Ledger.countDocuments({
@@ -635,7 +636,14 @@ exports.getLedgersByCompany = asyncHandler(async (req, res) => {
       company: companyId,
       status: { $ne: "delete" },
       msmeRegistration: { $exists: true, $ne: "" }
-    })
+    }),
+
+    Ledger.countDocuments({
+      clientId: clientID,
+      company: companyId,
+      status: { $ne: "delete" },
+      vatNumber: { $exists: true, $ne: "" }
+    }),
   ]);
   res.status(200).json(
     new ApiResponse(
@@ -651,7 +659,8 @@ exports.getLedgersByCompany = asyncHandler(async (req, res) => {
         counts: {
           gstRegistered,
           activeLedgers,
-          msmeRegistered
+          msmeRegistered,
+          vatRegistered
         }
       },
       ledgers.length ? "Ledgers fetched successfully" : "No ledgers found"

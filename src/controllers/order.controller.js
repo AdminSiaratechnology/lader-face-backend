@@ -10,7 +10,12 @@ const { Worker } = require("worker_threads");
 const path = require("path");
 const { logAudit } = require("../utils/orderAuditLog");
 const calculateChanges = require("../utils/calculateChanges");
+const StockItem = require("../models/stockItem.mode");
+const puppeteer = require("puppeteer");
+const generateThermalInvoice = require("../utils/pdfTemplates/thermalInvoice");
 
+
+const Product = require("../models/Product");
 // ✅ Create Order
 exports.createOrder = asyncHandler(async (req, res) => {
   try {
@@ -31,6 +36,8 @@ exports.createOrder = asyncHandler(async (req, res) => {
     ) {
       throw new ApiError(400, "Missing required fields");
     }
+       const company = await Company.findById(companyId).lean();
+    if (!company) throw new ApiError(404, "Company not found");
 
     for (const item of items) {
       if (!item.productId || !item.quantity || !item.price) {
@@ -40,27 +47,85 @@ exports.createOrder = asyncHandler(async (req, res) => {
         );
       }
 
-      // Ensure discount is not greater than total
+      // 1️⃣ Fetch product
+      const product = await StockItem.findById(item.productId).populate("productId").lean();
+      console.log(product," fetched product for item:", item.productId);
+
+      if (!product)
+        throw new ApiError(404, `Product not found: ${item.productId}`);
+   
+       let hsnCode = product?.productId.taxConfiguration?.hsnCode || "";
+      let isGST = company.country === "India" ? true : false;
+      let IGST = company.state !== shippingAddress.state ? true : false;
+      const { cgst = 0, sgst = 0, cess = 0, additionalCess = 0, taxPercentage = 0 } = product?.productId.taxConfiguration || {};
+
+      const taxPercent = isGST ? cgst + sgst + cess + additionalCess : taxPercentage;
+      const includesTax = product?.productId.priceIncludesTax;
+      console.log(`Tax % for product ${item.productId}:`, taxPercent, "Includes Tax:", includesTax);
+
+      const qty = item.quantity;
+      const unitPrice = item.price;
+
+      let taxable = 0;
+      let taxAmount = 0;
+     
+
+
+      // 🔥 TAX CALCULATION
+
+      if (includesTax) {
+        // Reverse calculation (price already contains tax)
+        taxable = unitPrice / (1 + taxPercent / 100);
+        taxAmount = unitPrice - taxable;
+      } else {
+        // Forward calculation (price without tax)
+        taxable = unitPrice;
+        taxAmount = (unitPrice * taxPercent) / 100;
+      }
+
+      // Multiply by quantity
+      item.taxPercentage= taxPercent;
+      item.taxableValue = Number((taxable * qty).toFixed(2));
+      item.taxAmount = Number((taxAmount * qty).toFixed(2));
+      item.total = Number((item.taxableValue + item.taxAmount).toFixed(2));
+      item.hsnCode = product?.productId.taxConfiguration?.hsnCode || "";
+      item.isGST = isGST;
+      item.isIGST = IGST;
+      item.CGST = cgst;
+      item.SGST = sgst;
+      item.IGST = IGST ? (cgst + sgst) : 0;
+      item.CESS = cess;
+      item.otherCESS = additionalCess;
+
+      console.log(`Calculated for item ${item.productId} - Taxable: ${item.taxableValue}, Tax: ${item.taxAmount}, Total: ${item.total} hasnCode: ${item.hsnCode}`);
+
+      // Ensure discount doesn't exceed amount
       if (item.discount && item.discount > item.total) {
         item.discount = item.total;
       }
     }
 
-    const company = await Company.findById(companyId).lean();
-    if (!company) throw new ApiError(404, "Company not found");
+
+    // 🔥 COMPANY CHECK
+   
+    
 
     const isAutoApproved = company.autoApprove === true;
-    console.log(req.body);
+
+   
+    // 🔥CALCULATE ORDER TOTALS
 
     const subtotal = items.reduce((acc, item) => acc + (item.total || 0), 0);
+
     const totalDiscount = items.reduce(
       (acc, item) => acc + (item.discount || 0),
       0
     );
-    let grandTotal = subtotal - totalDiscount;
 
-    // prevent negative total
+    let grandTotal = subtotal - totalDiscount;
     if (grandTotal < 0) grandTotal = 0;
+
+
 
     const orderData = {
       companyId,
@@ -81,6 +146,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
 
     const order = await Order.create(orderData);
     console.log("✅ Order created with ID:", order._id);
+
     logAudit(
       order._id,
       "created",
@@ -89,18 +155,16 @@ exports.createOrder = asyncHandler(async (req, res) => {
       companyId,
       null,
       order.toObject()
-    ); // No await!
+    );
 
-    // ✅ Populate limited customer fields
+    // Populate customer minimal details
     const populatedOrder = await Order.findById(order._id)
       .populate({
         path: "customerId",
         select: "customerName emailAddress phone country currency",
       })
       .lean();
-    // In createOrder (after order.save()):
 
-    // 🧵 Background Cart Clear Worker
     const workerPath = path.join(__dirname, "../workers/clearCartWorker.js");
 
     new Worker(workerPath, {
@@ -119,8 +183,8 @@ exports.createOrder = asyncHandler(async (req, res) => {
       .on("exit", (code) => {
         if (code !== 0) console.error(`⚠️ Worker exited with code ${code}`);
       });
-    console.log("🧾 Order created with ID:", populatedOrder);
 
+   
     return res
       .status(201)
       .json(
@@ -142,6 +206,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
       .json(new ApiResponse(500, null, "Internal server error", error.message));
   }
 });
+
 
 //updateOrderStatus
 exports.updateOrderStatus = asyncHandler(async (req, res) => {
@@ -195,86 +260,125 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
 exports.updateOrderDetails = asyncHandler(async (req, res) => {
   try {
     const { id } = req.params;
-    const {
-      shippingAddress,
-      items = [],
-      remarks,
-      payment,
-      updatedBy,
-    } = req.body;
+    const { shippingAddress, items = [], remarks, payment } = req.body;
 
     const clientId = req.user?.clientID;
     const userId = req.user?.id;
 
     if (!clientId || !userId) {
-      throw new ApiError(401, "Unauthorized access — user credentials missing");
+      throw new ApiError(401, "Unauthorized access");
     }
 
-    // 1️⃣ Find order
+    // 1️⃣ Find Order
     const order = await Order.findById(id);
     if (!order) throw new ApiError(404, "Order not found");
 
-    // 2️⃣ Block update for restricted status
+    // 2️⃣ Restrict editing for these statuses
     if (["confirmed", "approved", "cancelled"].includes(order.status)) {
       throw new ApiError(403, `${order.status} orders cannot be modified`);
     }
 
-    // 3️⃣ UPDATE ITEMS (NO NEW PRODUCT ALLOWED)
-    if (items.length) {
-      const oldProductIds = order.items.map((i) => i.productId.toString());
-      const newProductIds = items.map((i) => i.productId.toString());
+    // 3️⃣ Company Needed For Tax Rules
+    const company = await Company.findById(order.companyId).lean();
+    if (!company) throw new ApiError(404, "Company not found");
 
-      // ❌ Check if any new product is being added
-      const extraProducts = newProductIds.filter(
-        (pid) => !oldProductIds.includes(pid)
-      );
+    // 4️⃣ Validate items — No new products allowed
+    const oldProductIds = order.items.map(i => i.productId.toString());
+    const incomingIds = items.map(i => i.productId.toString());
 
-      if (extraProducts.length > 0) {
-        throw new ApiError(
-          400,
-          "New products cannot be added to an existing order"
-        );
-      }
-
-      // 🔍 Keep only products that still exist in new payload
-      const remainingIds = oldProductIds.filter((pid) =>
-        newProductIds.includes(pid)
-      );
-
-      // 🔄 Update quantities/prices/discounts
-      order.items = order.items
-        .filter((i) => remainingIds.includes(i.productId.toString()))
-        .map((old) => {
-          const updated = items.find(
-            (i) => i.productId.toString() === old.productId.toString()
-          );
-
-          if (!updated) return old;
-
-          const quantity = updated.quantity ?? old.quantity;
-          const price = updated.price ?? old.price;
-          const discount = updated.discount ?? old.discount ?? 0;
-
-          // ❌ Remove if quantity 0
-          if (quantity <= 0) return null;
-
-          return {
-            ...old.toObject(),
-            quantity,
-            price,
-            discount,
-            total: price * quantity - discount,
-          };
-        })
-        .filter(Boolean);
+    const extraProducts = incomingIds.filter(id => !oldProductIds.includes(id));
+    if (extraProducts.length > 0) {
+      throw new ApiError(400, "New products cannot be added in update");
     }
 
-    // ❌ Must have at least 1 item
-    if (!order.items || order.items.length === 0) {
+    // 5️⃣ Process items with SAME LOGIC as createOrder
+    const updatedItems = [];
+
+    for (const incoming of items) {
+      const oldItem = order.items.find(
+        i => i.productId.toString() === incoming.productId.toString()
+      );
+      if (!oldItem) continue;
+
+      if (incoming.quantity <= 0) continue;
+
+      // Fetch product with tax config
+      const product = await StockItem.findById(incoming.productId)
+        .populate("productId")
+        .lean();
+
+      if (!product) {
+        throw new ApiError(404, `Product not found: ${incoming.productId}`);
+      }
+
+      const prodInfo = product.productId;
+
+      const qty = incoming.quantity ?? oldItem.quantity;
+      const unitPrice = incoming.price ?? oldItem.price;
+      const discount = incoming.discount ?? oldItem.discount ?? 0;
+
+      // TAX CONFIG
+      const hsnCode = prodInfo?.taxConfiguration?.hsnCode || "";
+      const includesTax = prodInfo?.priceIncludesTax || false;
+
+      const {
+        cgst = 0,
+        sgst = 0,
+        cess = 0,
+        additionalCess = 0,
+        taxPercentage = 0,
+      } = prodInfo?.taxConfiguration || {};
+
+      const isGST = company.country === "India";
+      const isIGST = company.state !== order.shippingAddress.state;
+
+      const taxPercent = isGST
+        ? cgst + sgst + cess + additionalCess
+        : taxPercentage;
+
+      // TAX ENGINE
+      let taxable = 0;
+      let taxAmount = 0;
+
+      if (includesTax) {
+        taxable = unitPrice / (1 + taxPercent / 100);
+        taxAmount = unitPrice - taxable;
+      } else {
+        taxable = unitPrice;
+        taxAmount = (unitPrice * taxPercent) / 100;
+      }
+
+      const itemTaxable = Number((taxable * qty).toFixed(2));
+      const itemTax = Number((taxAmount * qty).toFixed(2));
+      const total = Number((itemTaxable + itemTax).toFixed(2));
+
+      updatedItems.push({
+        ...oldItem.toObject(),
+        quantity: qty,
+        price: unitPrice,
+        discount,
+        total,
+        taxableValue: itemTaxable,
+        taxAmount: itemTax,
+        hsnCode,
+        taxPercentage: taxPercent,
+        isGST,
+        isIGST,
+        CGST: cgst,
+        SGST: sgst,
+        IGST: isIGST ? cgst + sgst : 0,
+        CESS: cess,
+        otherCESS: additionalCess,
+      });
+    }
+
+    if (!updatedItems.length) {
       throw new ApiError(400, "Order must contain at least one product");
     }
 
-    // 4️⃣ Update shipping address
+    // 6️⃣ Update fields
+    order.items = updatedItems;
+
     if (shippingAddress) {
       order.shippingAddress = {
         ...order.shippingAddress,
@@ -282,34 +386,37 @@ exports.updateOrderDetails = asyncHandler(async (req, res) => {
       };
     }
 
-    // 5️⃣ Remarks and payment
     if (remarks) order.remarks = remarks;
     if (payment) order.payment = { ...order.payment, ...payment };
 
-    order.updatedBy = updatedBy || userId;
-
-    // 6️⃣ Recalculate totals
-    order.subtotal = order.items.reduce(
-      (acc, i) => acc + i.price * i.quantity,
+    // 7️⃣ Recalculate totals
+    const totalBeforeDiscount = updatedItems.reduce(
+      (sum, i) => sum + i.total,
       0
     );
 
-    order.discount = order.items.reduce((acc, i) => acc + (i.discount || 0), 0);
+    const totalDiscount = updatedItems.reduce(
+      (sum, i) => sum + (i.discount ?? 0),
+      0
+    );
 
-    order.grandTotal = order.subtotal - order.discount;
+    order.discount = totalDiscount;
+    order.grandTotal = totalBeforeDiscount - totalDiscount;
 
-    // 7️⃣ Save
+    if (order.grandTotal < 0) order.grandTotal = 0;
+
+    // 8️⃣ Save
     await order.save();
 
-    res
-      .status(200)
-      .json(new ApiResponse(200, order, "Order details updated successfully"));
+    res.status(200).json(
+      new ApiResponse(200, order, "Order updated successfully")
+    );
   } catch (error) {
     console.error("❌ Error updating order details:", error);
 
     if (error instanceof ApiError) {
       return res
-        .status(error.statusCode || 400)
+        .status(error.statusCode)
         .json(new ApiResponse(error.statusCode, null, error.message));
     }
 
@@ -318,6 +425,7 @@ exports.updateOrderDetails = asyncHandler(async (req, res) => {
       .json(new ApiResponse(500, null, "Internal server error", error.message));
   }
 });
+
 
 // ✅ Update Order
 exports.updateOrder = async (req, res) => {
@@ -387,7 +495,7 @@ exports.getOrders = async (req, res) => {
     const [orders, total] = await Promise.all([
       Order.find(filter)
         .populate("customerId", "customerName emailAddress contactPerson")
-        .populate("items.productId", "name price remarks")
+        // .populate("items.productId", "name price remarks ")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(parseInt(limit)),
@@ -1751,3 +1859,52 @@ exports.getSalesTrend = asyncHandler(async (req, res) => {
     data: filledData,
   });
 });
+
+
+
+
+exports.generateInvoicePDF = async (req, res) => {
+  console.log("Generating invoice PDF for order ID:", req.params.id);
+  try {
+    const orderId = req.params.id;
+
+    const order = await Order.findById(orderId)
+      .populate("items.productId")
+      .populate("customerId","customerName emailAddress zipCode addressLine1 city phoneNumber state")
+      .lean();
+      console.log("Fetched order:", order);
+
+    if (!order) return res.status(404).json({ message: "Order not found" });
+
+    const company = await Company.findById(order.companyId).lean();
+    console.log("order data:", order);
+
+    const html = generateThermalInvoice(order, company);
+
+    const browser = await puppeteer.launch({
+      headless: "new",
+      args: ["--no-sandbox"],
+    });
+
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: "networkidle0" });
+
+const pdfBuffer = await page.pdf({
+  width: "500mm",
+  printBackground: true,
+  margin: { top: "5mm", bottom: "5mm", left: "2mm", right: "2mm" },
+});
+
+    await browser.close();
+
+    res.set({
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `inline; filename="invoice_${orderId}.pdf"`,
+    });
+
+    return res.send(pdfBuffer);
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ message: "PDF generation failed" });
+  }
+};

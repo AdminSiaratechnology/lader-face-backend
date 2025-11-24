@@ -27,5 +27,6 @@ router.get("/orders-by-user/:companyId", orderController.getOrdersByUser);
 router.get("/my-orders/:companyId", orderController.getOrdersByUser);
 router.get("/getCustomerSalesStats/:companyId", orderController.getCustomerSalesStats);
 router.get("/sales-trend/:companyId", orderController.getSalesTrend);
+router.get("/:id/pdf",orderController.generateInvoicePDF)
 
 module.exports = router;

@@ -68,6 +68,123 @@ exports.addToCart = async (req, res) => {
 };
 
 
+exports.bulkAddToCart = async (req, res) => {
+try {
+const { items } = req.body;
+const clientId = req.user?.clientID;
+const userId = req.user?.id;
+const { companyId } = req.params;
+
+if (!companyId || !clientId || !userId || !items || !Array.isArray(items)) {
+return res.status(400).json({ success: false, message: "Missing required fields or items should be array" });
+}
+
+let results = [];
+
+for (const item of items) {
+const { productId, quantity } = item;
+
+if (!productId || quantity === undefined) {
+results.push({ productId, status: "failed", reason: "Missing fields" });
+continue;
+}
+
+// Validate ObjectId_
+if (!mongoose.Types.ObjectId.isValid(productId)) {
+results.push({ productId, status: "failed", reason: "Invalid productId" });
+continue;
+}
+
+// Fetch product_
+const stockItem = await StockItem.findById(productId);
+if (!stockItem) {
+results.push({ productId, status: "failed", reason: "Product not found" });
+continue;
+}
+
+// If quantity <= 0 → remove item_
+if (quantity <= 0) {
+await Cart.findOneAndDelete({
+companyId,
+clientId,
+userId,
+productId,
+});
+
+results.push({ productId, status: "deleted" });
+continue;
+}
+
+// Add or Update_
+const cart = await Cart.findOneAndUpdate(
+{ companyId, clientId, userId, productId },
+{ productId, quantity },
+{ new: true, upsert: true }
+);
+
+results.push({ productId, status: "updated", cart });
+}
+
+return res.status(200).json({
+success: true,
+message: "Bulk cart update complete",
+results,
+});
+
+} catch (error) {
+console.error("❌ Bulk cart error:", error);
+return res.status(500).json({
+success: false,
+message: "Internal server error",
+error: error.message,
+});
+}
+};
+
+
+
+
+exports.resetPassword = async (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+
+    // --- Modern Password Validation ---
+    // Min 8 chars, 1 uppercase, 1 lowercase, 1 number, 1 special char
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+    
+    if (!passwordRegex.test(newPassword)) {
+      return res.status(400).json({
+        message: "Password must be at least 8 characters, and contain uppercase, lowercase, number, and special characters."
+      });
+    }
+
+    // Step 1: Check verified OTP
+    const otpRecord = await OTP.findOne({ email, isVerified: true });
+
+    if (!otpRecord) {
+      return res.status(400).json({
+        message: "OTP not verified or has expired. Please verify the code again."
+      });
+    }
+
+    // Step 2: Hash new password
+    const hashed = await bcrypt.hash(newPassword, 10);
+
+    // Step 3: Update user password
+    await User.findOneAndUpdate({ email }, { password: hashed });
+
+    // Step 4: Delete OTP record after successful use
+    await OTP.deleteMany({ email });
+
+    return res.json({ message: "Password reset successful" });
+
+  } catch (err) {
+    console.error("Error resetting password:", err);
+    res.status(500).json({ message: "An error occurred while resetting the password." });
+  }
+};
+
+
 // 🧾 Get Cart with StockItem Details
 exports.getCart = async (req, res) => {
   try {
