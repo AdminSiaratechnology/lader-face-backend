@@ -39,8 +39,9 @@ exports.register = asyncHandler(async (req, res) => {
     pincode,
     region,
     multiplePhones,
-    clientID,
+
   } = req.body;
+ let  clientID= req.body.clientID || req.user.clientID 
   // Backend - parse each projects entry
   let projects = req.body.projects || [];
 
@@ -183,6 +184,7 @@ exports.register = asyncHandler(async (req, res) => {
     }
     // If client is being created, attach project list given
     user.projects = projects;
+    user.clientID = user._id;
     await user.save();
   }
   if (role === "Admin") {
@@ -231,6 +233,7 @@ exports.register = asyncHandler(async (req, res) => {
       }
     );
   }
+
   if (role === "Customer" && Array.isArray(access) && access.length > 0) {
     console.log("Auto-creating customers for access:", access);
     for (const acc of access) {
