@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
-const auditLogSchema = require("../middlewares/auditLogSchema");
+const auditLogSchema = require("../middlewares/auditLogSchema"); // Ensure this path is correct
 
-// Bank schema
+// --- Sub-Schemas ---
 const BankSchema = new mongoose.Schema({
   accountHolderName: String,
   accountNumber: String,
@@ -12,21 +12,20 @@ const BankSchema = new mongoose.Schema({
   branch: String,
 });
 
-// Registration Document schema
 const RegistrationDocumentSchema = new mongoose.Schema({
   type: { type: String, required: true },
   file: { type: String, required: true },
   fileName: { type: String, required: true },
 });
 
-// Customer schema
+// --- Main Schema ---
 const CustomerSchema = new mongoose.Schema(
   {
     company: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Company",
       required: true,
-    }, // reference to company
+    },
     clientId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -34,7 +33,10 @@ const CustomerSchema = new mongoose.Schema(
     },
 
     customerType: { type: String, required: true, default: "company" },
-    code: { type: String, required: true, unique: true },
+    
+    // Code is NOT unique globally, only per company (see indexes at bottom)
+    code: { type: String },
+
     customerName: { type: String, required: true },
     shortName: { type: String },
     customerGroup: { type: String },
@@ -43,6 +45,8 @@ const CustomerSchema = new mongoose.Schema(
     salesPerson: { type: String },
     customerStatus: { type: String },
     companySize: { type: String },
+    
+    // Enum is strictly lowercase
     status: {
       type: String,
       enum: ["active", "inactive", "delete"],
@@ -100,7 +104,7 @@ const CustomerSchema = new mongoose.Schema(
     creditCardDetails: { type: String },
     paymentInstructions: { type: String },
 
-    banks: [BankSchema], // embedded banks
+    banks: [BankSchema],
 
     approvalWorkflow: { type: String },
     creditLimitApprover: { type: String },
@@ -119,18 +123,52 @@ const CustomerSchema = new mongoose.Schema(
     logo: { type: String, default: null },
     notes: { type: String },
 
-    registrationDocs: [RegistrationDocumentSchema], // embedded documents
-    auditLogs: [auditLogSchema],
+    registrationDocs: [RegistrationDocumentSchema],
+    auditLogs: [auditLogSchema], // Ensure this is imported correctly
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   },
   { timestamps: true }
 );
-CustomerSchema.index({ code: 1 }, { unique: true });
-CustomerSchema.index({ emailAddress: 1 });
 
+// --- Code Generation Hook ---
+CustomerSchema.pre("validate", async function (next) {
+  try {
+    // If code is provided in JSON, skip generation
+    if (this.code) return next();
+
+    const Customer = mongoose.models.Customer || mongoose.model("Customer");
+
+    const lastCustomer = await Customer.findOne({
+      clientId: this.clientId,
+      company: this.company,
+      status: { $ne: "delete" },
+    })
+      .sort({ createdAt: -1 })
+      .select("code");
+
+    let newCode = "000000000001";
+
+    if (lastCustomer && lastCustomer.code) {
+      const lastNum = parseInt(lastCustomer.code, 10);
+      if (!isNaN(lastNum)) {
+        const nextNum = (lastNum + 1).toString().padStart(12, "0");
+        newCode = nextNum;
+      }
+    }
+
+    this.code = newCode;
+    next();
+  } catch (err) {
+    console.error("Error generating Customer code:", err);
+    next(err);
+  }
+});
+
+// --- Indexes ---
+// Unique Code per Company
+CustomerSchema.index({ company: 1, code: 1 }, { unique: true });
+// Search Indexes
 CustomerSchema.index({ company: 1, clientId: 1, status: 1, createdAt: -1 });
-CustomerSchema.index({ clientId: 1, status: 1, createdAt: -1 });
-
 CustomerSchema.index({
   customerName: "text",
   emailAddress: "text",
@@ -138,7 +176,4 @@ CustomerSchema.index({
   phoneNumber: "text",
 });
 
-CustomerSchema.index({ status: 1 });
-
-CustomerSchema.index({ createdAt: -1 });
 module.exports = mongoose.model("Customer", CustomerSchema);

@@ -1024,3 +1024,47 @@ exports.getSubPartners = asyncHandler(async (req, res) => {
     )
   );
 });
+
+
+
+exports.getDashboardStatsSuperAdmin = async (req, res) => {
+  try {
+    const user = req.user; // middleware se mila
+
+    // SuperAdmin Stats
+    if (user.role === "SuperAdmin") {
+      const totalPartners = await User.countDocuments({ role: "Partner" });
+      const totalClients = await User.countDocuments({ role: "Client" });
+      const totalUsers = await User.countDocuments({});
+
+      return res.json({
+        success: true,
+        stats: {
+          totalPartners,
+          totalClients,
+          totalUsers,
+        },
+      });
+    }
+
+    // Partner Stats
+    if (user.role === "Partner") {
+      const totalClients = await User.countDocuments({ parent: user._id, role: "Client" });
+      const totalUsers = await User.countDocuments({ parent: user._id });
+      
+      return res.json({
+        success: true,
+        stats: {
+          totalClients,
+          totalUsers,
+          limit: user.limit || 0,
+        },
+      });
+    }
+
+    return res.json({ success: true, stats: {} });
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};

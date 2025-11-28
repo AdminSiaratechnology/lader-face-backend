@@ -581,14 +581,144 @@ exports.deleteUser = asyncHandler(async (req, res) => {
 });
 
 // ✅ LOGIN USER
-exports.login = asyncHandler(async (req, res) => {
-  const { email, password, deviceId } = req.body;
+// exports.login = asyncHandler(async (req, res) => {
+//   const { email, password, deviceId } = req.body;
 
+//   if (!email || !password)
+//     throw new ApiError(400, "Email and password are required");
+//   if (!deviceId) {
+//     throw new ApiError(400, "Device ID is required");
+//   }
+//   const user = await User.findOne({ email: email.toLowerCase() })
+//     .populate({
+//       path: "access.company",
+//       select: "namePrint logo nameStreet code",
+//     })
+//     .populate({
+//       path: "createdBy",
+//       select: "email name",
+//     });
+
+//   if (!user) throw new ApiError(401, "Invalid credentials");
+
+//   const isMatch = await bcrypt.compare(password, user.password);
+//   if (!isMatch) throw new ApiError(401, "Invalid credentials");
+
+//   const token = signToken(user._id, user.clientID, user.role, deviceId);
+
+//   const safeUser = user.toObject();
+//   delete safeUser.password;
+//   delete safeUser.__v;
+//   delete safeUser.loginHistory;
+//   delete safeUser.auditLogs;
+//   safeUser.access = [...(user.access || [])];
+
+//   // Update last login + log it
+//   const now = new Date();
+
+//   user.currentDeviceId = deviceId;
+//   user.currentToken = token;
+//   user.lastLogin = now;
+//   user.loginHistory.push(now);
+//   user.auditLogs.push({
+//     action: "login",
+//     performedBy: new mongoose.Types.ObjectId(user._id),
+//     timestamp: new Date(),
+//     details: "User logged in",
+//   });
+
+//   await user.save();
+//   // Fetch stats based on role
+//   let stats = {};
+
+//   if (user.role === "SuperAdmin") {
+//     // 1️⃣ Count partners
+//     const totalPartners = await User.countDocuments({
+//       role: "Partner",
+//       status: { $ne: "delete" },
+//     });
+
+//     // 2️⃣ Clients created by ANY superadmin
+//     const clients = await User.find({
+//       role: "Client",
+//       createdBy: user._id, // superadmin created
+//       status: { $ne: "delete" },
+//     }).select("_id");
+
+//     const clientIDs = clients.map((c) => c._id);
+
+//     // 3️⃣ Users under superadmin's clients
+//     const totalUsers = await User.countDocuments({
+//       clientID: { $in: clientIDs },
+//       status: { $ne: "delete" },
+//     });
+//     const allClients = await User.find({
+//       role: "Client",
+//       status: { $ne: "delete" },
+//     }).select("_id");
+
+//     const allClientIDs = allClients.map((c) => c._id);
+
+//     // 3️⃣ Users under superadmin's clients
+//     const allTotalUsers = await User.countDocuments({
+//       clientID: { $in: allClientIDs },
+//       status: { $ne: "delete" },
+//     });
+
+//     stats = {
+//       totalPartners,
+//       totalClients: clientIDs.length,
+//       totalUsers,
+//       totalAllClients: allClientIDs.length,
+//       totalAllUsers: allTotalUsers,
+//     };
+//   }
+
+//   // PARTNER STATS
+//   else if (user.role === "Partner") {
+//     // 1️⃣ Clients created by this partner
+//     const clients = await User.find({
+//       parent: user._id,
+//       role: "Client",
+//       status: { $ne: "delete" },
+//     }).select("_id");
+
+//     const clientIDs = clients.map((c) => c._id);
+
+//     // 2️⃣ Users under this partner's clients
+//     const totalUsers = await User.countDocuments({
+//       clientID: { $in: clientIDs },
+//       status: { $ne: "delete" },
+//     });
+
+//     stats = {
+//       totalClients: clientIDs.length,
+//       totalUsers,
+//     };
+//   }
+
+//   res
+//     .status(200)
+//     .json(
+//       new ApiResponse(200, { token, user: safeUser, stats }, "Login successful")
+//     );
+// });
+// ==========================================
+// 1. CLIENT PORTAL LOGIN
+// Allowed: Admin, Client, Salesman, Customer
+// ==========================================
+exports.loginClientPortal = asyncHandler(async (req, res) => {
+  const { email, password, deviceId } = req.body;
+  console.log(email,"email")
+
+  // 1. Basic Validation
   if (!email || !password)
     throw new ApiError(400, "Email and password are required");
   if (!deviceId) {
     throw new ApiError(400, "Device ID is required");
   }
+
+  // 2. Find User
   const user = await User.findOne({ email: email.toLowerCase() })
     .populate({
       path: "access.company",
@@ -601,21 +731,24 @@ exports.login = asyncHandler(async (req, res) => {
 
   if (!user) throw new ApiError(401, "Invalid credentials");
 
+  // 3. 🛡️ ROLE GUARD: Portal 1 Specific
+  const allowedRoles = ["Admin", "Client", "Salesman", "Customer"];
+  if (!allowedRoles.includes(user.role)) {
+    throw new ApiError(
+      403, 
+      "Access Denied: This account belongs to the Management Portal."
+    );
+  }
+
+  // 4. Verify Password
   const isMatch = await bcrypt.compare(password, user.password);
   if (!isMatch) throw new ApiError(401, "Invalid credentials");
 
+  // 5. Generate Token
   const token = signToken(user._id, user.clientID, user.role, deviceId);
 
-  const safeUser = user.toObject();
-  delete safeUser.password;
-  delete safeUser.__v;
-  delete safeUser.loginHistory;
-  delete safeUser.auditLogs;
-  safeUser.access = [...(user.access || [])];
-
-  // Update last login + log it
+  // 6. Update Login History & Audit Logs
   const now = new Date();
-
   user.currentDeviceId = deviceId;
   user.currentToken = token;
   user.lastLogin = now;
@@ -624,34 +757,117 @@ exports.login = asyncHandler(async (req, res) => {
     action: "login",
     performedBy: new mongoose.Types.ObjectId(user._id),
     timestamp: new Date(),
-    details: "User logged in",
+    details: "User logged in to Client Portal",
   });
 
   await user.save();
-  // Fetch stats based on role
+
+  // 7. Sanitize User Object
+  const safeUser = user.toObject();
+  delete safeUser.password;
+  delete safeUser.__v;
+  delete safeUser.loginHistory;
+  delete safeUser.auditLogs;
+  safeUser.access = [...(user.access || [])];
+
+  // Note: Client portal usually doesn't need the complex stats object, 
+  // but if you have specific stats for them, add here.
+  const stats = {}; 
+
+  res.status(200).json(
+    new ApiResponse(200, { token, user: safeUser, stats }, "Client Portal Login successful")
+  );
+});
+
+
+// ==========================================
+// 2. MANAGEMENT PORTAL LOGIN
+// Allowed: SuperAdmin, Partner, Sub Partner
+// ==========================================
+exports.loginManagementPortal = asyncHandler(async (req, res) => {
+  const { email, password, deviceId } = req.body;
+
+  // 1. Basic Validation
+  if (!email || !password)
+    throw new ApiError(400, "Email and password are required");
+  if (!deviceId) {
+    throw new ApiError(400, "Device ID is required");
+  }
+
+  // 2. Find User
+  const user = await User.findOne({ email: email.toLowerCase() })
+    .populate({
+      path: "access.company",
+      select: "namePrint logo nameStreet code",
+    })
+    .populate({
+      path: "createdBy",
+      select: "email name",
+    });
+
+  if (!user) throw new ApiError(401, "Invalid credentials");
+
+  // 3. 🛡️ ROLE GUARD: Portal 2 Specific
+  const allowedRoles = ["SuperAdmin", "Partner", "Sub Partner"];
+  if (!allowedRoles.includes(user.role)) {
+    throw new ApiError(
+      403, 
+      "Access Denied: This account belongs to the Client Portal."
+    );
+  }
+
+  // 4. Verify Password
+  const isMatch = await bcrypt.compare(password, user.password);
+  if (!isMatch) throw new ApiError(401, "Invalid credentials");
+
+  // 5. Generate Token
+  const token = signToken(user._id, user.clientID, user.role, deviceId);
+
+  // 6. Update Login History & Audit Logs
+  const now = new Date();
+  user.currentDeviceId = deviceId;
+  user.currentToken = token;
+  user.lastLogin = now;
+  user.loginHistory.push(now);
+  user.auditLogs.push({
+    action: "login",
+    performedBy: new mongoose.Types.ObjectId(user._id),
+    timestamp: new Date(),
+    details: "User logged in to Management Portal",
+  });
+
+  await user.save();
+
+  // 7. Sanitize User Object
+  const safeUser = user.toObject();
+  delete safeUser.password;
+  delete safeUser.__v;
+  delete safeUser.loginHistory;
+  delete safeUser.auditLogs;
+  safeUser.access = [...(user.access || [])];
+
+  // 8. CALCULATE STATS (Only needed for Management Portal)
   let stats = {};
 
   if (user.role === "SuperAdmin") {
-    // 1️⃣ Count partners
     const totalPartners = await User.countDocuments({
       role: "Partner",
       status: { $ne: "delete" },
     });
 
-    // 2️⃣ Clients created by ANY superadmin
     const clients = await User.find({
       role: "Client",
-      createdBy: user._id, // superadmin created
+      createdBy: user._id,
       status: { $ne: "delete" },
     }).select("_id");
 
     const clientIDs = clients.map((c) => c._id);
 
-    // 3️⃣ Users under superadmin's clients
     const totalUsers = await User.countDocuments({
       clientID: { $in: clientIDs },
       status: { $ne: "delete" },
     });
+
     const allClients = await User.find({
       role: "Client",
       status: { $ne: "delete" },
@@ -659,7 +875,6 @@ exports.login = asyncHandler(async (req, res) => {
 
     const allClientIDs = allClients.map((c) => c._id);
 
-    // 3️⃣ Users under superadmin's clients
     const allTotalUsers = await User.countDocuments({
       clientID: { $in: allClientIDs },
       status: { $ne: "delete" },
@@ -672,11 +887,7 @@ exports.login = asyncHandler(async (req, res) => {
       totalAllClients: allClientIDs.length,
       totalAllUsers: allTotalUsers,
     };
-  }
-
-  // PARTNER STATS
-  else if (user.role === "Partner") {
-    // 1️⃣ Clients created by this partner
+  } else if (user.role === "Partner") {
     const clients = await User.find({
       parent: user._id,
       role: "Client",
@@ -685,7 +896,6 @@ exports.login = asyncHandler(async (req, res) => {
 
     const clientIDs = clients.map((c) => c._id);
 
-    // 2️⃣ Users under this partner's clients
     const totalUsers = await User.countDocuments({
       clientID: { $in: clientIDs },
       status: { $ne: "delete" },
@@ -700,7 +910,7 @@ exports.login = asyncHandler(async (req, res) => {
   res
     .status(200)
     .json(
-      new ApiResponse(200, { token, user: safeUser, stats }, "Login successful")
+      new ApiResponse(200, { token, user: safeUser, stats }, "Management Portal Login successful")
     );
 });
 exports.logout = asyncHandler(async (req, res) => {

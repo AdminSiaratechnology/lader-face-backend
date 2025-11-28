@@ -44,6 +44,7 @@ exports.createCustomer = asyncHandler(async (req, res) => {
       registrationDocTypes: rawDocTypes,
       ...rest
     } = req.body;
+    console.log(req.body,"resssss")
 
     const adminId = req?.user?.id;
     const clientId = req.user.clientID;
@@ -152,72 +153,205 @@ delete safeCustomer.auditLogs
 exports.createBulkCustomers = asyncHandler(async (req, res) => {
   const { customers } = req.body;
 
+  // 1. Basic Validation
   if (!Array.isArray(customers) || customers.length === 0) {
     throw new ApiError(400, "Customers array is required in body");
   }
+
   const userId = req.user.id;
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
   const clientId = req.user.clientID;
 
-  const companies = await Company.find({}, "_id");
-  const validCompanyIds = new Set(companies.map((c) => String(c._id)));
+  // 2. Group Customers by Company ID
+  // We do this to generate codes efficiently per company
+  const customersByCompany = {};
+  
+  // Also validate company IDs exist
+  const allCompanies = await Company.find({}, "_id");
+  const validCompanyIds = new Set(allCompanies.map((c) => String(c._id)));
 
-  const results = [];
-  const errors = [];
+  const formattingErrors = [];
+  const validCustomersToInsert = [];
 
-  for (const [index, body] of customers.entries()) {
+  // Step 2.1: Pre-process and Group
+  customers.forEach((body, index) => {
     try {
-      // Required fields_
       if (!body.customerName || !body.company) {
-        throw new Error("customerName and company are required");
+        throw new Error("Missing required fields: customerName or company");
       }
       if (!validCompanyIds.has(String(body.company))) {
-        throw new Error("Invalid company ID");
+        throw new Error(`Invalid company ID: ${body.company}`);
       }
 
+      // Grouping logic
+      const compId = String(body.company);
+      if (!customersByCompany[compId]) {
+        customersByCompany[compId] = [];
+      }
+
+      // Add index to track back errors later
+      customersByCompany[compId].push({ ...body, originalIndex: index });
+
+    } catch (err) {
+      formattingErrors.push({
+        index,
+        customerName: body?.customerName || "Unknown",
+        error: err.message,
+      });
+    }
+  });
+
+  // 3. Generate Codes in Memory (Fixing the Race Condition)
+  for (const compId of Object.keys(customersByCompany)) {
+    const batch = customersByCompany[compId];
+
+    // Find the LAST code currently in DB for this company
+    // We sort by 'code' (descending) to get the highest number
+    // Note: We cast code to integer for sorting if stored as string, 
+    // but usually string sort works if padding is consistent.
+    // Ideally, sort by createdAt or code.
+    const lastCustomer = await Customer.findOne({ 
+      company: compId,
+      code: { $exists: true } 
+    }).sort({ createdAt: -1, code: -1 }).select("code");
+
+    let currentCodeNum = 0;
+    if (lastCustomer && lastCustomer.code) {
+      const parsed = parseInt(lastCustomer.code, 10);
+      if (!isNaN(parsed)) currentCodeNum = parsed;
+    }
+
+    // Assign new codes to this batch
+    batch.forEach((custData) => {
+      currentCodeNum++; 
+      // Pad with zeros (e.g., 000000000012)
+      const newCode = currentCodeNum.toString().padStart(12, "0");
+
       const customerObj = {
-        ...body,
+        ...custData,
+        code: newCode, // Manually assigning code here!
         clientId,
         createdBy: userId,
+        // Force lowercase status to avoid Enum errors
+        status: custData.status ? custData.status.toLowerCase() : "active",
         auditLogs: [
           {
             action: "create",
-            performedBy: new mongoose.Types.ObjectId(userId),
+            performedBy: userId,
             timestamp: new Date(),
             details: "Bulk customer import",
           },
         ],
       };
+      
+      // Remove temporary key before pushing
+      const { originalIndex, ...finalObj } = customerObj;
+      
+      // We store originalIndex separately to map errors back if DB fails
+      // But for insertMany, we pass the clean object
+      // We attach originalIndex to the object prototype or manage mapping via order
+      // Simpler approach: Just push to valid list, but if write fails, 
+      // we might lose exact index mapping if we don't handle it carefully.
+      // For now, we will assume sequential processing for mapping.
+      
+      // Actually, to map errors correctly, we need to know the original index.
+      // We can attach it as a temporary field and use 'strict: false' or remove it?
+      // Mongoose ignores unknown fields if strict is true. Let's rely on that.
+      validCustomersToInsert.push({ ...finalObj, _tempIndex: custData.originalIndex });
+    });
+  }
 
-      results.push(customerObj);
-    } catch (err) {
-      errors.push({
-        index,
-        customerName: body?.customerName,
-        code: body?.code,
-        error: err.message,
+  // If no valid customers, return errors
+  if (validCustomersToInsert.length === 0) {
+    return res.status(400).json(
+      new ApiResponse(400, { errors: formattingErrors }, "No valid customers to process")
+    );
+  }
+
+  let finalInsertedCount = 0;
+  const dbErrors = [];
+
+  // 4. Bulk Insert
+  try {
+    const result = await Customer.insertMany(validCustomersToInsert, { 
+      ordered: false, // Continue even if one fails
+      rawResult: true 
+    });
+    
+    // Mongoose 5/6/7 differences in result structure
+    finalInsertedCount = result.insertedCount || result.length || 0;
+
+  } catch (error) {
+    
+    // A. Handle successes in partial failure
+    if (error.insertedDocs) {
+      finalInsertedCount = error.insertedDocs.length;
+    }
+
+    // B. Handle Write Errors (Duplicates, etc)
+    if (error.writeErrors) {
+      error.writeErrors.forEach((e) => {
+        // e.index corresponds to the index in 'validCustomersToInsert'
+        const failedItem = validCustomersToInsert[e.index];
+        const realIndex = failedItem._tempIndex; // Retrieve the original JSON index
+
+        // Better Error Message Extraction
+        let errMsg = "Unknown DB Error";
+        if (e.errmsg) errMsg = e.errmsg;
+        else if (e.message) errMsg = e.message;
+
+        // Check for specific Duplicate Key Error (Code 11000)
+        if (e.code === 11000) {
+            // Check which field is duplicate
+            if (errMsg.includes("emailAddress")) {
+                errMsg = `Duplicate Email: ${failedItem.emailAddress} already exists.`;
+            } else if (errMsg.includes("code")) {
+                errMsg = `Duplicate Code generated: ${failedItem.code}. Please retry.`;
+            } else {
+                errMsg = "Duplicate entry found.";
+            }
+        }
+
+        dbErrors.push({
+          index: realIndex, 
+          customerName: failedItem.customerName,
+          code: failedItem.code,
+          error: errMsg,
+        });
       });
     }
+    
+    // C. Handle Validation Errors
+    else if (error.name === "ValidationError") {
+       dbErrors.push({
+         index: "N/A",
+         error: "Validation Error: " + error.message
+       });
+    }
   }
-  // ✅ Batch insert_
-  const inserted = await insertInBatches(results, 1000);
 
-  res.status(201).json(
+  const allErrors = [...formattingErrors, ...dbErrors];
+  // Sort errors by index for readability
+  allErrors.sort((a, b) => a.index - b.index);
+
+  const statusCode = allErrors.length > 0 && finalInsertedCount === 0 ? 400 : 201;
+
+  res.status(statusCode).json(
     new ApiResponse(
-      201,
+      statusCode,
       {
         totalReceived: customers.length,
-        totalInserted: inserted.length,
-        totalFailed: errors.length,
-        insertedIds: inserted.map((c) => c._id),
-        errors,
+        totalInserted: finalInsertedCount,
+        totalFailed: allErrors.length,
+        errors: allErrors,
       },
-      "Bulk customer import completed successfully"
+      allErrors.length > 0 
+        ? `Import finished with ${allErrors.length} errors` 
+        : "Bulk customer import completed successfully"
     )
   );
 });
-
 exports.updateCustomer = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const customer = await Customer.findById(id);
@@ -322,9 +456,283 @@ exports.updateCustomer = asyncHandler(async (req, res) => {
 });
 
 // 🟢 Get All Customers (for a company)_
+// exports.getCustomersByCompany = asyncHandler(async (req, res) => {
+//   const clientID = req.user.clientID;
+//   if (!clientID) throw new ApiError(400, "Client ID is required");
+//   const user=User.findById(req.user.id);
+
+
+//   const { companyId } = req.params;
+//   if (!companyId) throw new ApiError(400, "company ID is required");
+
+//   const {
+//     search = "",
+//     status = "",
+//     sortBy = "createdAt",
+//     sortOrder = "desc",
+//     page = 1,
+//     limit = 10,
+//     isCustomer=false
+//   } = req.query;
+
+//   const perPage = parseInt(limit, 10);
+//   const currentPage = Math.max(parseInt(page, 10), 1);
+//   const skip = (currentPage - 1) * perPage;
+
+//   const filter = {
+//     clientId: clientID,
+//     company: companyId,
+//     status: { $ne: "delete" },
+//   };
+
+//   if (status && status.trim() !== "") filter.status = status;
+
+//   if (search && search.trim() !== "") {
+//     filter.$or = [
+//       { customerName: { $regex: search, $options: "i" } },
+//       { emailAddress: { $regex: search, $options: "i" } },
+//       { contactPerson: { $regex: search, $options: "i" } },
+//     ];
+//   }
+
+//   const sortDirection = sortOrder === "asc" ? 1 : -1;
+//   const sortOptions = { [sortBy]: sortDirection };
+
+//   // 🔥 Get paginated customers + total
+//   const [customers, total] = await Promise.all([
+//     Customer.find(filter)
+//       .select("-auditLogs")
+//       .populate({ path: "agent", select: "agentName" })
+//       .sort(sortOptions)
+//       .skip(skip)
+//       .limit(perPage),
+
+//     Customer.countDocuments(filter),
+//   ]);
+
+//   // 🔥 NEW — special counts (full company-level count, not filtered)
+//   const [
+//     gstRegistered,
+//     msmeRegistered,
+//     activeCustomers,
+//     vatRegistered
+//   ] = await Promise.all([
+//     Customer.countDocuments({
+//       clientId: clientID,
+//       company: companyId,
+//       status: { $ne: "delete" },
+//       gstNumber: { $exists: true, $ne: "" }
+//     }),
+
+//     Customer.countDocuments({
+//       clientId: clientID,
+//       company: companyId,
+//       status: { $ne: "delete" },
+//       msmeRegistration: { $exists: true, $ne: "" }
+//     }),
+
+//     Customer.countDocuments({
+//       clientId: clientID,
+//       company: companyId,
+//       status: "active"
+//     }),
+
+//     Customer.countDocuments({
+//       clientId: clientID,
+//       company: companyId,
+//       status: { $ne: "delete" },
+//       vatNumber: { $exists: true, $ne: "" }
+//     }),
+//   ]);
+
+//   res.status(200).json(
+//     new ApiResponse(
+//       200,
+//       {
+//         customers,
+//         pagination: {
+//           total,
+//           page: currentPage,
+//           limit: perPage,
+//           totalPages: Math.ceil(total / perPage),
+//         },
+//         counts: {
+//           gstRegistered,
+//           msmeRegistered,
+//           activeCustomers,
+//           vatRegistered
+//         }
+//       },
+//       customers.length ? "Customers fetched successfully" : "No customers found"
+//     )
+//   );
+// });
+
+// exports.getCustomersByCompany = asyncHandler(async (req, res) => {
+//   const clientID = req.user.clientID;
+//   if (!clientID) throw new ApiError(400, "Client ID is required");
+
+//   const user = await User.findById(req.user.id);
+//   if (!user) throw new ApiError(404, "User not found");
+
+//   const { companyId } = req.params;
+//   if (!companyId) throw new ApiError(400, "Company ID is required");
+
+//   const {
+//     search = "",
+//     status = "",
+//     sortBy = "createdAt",
+//     sortOrder = "desc",
+//     page = 1,
+//     limit = 10,
+//     isCustomer = false,
+//   } = req.query;
+
+//   const perPage = parseInt(limit, 10);
+//   const currentPage = Math.max(parseInt(page, 10), 1);
+//   const skip = (currentPage - 1) * perPage;
+
+//   // 🔥 Base filter
+//   const filter = {
+//     clientId: clientID,
+//     company: companyId,
+//     status: { $ne: "delete" },
+//   };
+
+//   // 🟦 If specific status requested
+//   if (status && status.trim() !== "") filter.status = status;
+
+//   // 🟦 Search filter
+//   if (search && search.trim() !== "") {
+//     filter.$or = [
+//       { customerName: { $regex: search, $options: "i" } },
+//       { emailAddress: { $regex: search, $options: "i" } },
+//       { contactPerson: { $regex: search, $options: "i" } },
+//     ];
+//   }
+
+//   // 🟦 Sorting
+//   const sortDirection = sortOrder === "asc" ? 1 : -1;
+//   const sortOptions = { [sortBy]: sortDirection };
+
+//   // **********************************************************************
+//   // 🔥 isCustomer = true → Filter customers only allowed to this salesman
+//   // **********************************************************************
+//   if (isCustomer === "true" || isCustomer === true) {
+//     // find access for this company
+//     const accessForCompany = user.access.find(
+//       (acc) => String(acc.company?._id) === String(companyId)
+//     );
+
+//     if (!accessForCompany) {
+//       return res.status(200).json(
+//         new ApiResponse(200, {
+//           customers: [],
+//           pagination: {
+//             total: 0,
+//             page: currentPage,
+//             limit: perPage,
+//             totalPages: 0,
+//           },
+//           counts: {
+//             gstRegistered: 0,
+//             msmeRegistered: 0,
+//             activeCustomers: 0,
+//             vatRegistered: 0,
+//           },
+//         }, "No customers found for this salesman")
+//       );
+//     }
+
+//     // extract customerGroup IDs from access
+//     const allowedGroups = accessForCompany.customerGroups.map(
+//       (g) => g.groupId
+//     );
+
+//     // add filter
+//     filter.customerGroup = { $in: allowedGroups };
+//   }
+
+//   // **********************************************************************
+
+//   // Fetch paginated customers
+//   const [customers, total] = await Promise.all([
+//     Customer.find(filter)
+//       .select("-auditLogs")
+//       .populate({ path: "agent", select: "agentName" })
+//       .sort(sortOptions)
+//       .skip(skip)
+//       .limit(perPage),
+
+//     Customer.countDocuments(filter),
+//   ]);
+
+//   // 🔥 Company level special counts
+//   const [
+//     gstRegistered,
+//     msmeRegistered,
+//     activeCustomers,
+//     vatRegistered
+//   ] = await Promise.all([
+//     Customer.countDocuments({
+//       clientId: clientID,
+//       company: companyId,
+//       status: { $ne: "delete" },
+//       gstNumber: { $exists: true, $ne: "" },
+//     }),
+
+//     Customer.countDocuments({
+//       clientId: clientID,
+//       company: companyId,
+//       status: { $ne: "delete" },
+//       msmeRegistration: { $exists: true, $ne: "" },
+//     }),
+
+//     Customer.countDocuments({
+//       clientId: clientID,
+//       company: companyId,
+//       status: "active",
+//     }),
+
+//     Customer.countDocuments({
+//       clientId: clientID,
+//       company: companyId,
+//       status: { $ne: "delete" },
+//       vatNumber: { $exists: true, $ne: "" },
+//     }),
+//   ]);
+
+//   return res.status(200).json(
+//     new ApiResponse(
+//       200,
+//       {
+//         customers,
+//         pagination: {
+//           total,
+//           page: currentPage,
+//           limit: perPage,
+//           totalPages: Math.ceil(total / perPage),
+//         },
+//         counts: {
+//           gstRegistered,
+//           msmeRegistered,
+//           activeCustomers,
+//           vatRegistered,
+//         },
+//       },
+//       customers.length
+//         ? "Customers fetched successfully"
+//         : "No customers found"
+//     )
+//   );
+// });
 exports.getCustomersByCompany = asyncHandler(async (req, res) => {
   const clientID = req.user.clientID;
   if (!clientID) throw new ApiError(400, "Client ID is required");
+
+  // 🔥 Fix 1: Yahan 'await' lagana zaroori hai user data fetch karne ke liye
+  const user = await User.findById(req.user.id);
+  if (!user) throw new ApiError(404, "User not found");
 
   const { companyId } = req.params;
   if (!companyId) throw new ApiError(400, "company ID is required");
@@ -336,17 +744,48 @@ exports.getCustomersByCompany = asyncHandler(async (req, res) => {
     sortOrder = "desc",
     page = 1,
     limit = 10,
+    isCustomer = false // String "true" or "false" usually comes from query
   } = req.query;
+  console.log(req.query,"isCustomer")
 
   const perPage = parseInt(limit, 10);
   const currentPage = Math.max(parseInt(page, 10), 1);
   const skip = (currentPage - 1) * perPage;
 
+  // Base Filter
   const filter = {
     clientId: clientID,
     company: companyId,
     status: { $ne: "delete" },
   };
+
+  // 🔥 Fix 2: User Access Logic Implementation
+  // Agar isCustomer true hai, tabhi ye access check chalega
+  if (isCustomer === "true" || isCustomer === true) {
+    
+    // 1. User ke access array mein se current company find karo
+    // Note: Hum toString() use kar rahe hain taaki ID type mismatch na ho
+    const companyAccess = user.access.find(
+      (acc) => 
+        (acc.company._id && acc.company._id.toString() === companyId.toString()) || 
+        (acc.company.toString() === companyId.toString())
+    );
+
+    // 2. Check karo agar access mila aur usme customerGroups define hain
+    if (companyAccess && companyAccess.customerGroups && companyAccess.customerGroups.length > 0) {
+      
+      // User ke allowed group IDs nikalo
+      const allowedGroupIds = companyAccess.customerGroups.map(g => g.groupId);
+      
+      // Filter mein add karo: Customer ka group inn allowed IDs mein se ek hona chahiye
+      filter.customerGroup = { $in: allowedGroupIds };
+      
+    } 
+    // Else: Agar customerGroups empty hai ([]), toh hum filter mein kuch add nahi karenge.
+    // Iska matlab automatically "Show All Customers" ho jayega.
+  }
+
+  // --- Baaki purana logic same rahega ---
 
   if (status && status.trim() !== "") filter.status = status;
 
@@ -373,7 +812,7 @@ exports.getCustomersByCompany = asyncHandler(async (req, res) => {
     Customer.countDocuments(filter),
   ]);
 
-  // 🔥 NEW — special counts (full company-level count, not filtered)
+  // 🔥 Counts Logic (Yeh filter use nahi karega, yeh company level total hai)
   const [
     gstRegistered,
     msmeRegistered,
@@ -430,6 +869,7 @@ exports.getCustomersByCompany = asyncHandler(async (req, res) => {
     )
   );
 });
+
 
 exports.getCustomersByClient = asyncHandler(async (req, res) => {
   const clientID = req.user.clientID;

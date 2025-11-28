@@ -515,7 +515,7 @@ exports.getOrders = async (req, res) => {
 };
 
 exports.getOrdersByCompanyId = async (req, res) => {
-  console.log("📦 Fetching Orders by Company ID");
+  // console.log("📦 Fetching Orders by Company ID");
 
   try {
     const { companyId } = req.params;
@@ -659,7 +659,7 @@ if (search && search.trim() !== "") {
 };
 
 exports.getOrdersByUser = async (req, res) => {
-  console.log("📦 Fetching Orders by Company ID");
+  // console.log("📦 Fetching Orders by Company ID");
 
   try {
     const { companyId } = req.params;
