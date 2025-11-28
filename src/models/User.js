@@ -24,11 +24,34 @@ const accessSchema = new mongoose.Schema(
       required: true,
     },
     modules: {
-      type: mongoose.Schema.Types.Mixed, // ✅ Changed from Map to Mixed
+      type: mongoose.Schema.Types.Mixed,
       default: {},
     },
+    // Fixed: Removed duplicate customerGroups key
+    customerGroups: [
+      {
+        groupId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "CustomerGroup",
+        },
+        groupName: String,
+        groupCode: String,
+      },
+    ],
+    // Fixed: Defined structure for godowns to match your frontend data
+    godowns: [
+      {
+        _id: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Godown", // Make sure this matches your Godown model name
+        },
+        name: String,
+        code: String,
+        city: String, // Optional: helpful for display
+      },
+    ],
   },
-  { _id: false }
+  { _id: false } // Prevents creating an _id for the access object itself
 );
 const limitHistorySchema = new mongoose.Schema(
   {

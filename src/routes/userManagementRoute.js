@@ -19,5 +19,7 @@ router.get("/limit", userManagement.getPendingLimitRequests)
 router.patch("/limit/:userId", userManagement.approveLimitRequest)
 router.get("/partners/all", userManagement.getAllPartners);
 router.get("/subPartners", userManagement.getSubPartners);
+// router.get("/dashboard/stats-super", userManagement.getDashboardStatsSuperAdmin);
+
 
 module.exports = router;

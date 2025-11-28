@@ -23,6 +23,7 @@ const orderRoute =require("./routes/order.routes")
 const cartRoute =require("./routes/cartRoutes")
 const paymentRoute =require("./routes/paymentRoutes")
 const projectRoute = require("./routes/projectRoutes")
+const customerGroupRoute=require("./routes/customerGroupRoutes")
 const app = express();
 app.use(cors());
 // app.use(
@@ -77,6 +78,8 @@ app.use("/api/stock-groups", stockGroupRoutes);
 app.use("/api/units", unitRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/user-management", userManagementRoute);
+
+app.use("/api/customer-group",customerGroupRoute)
 app.use("/api/customers",customerRoute)
 app.use("/api/vendors",vendorRoute)
 app.use("/api/agents",agentRoute)

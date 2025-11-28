@@ -569,6 +569,10 @@ exports.deleteCompany = asyncHandler(async (req, res) => {
 
 exports.generateCompanyDocumentationPDF = asyncHandler(async (req, res) => {
   const companyId = req.query.companyId;
+  const clientID=req.user.clientID;
+
+  const companies=await Company.find({client:clientID},{ namePrint: 1, code: 1 });
+
   const apiDocs = {
     baseUrl: "https://api.ledgerface.com/api/",
     authentication: {
@@ -681,75 +685,105 @@ exports.generateCompanyDocumentationPDF = asyncHandler(async (req, res) => {
       },
     ],
   };
-  const html = `
-    <html>
-      <head>
-        <title>Company API Documentation</title>
-        <style>
-          body { font-family: 'Arial', sans-serif; padding: 30px; color: #222; }
-          h1, h2 { color: #2a5d84; }
-          h1 { text-align: center; border-bottom: 2px solid #2a5d84; padding-bottom: 10px; }
-          .endpoint {
-            background: #f9f9f9;
-            border: 1px solid #ccc;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 25px;
-          }
-          pre {
-            background: #1e1e1e;
-            color: #00ff90;
-            padding: 15px;
-            border-radius: 5px;
-            overflow-x: auto;
-          }
-          code { font-family: monospace; font-size: 14px; }
-        </style>
-      </head>
-      <body>
-        <h1>Company API Documentation</h1>
-        <h2>Base URL</h2>
-        <pre><code>${apiDocs.baseUrl}</code></pre>
-        <h2>Authentication</h2>
-        <pre><code>${JSON.stringify(apiDocs.authentication, null, 2)}</code></pre>
-        <h2>company ID: ${companyId || "N/A"}</h2>
-        <h2>Endpoints</h2>
-        ${apiDocs.apis
+const html = `
+  <html>
+    <head>
+      <title>Company API Documentation</title>
+      <style>
+        body { font-family: 'Arial', sans-serif; padding: 30px; color: #222; }
+        h1, h2 { color: #2a5d84; }
+        h1 { text-align: center; border-bottom: 2px solid #2a5d84; padding-bottom: 10px; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+        th, td { border: 1px solid #ccc; padding: 10px; text-align: left; }
+        th { background: #f0f0f0; }
+        .endpoint {
+          background: #f9f9f9; border: 1px solid #ccc; padding: 15px;
+          border-radius: 8px; margin-bottom: 25px;
+        }
+        pre {
+          background: #1e1e1e; color: #00ff90; padding: 15px;
+          border-radius: 5px; overflow-x: auto;
+        }
+        code { font-family: monospace; font-size: 14px; }
+      </style>
+    </head>
+    <body>
+
+      <h1>Company API Documentation</h1>
+
+      <h2>All Companies</h2>
+
+      <table>
+        <tr>
+          <th>Company ID</th>
+          <th>Name Print</th>
+          <th>Code</th>
+        </tr>
+
+        ${companies
           .map(
-            (api) => `
-            <div class="endpoint">
-              <h3>${api.title}</h3>
-              <strong>Endpoint:</strong>
-              <pre><code>${api.endpoint}</code></pre>
-              <strong>Request Type:</strong>
-              <pre><code>${api.requestType}</code></pre>
-              ${
-                api.description
-                  ? `<p><strong>Description:</strong> ${api.description}</p>`
-                  : ""
-              }
-              ${
-                api.body
-                  ? `<strong>Request Body:</strong><pre><code>${JSON.stringify(
-                      api.body,
-                      null,
-                      2
-                    )}</code></pre>`
-                  : ""
-              }
-              <strong>Response:</strong>
-              <pre><code>${JSON.stringify(api.response, null, 2)}</code></pre>
-            </div>
-          `
+            (c) => `
+          <tr>
+            <td>${c._id}</td>
+            <td>${c.namePrint || "N/A"}</td>
+            <td>${c.code || "N/A"}</td>
+          </tr>
+        `
           )
           .join("")}
-        <hr>
-        <p style="text-align:center; color:#777; font-size:12px;">
-          Generated on ${new Date().toLocaleString()}
-        </p>
-      </body>
-    </html>
-  `;
+      </table>
+
+      <h2>Base URL</h2>
+      <pre><code>${apiDocs.baseUrl}</code></pre>
+
+      <h2>Authentication</h2>
+      <pre><code>${JSON.stringify(apiDocs.authentication, null, 2)}</code></pre>
+
+      <h2>Company ID (Query): ${companyId || "N/A"}</h2>
+
+      <h2>Endpoints</h2>
+
+      ${apiDocs.apis
+        .map(
+          (api) => `
+          <div class="endpoint">
+            <h3>${api.title}</h3>
+            <strong>Endpoint:</strong>
+            <pre><code>${api.endpoint}</code></pre>
+            <strong>Request Type:</strong>
+            <pre><code>${api.requestType}</code></pre>
+
+            ${
+              api.description
+                ? `<p><strong>Description:</strong> ${api.description}</p>`
+                : ""
+            }
+
+            ${
+              api.body
+                ? `<strong>Request Body:</strong><pre><code>${JSON.stringify(
+                    api.body,
+                    null,
+                    2
+                  )}</code></pre>`
+                : ""
+            }
+
+            <strong>Response:</strong>
+            <pre><code>${JSON.stringify(api.response, null, 2)}</code></pre>
+          </div>
+        `
+        )
+        .join("")}
+
+      <hr>
+      <p style="text-align:center; color:#777; font-size:12px;">
+        Generated on ${new Date().toLocaleString()}
+      </p>
+    </body>
+  </html>
+`;
+
   const browser = await puppeteer.launch({
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
     headless: "new",
