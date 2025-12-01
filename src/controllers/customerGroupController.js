@@ -3,9 +3,12 @@ const asyncHandler = require("../utils/asyncHandler");
 const ApiResponse = require("../utils/apiResponse");
 const ApiError = require("../utils/apiError");
 
+const escapeRegex = (text) => {
+  return text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
+};
+
 exports.createGroup = asyncHandler(async (req, res) => {
   const { groupName, status = "active", companyId, parentGroup } = req.body;
-  
 
   if (!groupName?.trim()) throw new ApiError(400, "Group name is required");
   if (!companyId) throw new ApiError(400, "Company ID is required");
@@ -35,7 +38,9 @@ exports.updateGroup = asyncHandler(async (req, res) => {
   const updateData = {
     ...(groupName && { groupName: groupName.trim() }),
     ...(status && { status }),
-    ...(parentGroup !== undefined && { parentGroup: parentGroup || null ? null : parentGroup }),
+    ...(parentGroup !== undefined && {
+      parentGroup: parentGroup || null ? null : parentGroup,
+    }),
   };
 
   const group = await CustomerGroup.findOneAndUpdate(
@@ -72,7 +77,9 @@ exports.getGroups = asyncHandler(async (req, res) => {
   // Filtered query (for list)
   const listFilter = {
     ...baseFilter,
-    ...(search && { groupName: { $regex: search, $options: "i" } }),
+    ...(search && {
+      groupName: { $regex: escapeRegex(search), $options: "i" },
+    }),
     ...(status && status !== "all" && { status }),
   };
 
@@ -125,8 +132,6 @@ exports.getGroupById = asyncHandler(async (req, res) => {
   if (!group) throw new ApiError(404, "Group not found");
   res.json(new ApiResponse(200, group));
 });
-
-
 
 exports.deleteGroup = asyncHandler(async (req, res) => {
   const group = await CustomerGroup.findOneAndUpdate(

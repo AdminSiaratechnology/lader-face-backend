@@ -12,7 +12,7 @@ const { logAudit } = require("../utils/orderAuditLog");
 const calculateChanges = require("../utils/calculateChanges");
 const StockItem = require("../models/stockItem.mode");
 const puppeteer = require("puppeteer");
-const generateThermalInvoice = require("../utils/pdfTemplates/thermalInvoice");
+const generateDynamicInvoice = require("../utils/pdfTemplates/thermalInvoice");
 
 
 const Product = require("../models/Product");
@@ -1864,22 +1864,26 @@ exports.getSalesTrend = asyncHandler(async (req, res) => {
 
 
 exports.generateInvoicePDF = async (req, res) => {
-  console.log("Generating invoice PDF for order ID:", req.params.id);
+  // Get format from query, default to 'A4' if not provided
+  // Example usage: /generate-pdf/:id?format=A4 or ?format=80mm
+  const formatType = req.query.format || "A4"; 
+  
+  console.log(`Generating ${formatType} invoice PDF for order ID:`, req.params.id);
+
   try {
     const orderId = req.params.id;
 
     const order = await Order.findById(orderId)
       .populate("items.productId")
-      .populate("customerId","customerName emailAddress zipCode addressLine1 city phoneNumber state")
+      .populate("customerId", "customerName emailAddress zipCode addressLine1 city phoneNumber state")
       .lean();
-      console.log("Fetched order:", order);
 
     if (!order) return res.status(404).json({ message: "Order not found" });
 
     const company = await Company.findById(order.companyId).lean();
-    console.log("order data:", order);
 
-    const html = generateThermalInvoice(order, company);
+    // Pass the formatType to the HTML generator to adjust CSS
+    const html = generateDynamicInvoice(order, company, formatType);
 
     const browser = await puppeteer.launch({
       headless: "new",
@@ -1889,17 +1893,41 @@ exports.generateInvoicePDF = async (req, res) => {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "networkidle0" });
 
-const pdfBuffer = await page.pdf({
-  width: "500mm",
-  printBackground: true,
-  margin: { top: "5mm", bottom: "5mm", left: "2mm", right: "2mm" },
-});
+    // --- Dynamic PDF Configuration ---
+    let pdfOptions = {
+      printBackground: true,
+      margin: { top: "5mm", bottom: "5mm", left: "5mm", right: "5mm" },
+    };
+
+    // Define specific settings based on format
+    switch (formatType.toLowerCase()) {
+      case "a4":
+        pdfOptions.format = "A4";
+        break;
+      case "a5":
+        pdfOptions.format = "A5";
+        break;
+      case "80mm": // Standard Thermal Receipt
+        pdfOptions.width = "80mm";
+        pdfOptions.margin = { top: "2mm", bottom: "2mm", left: "2mm", right: "2mm" };
+        break;
+      case "58mm": // Small Thermal Receipt
+        pdfOptions.width = "58mm";
+        pdfOptions.margin = { top: "2mm", bottom: "2mm", left: "2mm", right: "2mm" };
+        break;
+      default:
+        // Default fallback (custom size defined in your original code)
+        pdfOptions.width = "500mm"; 
+        break;
+    }
+
+    const pdfBuffer = await page.pdf(pdfOptions);
 
     await browser.close();
 
     res.set({
       "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="invoice_${orderId}.pdf"`,
+      "Content-Disposition": `inline; filename="invoice_${orderId}_${formatType}.pdf"`,
     });
 
     return res.send(pdfBuffer);

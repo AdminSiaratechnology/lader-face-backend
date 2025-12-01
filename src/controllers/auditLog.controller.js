@@ -309,6 +309,7 @@ exports.getAllAuditLogs = asyncHandler(async (req, res) => {
       sortBy = "timestamp",
       sortOrder = "desc",
     } = req.query;
+    const finalSortBy = sortBy?.trim() || "timestamp"
 
     const perPage = parseInt(limit, 10);
     const currentPage = Math.max(parseInt(page, 10), 1);
@@ -398,7 +399,7 @@ exports.getAllAuditLogs = asyncHandler(async (req, res) => {
           },
         },
       },
-      { $sort: { [sortBy]: sortDirection } },
+      { $sort: { [finalSortBy]: sortDirection } },
       { $skip: skip },
       { $limit: perPage },
     ]);

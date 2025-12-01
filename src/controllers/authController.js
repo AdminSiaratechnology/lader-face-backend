@@ -743,14 +743,18 @@ exports.loginClientPortal = asyncHandler(async (req, res) => {
   // 4. Verify Password
   const isMatch = await bcrypt.compare(password, user.password);
   if (!isMatch) throw new ApiError(401, "Invalid credentials");
+  const newDeviceId= req?.headers["auth-source"]=="Api" ?  user.currentDeviceId:deviceId;
+  console.log(req?.headers["auth-source"],"fhjefvghergh",newDeviceId)
 
   // 5. Generate Token
-  const token = signToken(user._id, user.clientID, user.role, deviceId);
+  const token = signToken(user._id, user.clientID, user.role, newDeviceId);
+  const newToken=req?.headers["auth-source"]=="Api" ? user.currentToken:token
+  // Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36
 
   // 6. Update Login History & Audit Logs
   const now = new Date();
-  user.currentDeviceId = deviceId;
-  user.currentToken = token;
+  user.currentDeviceId = newDeviceId;
+  user.currentToken = newToken;
   user.lastLogin = now;
   user.loginHistory.push(now);
   user.auditLogs.push({
