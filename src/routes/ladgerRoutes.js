@@ -34,7 +34,7 @@ router.get("/:companyId", getLedgersByCompany);
 // router.get("/", getAgentsByCompany);
 
 // Get agent by id
-router.get("/:id", getLedgerById);
+router.get("/single/:id", getLedgerById);
 router.delete("/:id",deleteLedger)
 
 module.exports = router;
