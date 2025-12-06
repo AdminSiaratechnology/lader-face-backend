@@ -14,7 +14,6 @@ const StockItem = require("../models/stockItem.mode");
 const puppeteer = require("puppeteer");
 const generateDynamicInvoice = require("../utils/pdfTemplates/thermalInvoice");
 
-
 const Product = require("../models/Product");
 // ✅ Create Order
 exports.createOrder = asyncHandler(async (req, res) => {
@@ -36,7 +35,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
     ) {
       throw new ApiError(400, "Missing required fields");
     }
-       const company = await Company.findById(companyId).lean();
+    const company = await Company.findById(companyId).lean();
     if (!company) throw new ApiError(404, "Company not found");
 
     for (const item of items) {
@@ -48,28 +47,41 @@ exports.createOrder = asyncHandler(async (req, res) => {
       }
 
       // 1️⃣ Fetch product
-      const product = await StockItem.findById(item.productId).populate("productId").lean();
-      console.log(product," fetched product for item:", item.productId);
+      const product = await StockItem.findById(item.productId)
+        .populate("productId")
+        .lean();
+      console.log(product, " fetched product for item:", item.productId);
 
       if (!product)
         throw new ApiError(404, `Product not found: ${item.productId}`);
-   
-       let hsnCode = product?.productId.taxConfiguration?.hsnCode || "";
+
+      let hsnCode = product?.productId.taxConfiguration?.hsnCode || "";
       let isGST = company.country === "India" ? true : false;
       let IGST = company.state !== shippingAddress.state ? true : false;
-      const { cgst = 0, sgst = 0, cess = 0, additionalCess = 0, taxPercentage = 0 } = product?.productId.taxConfiguration || {};
+      const {
+        cgst = 0,
+        sgst = 0,
+        cess = 0,
+        additionalCess = 0,
+        taxPercentage = 0,
+      } = product?.productId.taxConfiguration || {};
 
-      const taxPercent = isGST ? cgst + sgst + cess + additionalCess : taxPercentage;
+      const taxPercent = isGST
+        ? cgst + sgst + cess + additionalCess
+        : taxPercentage;
       const includesTax = product?.productId.priceIncludesTax;
-      console.log(`Tax % for product ${item.productId}:`, taxPercent, "Includes Tax:", includesTax);
+      console.log(
+        `Tax % for product ${item.productId}:`,
+        taxPercent,
+        "Includes Tax:",
+        includesTax
+      );
 
       const qty = item.quantity;
       const unitPrice = item.price;
 
       let taxable = 0;
       let taxAmount = 0;
-     
-
 
       // 🔥 TAX CALCULATION
 
@@ -84,7 +96,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
       }
 
       // Multiply by quantity
-      item.taxPercentage= taxPercent;
+      item.taxPercentage = taxPercent;
       item.taxableValue = Number((taxable * qty).toFixed(2));
       item.taxAmount = Number((taxAmount * qty).toFixed(2));
       item.total = Number((item.taxableValue + item.taxAmount).toFixed(2));
@@ -93,11 +105,13 @@ exports.createOrder = asyncHandler(async (req, res) => {
       item.isIGST = IGST;
       item.CGST = cgst;
       item.SGST = sgst;
-      item.IGST = IGST ? (cgst + sgst) : 0;
+      item.IGST = IGST ? cgst + sgst : 0;
       item.CESS = cess;
       item.otherCESS = additionalCess;
 
-      console.log(`Calculated for item ${item.productId} - Taxable: ${item.taxableValue}, Tax: ${item.taxAmount}, Total: ${item.total} hasnCode: ${item.hsnCode}`);
+      console.log(
+        `Calculated for item ${item.productId} - Taxable: ${item.taxableValue}, Tax: ${item.taxAmount}, Total: ${item.total} hasnCode: ${item.hsnCode}`
+      );
 
       // Ensure discount doesn't exceed amount
       if (item.discount && item.discount > item.total) {
@@ -105,14 +119,10 @@ exports.createOrder = asyncHandler(async (req, res) => {
       }
     }
 
-
     // 🔥 COMPANY CHECK
-   
-    
 
     const isAutoApproved = company.autoApprove === true;
 
-   
     // 🔥CALCULATE ORDER TOTALS
 
     const subtotal = items.reduce((acc, item) => acc + (item.total || 0), 0);
@@ -124,8 +134,6 @@ exports.createOrder = asyncHandler(async (req, res) => {
 
     let grandTotal = subtotal - totalDiscount;
     if (grandTotal < 0) grandTotal = 0;
-
-
 
     const orderData = {
       companyId,
@@ -184,7 +192,6 @@ exports.createOrder = asyncHandler(async (req, res) => {
         if (code !== 0) console.error(`⚠️ Worker exited with code ${code}`);
       });
 
-   
     return res
       .status(201)
       .json(
@@ -206,7 +213,6 @@ exports.createOrder = asyncHandler(async (req, res) => {
       .json(new ApiResponse(500, null, "Internal server error", error.message));
   }
 });
-
 
 //updateOrderStatus
 exports.updateOrderStatus = asyncHandler(async (req, res) => {
@@ -283,10 +289,12 @@ exports.updateOrderDetails = asyncHandler(async (req, res) => {
     if (!company) throw new ApiError(404, "Company not found");
 
     // 4️⃣ Validate items — No new products allowed
-    const oldProductIds = order.items.map(i => i.productId.toString());
-    const incomingIds = items.map(i => i.productId.toString());
+    const oldProductIds = order.items.map((i) => i.productId.toString());
+    const incomingIds = items.map((i) => i.productId.toString());
 
-    const extraProducts = incomingIds.filter(id => !oldProductIds.includes(id));
+    const extraProducts = incomingIds.filter(
+      (id) => !oldProductIds.includes(id)
+    );
     if (extraProducts.length > 0) {
       throw new ApiError(400, "New products cannot be added in update");
     }
@@ -296,7 +304,7 @@ exports.updateOrderDetails = asyncHandler(async (req, res) => {
 
     for (const incoming of items) {
       const oldItem = order.items.find(
-        i => i.productId.toString() === incoming.productId.toString()
+        (i) => i.productId.toString() === incoming.productId.toString()
       );
       if (!oldItem) continue;
 
@@ -408,9 +416,9 @@ exports.updateOrderDetails = asyncHandler(async (req, res) => {
     // 8️⃣ Save
     await order.save();
 
-    res.status(200).json(
-      new ApiResponse(200, order, "Order updated successfully")
-    );
+    res
+      .status(200)
+      .json(new ApiResponse(200, order, "Order updated successfully"));
   } catch (error) {
     console.error("❌ Error updating order details:", error);
 
@@ -425,7 +433,6 @@ exports.updateOrderDetails = asyncHandler(async (req, res) => {
       .json(new ApiResponse(500, null, "Internal server error", error.message));
   }
 });
-
 
 // ✅ Update Order
 exports.updateOrder = async (req, res) => {
@@ -564,32 +571,32 @@ exports.getOrdersByCompanyId = async (req, res) => {
     // 📌 Status Filters
     if (status) filter.status = status;
     if (paymentStatus) filter["payment.status"] = paymentStatus;
-if (search && search.trim() !== "") {
-  console.log("🔎 Searching orders with:", search);
+    if (search && search.trim() !== "") {
+      console.log("🔎 Searching orders with:", search);
 
-  console.log("➡️ Looking for customers with name like:", search);
-  const customerMatches = await Customer.find(
-    {
-      customerName: { $regex: search, $options: "i" },
-  company: companyId,       clientId,
-    },
-    "_id customerName"
-  );
+      console.log("➡️ Looking for customers with name like:", search);
+      const customerMatches = await Customer.find(
+        {
+          customerName: { $regex: search, $options: "i" },
+          company: companyId,
+          clientId,
+        },
+        "_id customerName"
+      );
 
-  console.log("🟩 Customers found matching search:", customerMatches);
+      console.log("🟩 Customers found matching search:", customerMatches);
 
-  const customerIds = customerMatches.map((c) => c._id);
+      const customerIds = customerMatches.map((c) => c._id);
 
-  console.log("🆔 Extracted customer IDs:", customerIds);
+      console.log("🆔 Extracted customer IDs:", customerIds);
 
-  filter.$or = [
-    { orderCode: { $regex: search, $options: "i" } },
-    { customerId: { $in: customerIds } },
-  ];
+      filter.$or = [
+        { orderCode: { $regex: search, $options: "i" } },
+        { customerId: { $in: customerIds } },
+      ];
 
-  console.log("📌 Final $or search filter:", filter.$or);
-}
-
+      console.log("📌 Final $or search filter:", filter.$or);
+    }
 
     console.log(filter);
     const skip = (page - 1) * limit;
@@ -1860,22 +1867,206 @@ exports.getSalesTrend = asyncHandler(async (req, res) => {
   });
 });
 
+exports.getOrderReport = asyncHandler(async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 10,
+      search = "",
+      status = "",
+      sortBy = "createdAt",
+      sortOrder = "desc",
+      startDate,
+      endDate,
+      companyId,
+      userId, // Salesman Filter
+    } = req.query;
 
+    // --- Pagination Setup ---
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.max(1, parseInt(limit) || 10);
+    const skip = (pageNum - 1) * limitNum;
 
+    // --- 1. INITIAL MATCH (Indexes: Fast) ---
+    const matchStage = {
+      // Must be a valid ObjectId for efficient indexing
+      companyId: new mongoose.Types.ObjectId(companyId), 
+    };
+
+    // Filter by Status
+    if (status && status !== "all") {
+      matchStage.status = status;
+    }
+
+    // Filter by Salesman (ID)
+    if (userId && userId !== "all") {
+      matchStage.userId = new mongoose.Types.ObjectId(userId);
+    }
+
+    // --- FIX: Filter by Date (Robust $gte and $lt logic) ---
+    if (startDate || endDate) {
+      matchStage.createdAt = {};
+
+      // Start Date Filter: $gte (Greater than or Equal to)
+      if (startDate) {
+        const start = new Date(startDate);
+        if (!isNaN(start.getTime())) {
+          matchStage.createdAt.$gte = start;
+        }
+      }
+
+      // End Date Filter: $lt (Less than) the start of the *next* day
+      if (endDate) {
+        const end = new Date(endDate);
+        if (!isNaN(end.getTime())) {
+          
+          // 1. Reset the time component to 00:00:00.000 UTC of the selected day.
+          // This removes any time offset that might have come from the client.
+          end.setUTCHours(0, 0, 0, 0); 
+          
+          // 2. Advance the date by 1 day.
+          // e.g., If endDate was 2025-11-27, this date becomes 2025-11-28 00:00:00.000Z
+          end.setDate(end.getDate() + 1); 
+          
+          // The $lt operator ensures all orders on 2025-11-27 are included.
+          matchStage.createdAt.$lt = end;
+        }
+      }
+    }
+
+    // --- 2. SEARCH MATCH (Post-Lookup: Slower but smarter) ---
+    let searchStage = {};
+    if (search) {
+      const searchRegex = { $regex: search, $options: "i" };
+      searchStage = {
+        $or: [
+          { orderCode: searchRegex },
+          // The following fields are populated after $lookup stages
+          { "customer.customerName": searchRegex }, 
+          { "salesman.name": searchRegex },         
+        ],
+      };
+    }
+
+    // --- 3. AGGREGATION PIPELINE ---
+    const pipeline = [
+      // A. Initial Filter (Reduce dataset first, including the fixed date filter)
+      { $match: matchStage },
+
+      // B. Lookup Customer
+      {
+        $lookup: {
+          from: "customers",
+          localField: "customerId",
+          foreignField: "_id",
+          as: "customer",
+        },
+      },
+      { $unwind: { path: "$customer", preserveNullAndEmptyArrays: true } },
+
+      // C. Lookup Salesman (User)
+      {
+        $lookup: {
+          from: "users",
+          localField: "userId",
+          foreignField: "_id",
+          as: "salesman",
+        },
+      },
+      { $unwind: { path: "$salesman", preserveNullAndEmptyArrays: true } },
+
+      // D. Apply Search (Now that we have names populated)
+      ...(search ? [{ $match: searchStage }] : []),
+
+      // E. Facet (Stats & Pagination)
+      {
+        $facet: {
+          stats: [
+            {
+              $group: {
+                _id: null,
+                totalRevenue: { $sum: "$grandTotal" },
+                totalOrders: { $sum: 1 },
+                pendingOrders: {
+                  $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] },
+                },
+                approvedOrders: {
+                  $sum: { $cond: [{ $eq: ["$status", "approved"] }, 1, 0] },
+                },
+                cancelledOrders: {
+                  $sum: { $cond: [{ $eq: ["$status", "cancelled"] }, 1, 0] },
+                },
+              },
+            },
+          ],
+          data: [
+            { $sort: { [sortBy]: sortOrder === "asc" ? 1 : -1 } },
+            { $skip: skip },
+            { $limit: limitNum },
+          ],
+          totalCount: [{ $count: "count" }],
+        },
+      },
+    ];
+
+    const result = await Order.aggregate(pipeline);
+
+    // --- 4. RESPONSE HANDLING ---
+    const stats = result[0].stats[0] || {
+      totalRevenue: 0,
+      totalOrders: 0,
+      pendingOrders: 0,
+      approvedOrders: 0,
+      cancelledOrders: 0,
+    };
+    const orders = result[0].data || [];
+    const total = result[0].totalCount[0] ? result[0].totalCount[0].count : 0;
+
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          orders,
+          stats,
+          pagination: {
+            total,
+            page: pageNum,
+            limit: limitNum,
+            totalPages: Math.ceil(total / limitNum) || 1,
+          },
+        },
+        "Order report fetched successfully"
+      )
+    );
+  } catch (err) {
+    console.error("❌ Order Report Error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch order report",
+      error: err.message,
+    });
+  }
+});
 
 exports.generateInvoicePDF = async (req, res) => {
   // Get format from query, default to 'A4' if not provided
   // Example usage: /generate-pdf/:id?format=A4 or ?format=80mm
-  const formatType = req.query.format || "A4"; 
-  
-  console.log(`Generating ${formatType} invoice PDF for order ID:`, req.params.id);
+  const formatType = req.query.format || "A4";
+
+  console.log(
+    `Generating ${formatType} invoice PDF for order ID:`,
+    req.params.id
+  );
 
   try {
     const orderId = req.params.id;
 
     const order = await Order.findById(orderId)
       .populate("items.productId")
-      .populate("customerId", "customerName emailAddress zipCode addressLine1 city phoneNumber state")
+      .populate(
+        "customerId",
+        "customerName emailAddress zipCode addressLine1 city phoneNumber state"
+      )
       .lean();
 
     if (!order) return res.status(404).json({ message: "Order not found" });
@@ -1909,15 +2100,25 @@ exports.generateInvoicePDF = async (req, res) => {
         break;
       case "80mm": // Standard Thermal Receipt
         pdfOptions.width = "80mm";
-        pdfOptions.margin = { top: "2mm", bottom: "2mm", left: "2mm", right: "2mm" };
+        pdfOptions.margin = {
+          top: "2mm",
+          bottom: "2mm",
+          left: "2mm",
+          right: "2mm",
+        };
         break;
       case "58mm": // Small Thermal Receipt
         pdfOptions.width = "58mm";
-        pdfOptions.margin = { top: "2mm", bottom: "2mm", left: "2mm", right: "2mm" };
+        pdfOptions.margin = {
+          top: "2mm",
+          bottom: "2mm",
+          left: "2mm",
+          right: "2mm",
+        };
         break;
       default:
         // Default fallback (custom size defined in your original code)
-        pdfOptions.width = "500mm"; 
+        pdfOptions.width = "500mm";
         break;
     }
 
@@ -1936,3 +2137,1396 @@ exports.generateInvoicePDF = async (req, res) => {
     res.status(500).json({ message: "PDF generation failed" });
   }
 };
+// GET /api/report/product-wise
+// exports.getProductWiseReport = asyncHandler(async (req, res) => {
+//   const {
+//     companyId,
+//     page = 1,
+//     limit = 15,
+//     search = "",
+//     salesmanId = "all",
+//     startDate,
+//     endDate,
+//   } = req.query;
+
+//   if (!companyId || !mongoose.Types.ObjectId.isValid(companyId)) {
+//     return res.status(400).json({ success: false, message: "Valid companyId required" });
+//   }
+
+//   const pageNum = Math.max(1, parseInt(page));
+//   const limitNum = Math.max(1, parseInt(limit));
+//   const skip = (pageNum - 1) * limitNum;
+
+//   const companyObjId = new mongoose.Types.ObjectId(companyId);
+//   const matchStage = { "order.companyId": companyObjId, "order.status": "approved" };
+
+//   // Date filter
+//   if (startDate || endDate) {
+//     matchStage["order.createdAt"] = {};
+//     if (startDate) matchStage["order.createdAt"].$gte = new Date(startDate);
+//     if (endDate) {
+//       const end = new Date(endDate);
+//       end.setUTCHours(23, 59, 59, 999);
+//       matchStage["order.createdAt"].$lte = end;
+//     }
+//   }
+
+//   // Salesman filter
+//   if (salesmanId && salesmanId !== "all") {
+//     matchStage["order.userId"] = new mongoose.Types.ObjectId(salesmanId);
+//   }
+
+//   const pipeline = [
+//     // Match approved orders
+//     { $match: matchStage },
+
+//     // Unwind items
+//     { $unwind: "$items" },
+
+//     // Lookup order details (for salesman, customer, date)
+//     {
+//       $lookup: {
+//         from: "orders",
+//         localField: "orderId",
+//         foreignField: "_id",
+//         as: "order",
+//       },
+//     },
+//     { $unwind: "$order" },
+
+//     // Lookup product details
+//     {
+//       $lookup: {
+//         from: "stockitems",
+//         localField: "items.productId",
+//         foreignField: "_id",
+//         as: "product",
+//       },
+//     },
+//     { $unwind: { path: "$product", preserveNullAndEmptyArrays: true } },
+
+//     // Lookup salesman
+//     {
+//       $lookup: {
+//         from: "users",
+//         localField: "order.userId",
+//         foreignField: "_id",
+//         as: "salesman",
+//       },
+//     },
+//     { $unwind: { path: "$salesman", preserveNullAndEmptyArrays: true } },
+
+//     // Project final fields
+//     {
+//       $project: {
+//         _id: "$_id",
+//         date: "$order.createdAt",
+//         productName: { $ifNull: ["$product.ItemName", "Unknown Product"] },
+//         hsnCode: "$product.productId.taxConfiguration.hsnCode",
+//         qty: "$items.quantity",
+//         rate: "$items.price",
+//         taxable: "$items.taxableValue",
+//         cgst: { $cond: [{ $gt: ["$items.CGST", 0] }, "$items.CGST", 0] },
+//         sgst: { $cond: [{ $gt: ["$items.SGST", 0] }, "$items.SGST", 0] },
+//         igst: { $cond: [{ $gt: ["$items.IGST", 0] }, "$items.IGST", 0] },
+//         total: "$items.total",
+//         salesmanName: { $ifNull: ["$salesman.name", "System"] },
+//       },
+//     },
+
+//     // Search filter (after lookup)
+//     ...(search
+//       ? [
+//           {
+//             $match: {
+//               $or: [
+//                 { productName: { $regex: search, $options: "i" } },
+//                 { hsnCode: { $regex: search, $options: "i" } },
+//                 { salesmanName: { $regex: search, $options: "i" } },
+//               ],
+//             },
+//           },
+//         ]
+//       : []),
+
+//     // Sort by date descending
+//     { $sort: { date: -1 } },
+//   ];
+
+//   // Total count pipeline
+//   const countPipeline = [...pipeline, { $count: "total" }];
+//   const countResult = await Order.aggregate(countPipeline);
+//   const total = countResult[0]?.total || 0;
+
+//   // Paginated data
+//   const dataPipeline = [
+//     ...pipeline,
+//     { $skip: skip },
+//     { $limit: limitNum },
+//   ];
+//   const data = await Order.aggregate(dataPipeline);
+
+//   // Stats
+//   const statsPipeline = [
+//     ...pipeline,
+//     {
+//       $group: {
+//         _id: null,
+//         totalQty: { $sum: "$qty" },
+//         totalRevenue: { $sum: "$total" },
+//         totalTax: { $sum: { $add: ["$cgst", "$sgst", "$igst"] } },
+//         uniqueProducts: { $addToSet: "$productName" },
+//       },
+//     },
+//     {
+//       $project: {
+//         totalQty: 1,
+//         totalRevenue: 1,
+//         totalTax: 1,
+//         uniqueProducts: { $size: "$uniqueProducts" },
+//       },
+//     },
+//   ];
+//   const statsResult = await Order.aggregate(statsPipeline);
+//   const stats = statsResult[0] || {
+//     totalQty: 0,
+//     totalRevenue: 0,
+//     totalTax: 0,
+//     uniqueProducts: 0,
+//   };
+
+//   res.json({
+//     success: true,
+//     data,
+//     stats,
+//     pagination: {
+//       total,
+//       totalPages: Math.ceil(total / limitNum),
+//       currentPage: pageNum,
+//       limit: limitNum,
+//     },
+//   });
+// });
+// controllers/reportController.js
+// exports.getProductWiseReport = asyncHandler(async (req, res) => {
+//   console.log("getProductWiseReport")
+//   const {
+//     companyId,
+//     page = 1,
+//     limit = 15,
+//     search = "",
+//     salesmanId = "all",
+//     startDate,
+//     endDate,
+//   } = req.query;
+
+//   if (!companyId || !mongoose.Types.ObjectId.isValid(companyId)) {
+//     return res.status(400).json({ success: false, message: "Valid companyId required" });
+//   }
+
+//   const pageNum = Math.max(1, parseInt(page));
+//   const limitNum = Math.max(1, parseInt(limit));
+//   const skip = (pageNum - 1) * limitNum;
+
+//   const companyObjId = new mongoose.Types.ObjectId(companyId);
+
+//   // Base match on Order
+//   const matchStage = {
+//     companyId: companyObjId,
+//     status: "approved",
+//   };
+
+//   if (salesmanId && salesmanId !== "all") {
+//     matchStage.userId = new mongoose.Types.ObjectId(salesmanId);
+//   }
+
+//   if (startDate || endDate) {
+//     matchStage.createdAt = {};
+//     if (startDate) matchStage.createdAt.$gte = new Date(startDate);
+//     if (endDate) {
+//       const end = new Date(endDate);
+//       end.setUTCHours(23, 59, 59, 999);
+//       matchStage.createdAt.$lte = end;
+//     }
+//   }
+
+//   const pipeline = [
+//     // 1. Match approved orders
+//     { $match: matchStage },
+
+//     // 2. Unwind items array
+//     { $unwind: "$items" },
+
+//     // 3. Lookup product details
+//     {
+//       $lookup: {
+//         from: "stockitems",
+//         localField: "items.productId",
+//         foreignField: "_id",
+//         as: "product",
+//       },
+//     },
+//     { $unwind: { path: "$product", preserveNullAndEmptyArrays: true } },
+
+//     // 4. Lookup salesman
+//     {
+//       $lookup: {
+//         from: "users",
+//         localField: "userId",
+//         foreignField: "_id",
+//         as: "salesman",
+//       },
+//     },
+//     { $unwind: { path: "$salesman", preserveNullAndEmptyArrays: true } },
+
+//     // 5. Project final fields
+//     {
+//       $project: {
+//         date: "$createdAt",
+//         productName: { $ifNull: ["$product.ItemName", "Unknown Product"] },
+//         hsnCode: {
+//           $ifNull: ["$product.productId.taxConfiguration.hsnCode", "-"],
+//         },
+//         qty: "$items.quantity",
+//         rate: "$items.price",
+//         taxable: "$items.taxableValue",
+//         cgst: { $ifNull: ["$items.CGST", 0] },
+//         sgst: { $ifNull: ["$items.SGST", 0] },
+//         igst: { $ifNull: ["$items.IGST", 0] },
+//         total: "$items.total",
+//         salesmanName: { $ifNull: ["$salesman.name", "System"] },
+//       },
+//     },
+
+//     // 6. Search filter
+//     ...(search
+//       ? [
+//           {
+//             $match: {
+//               $or: [
+//                 { productName: { $regex: search, $options: "i" } },
+//                 { hsnCode: { $regex: search, $options: "i" } },
+//                 { salesmanName: { $regex: search, $options: "i" } },
+//               ],
+//             },
+//           },
+//         ]
+//       : []),
+
+//     // 7. Sort by date
+//     { $sort: { date: -1 } },
+//   ];
+
+//   // Total count
+//   const countResult = await Order.aggregate([...pipeline, { $count: "total" }]);
+//   const total = countResult[0]?.total || 0;
+
+//   // Paginated data
+//   const data = await Order.aggregate([
+//     ...pipeline,
+//     { $skip: skip },
+//     { $limit: limitNum },
+//   ]);
+
+//   // Stats
+//   const statsResult = await Order.aggregate([
+//     ...pipeline,
+//     {
+//       $group: {
+//         _id: null,
+//         totalQty: { $sum: "$qty" },
+//         totalRevenue: { $sum: "$total" },
+//         totalTax: { $sum: { $add: ["$cgst", "$sgst", "$igst"] } },
+//         uniqueProducts: { $addToSet: "$productName" },
+//       },
+//     },
+//     {
+//       $project: {
+//         totalQty: 1,
+//         totalRevenue: 1,
+//         totalTax: 1,
+//         uniqueProducts: { $size: "$uniqueProducts" },
+//       },
+//     },
+//   ]);
+
+//   const stats = statsResult[0] || {
+//     totalQty: 0,
+//     totalRevenue: 0,
+//     totalTax: 0,
+//     uniqueProducts: 0,
+//   };
+
+//   res.json({
+//     success: true,
+//     data,
+//     stats,
+//     pagination: {
+//       total,
+//       totalPages: Math.ceil(total / limitNum),
+//       currentPage: pageNum,
+//       limit: limitNum,
+//     },
+//   });
+// });
+
+// controllers/reportController.js
+// exports.getProductWiseReport = asyncHandler(async (req, res) => {
+//   const {
+//     companyId,
+//     page = 1,
+//     limit = 15,
+//     search = "",
+//     salesmanId = "all",
+//     startDate,
+//     endDate,
+//   } = req.query;
+
+//   if (!companyId || !mongoose.Types.ObjectId.isValid(companyId)) {
+//     return res.status(400).json({ success: false, message: "Valid companyId required" });
+//   }
+
+//   const pageNum = Math.max(1, parseInt(page));
+//   const limitNum = Math.max(1, parseInt(limit));
+//   const skip = (pageNum - 1) * limitNum;
+
+//   const companyObjId = new mongoose.Types.ObjectId(companyId);
+
+//   const matchStage = {
+//     companyId: companyObjId,
+//     status: "approved",
+//   };
+
+//   if (salesmanId && salesmanId !== "all") {
+//     matchStage.userId = new mongoose.Types.ObjectId(salesmanId);
+//   }
+
+//   if (startDate || endDate) {
+//     matchStage.createdAt = {};
+//     if (startDate) matchStage.createdAt.$gte = new Date(startDate);
+//     if (endDate) {
+//       const end = new Date(endDate);
+//       end.setUTCHours(23, 59, 59, 999);
+//       matchStage.createdAt.$lte = end;
+//     }
+//   }
+
+//   const pipeline = [
+//     { $match: matchStage },
+//     { $unwind: "$items" },
+
+//     // Lookup product
+//     {
+//       $lookup: {
+//         from: "stockitems",
+//         localField: "items.productId",
+//         foreignField: "_id",
+//         as: "product",
+//       },
+//     },
+//     { $unwind: { path: "$product", preserveNullAndEmptyArrays: true } },
+
+//     // Lookup salesman
+//     {
+//       $lookup: {
+//         from: "users",
+//         localField: "userId",
+//         foreignField: "_id",
+//         as: "salesman",
+//       },
+//     },
+//     { $unwind: { path: "$salesman", preserveNullAndEmptyArrays: true } },
+
+//     // Project with SAFE number conversion
+//     {
+//       $project: {
+//         date: "$createdAt",
+//         productName: { $ifNull: ["$product.ItemName", "Unknown Product"] },
+//         hsnCode: {
+//           $ifNull: ["$product.productId.taxConfiguration.hsnCode", "-"],
+//         },
+//         qty: "$items.quantity",
+//         rate: "$items.price",
+//         taxable: "$items.taxableValue",
+
+//         // FIX: Convert boolean to number safely
+//         cgst: {
+//           $cond: {
+//             if: { $isNumber: "$items.CGST" },
+//             then: "$items.CGST",
+//             else: { $cond: [{ $eq: ["$items.CGST", true] }, 1, 0] }, // fallback
+//           },
+//         },
+//         sgst: {
+//           $cond: {
+//             if: { $isNumber: "$items.SGST" },
+//             then: "$items.SGST",
+//             else: { $cond: [{ $eq: ["$items.SGST", true] }, 1, 0] },
+//           },
+//         },
+//         igst: {
+//           $cond: {
+//             if: { $isNumber: "$items.IGST" },
+//             then: "$items.IGST",
+//             else: { $cond: [{ $eq: ["$items.IGST", true] }, 1, 0] },
+//           },
+//         },
+
+//         total: "$items.total",
+//         salesmanName: { $ifNull: ["$salesman.name", "System"] },
+//       },
+//     },
+
+//     // Search
+//     ...(search
+//       ? [
+//           {
+//             $match: {
+//               $or: [
+//                 { productName: { $regex: search, $options: "i" } },
+//                 { hsnCode: { $regex: search, $options: "i" } },
+//                 { salesmanName: { $regex: search, $options: "i" } },
+//               ],
+//             },
+//           },
+//         ]
+//       : []),
+
+//     { $sort: { date: -1 } },
+//   ];
+
+//   // Count
+//   const countResult = await Order.aggregate([...pipeline, { $count: "total" }]);
+//   const total = countResult[0]?.total || 0;
+
+//   // Data
+//   const data = await Order.aggregate([
+//     ...pipeline,
+//     { $skip: skip },
+//     { $limit: limitNum },
+//   ]);
+
+//   // Stats (with safe addition)
+//   const statsResult = await Order.aggregate([
+//     ...pipeline,
+//     {
+//       $group: {
+//         _id: null,
+//         totalQty: { $sum: "$qty" },
+//         totalRevenue: { $sum: "$total" },
+//         totalTax: {
+//           $sum: {
+//             $add: [
+//               { $ifNull: ["$cgst", 0] },
+//               { $ifNull: ["$sgst", 0] },
+//               { $ifNull: ["$igst", 0] },
+//             ],
+//           },
+//         },
+//         uniqueProducts: { $addToSet: "$productName" },
+//       },
+//     },
+//     {
+//       $project: {
+//         totalQty: 1,
+//         totalRevenue: 1,
+//         totalTax: 1,
+//         uniqueProducts: { $size: "$uniqueProducts" },
+//       },
+//     },
+//   ]);
+
+//   const stats = statsResult[0] || {
+//     totalQty: 0,
+//     totalRevenue: 0,
+//     totalTax: 0,
+//     uniqueProducts: 0,
+//   };
+
+//   res.json({
+//     success: true,
+//     data,
+//     stats,
+//     pagination: {
+//       total,
+//       totalPages: Math.ceil(total / limitNum),
+//       currentPage: pageNum,
+//       limit: limitNum,
+//     },
+//   });
+// });
+
+// controllers/reportController.js
+// exports.getProductWiseReport = asyncHandler(async (req, res) => {
+//   const {
+//     companyId,
+//     page = 1,
+//     limit = 15,
+//     search = "",
+//     salesmanId = "all",
+//     startDate,
+//     endDate,
+//   } = req.query;
+
+//   if (!companyId || !mongoose.Types.ObjectId.isValid(companyId)) {
+//     return res.status(400).json({ success: false, message: "Valid companyId required" });
+//   }
+
+//   const pageNum = Math.max(1, parseInt(page));
+//   const limitNum = Math.max(1, parseInt(limit));
+//   const skip = (pageNum - 1) * limitNum;
+
+//   const companyObjId = new mongoose.Types.ObjectId(companyId);
+
+//   // Fetch company to check country
+//   const company = await Company.findById(companyObjId).lean();
+//   const isIndia = company?.country === "India";
+
+//   const matchStage = {
+//     companyId: companyObjId,
+//     status: "approved",
+//   };
+
+//   if (salesmanId && salesmanId !== "all") {
+//     matchStage.userId = new mongoose.Types.ObjectId(salesmanId);
+//   }
+
+//   if (startDate || endDate) {
+//     matchStage.createdAt = {};
+//     if (startDate) matchStage.createdAt.$gte = new Date(startDate);
+//     if (endDate) {
+//       const end = new Date(endDate);
+//       end.setUTCHours(23, 59, 59, 999);
+//       matchStage.createdAt.$lte = end;
+//     }
+//   }
+
+//   const pipeline = [
+//     { $match: matchStage },
+//     { $unwind: "$items" },
+
+//     // Lookup product
+//     {
+//       $lookup: {
+//         from: "stockitems",
+//         localField: "items.productId",
+//         foreignField: "_id",
+//         as: "product",
+//       },
+//     },
+//     { $unwind: { path: "$product", preserveNullAndEmptyArrays: true } },
+
+//     // Lookup salesman
+//     {
+//       $lookup: {
+//         from: "users",
+//         localField: "userId",
+//         foreignField: "_id",
+//         as: "salesman",
+//       },
+//     },
+//     { $unwind: { path: "$salesman", preserveNullAndEmptyArrays: true } },
+
+//     // Final Project with Conditional Tax Logic
+//     {
+//       $project: {
+//         date: "$createdAt",
+//         productName: { $ifNull: ["$product.ItemName", "Unknown Product"] },
+//         hsnCode: {
+//           $ifNull: ["$product.productId.taxConfiguration.hsnCode", "-"],
+//         },
+//         qty: "$items.quantity",
+//         rate: "$items.price",
+//         taxable: "$items.taxableValue",
+//         total: "$items.total",
+//         salesmanName: { $ifNull: ["$salesman.name", "System"] },
+
+//         // Conditional Tax Fields
+//         cgst: isIndia
+//           ? { $ifNull: [{ $toDouble: "$items.CGST" }, 0] }
+//           : 0,
+//         sgst: isIndia
+//           ? { $ifNull: [{ $toDouble: "$items.SGST" }, 0] }
+//           : 0,
+//         igst: isIndia
+//           ? { $ifNull: [{ $toDouble: "$items.IGST" }, 0] }
+//           : 0,
+
+//         vatRate: isIndia ? 0 : { $ifNull: [{ $toDouble: "$items.taxPercentage" }, 0] },
+//         vatAmount: isIndia ? 0 : { $ifNull: [{ $toDouble: "$items.taxAmount" }, 0] },
+//       },
+//     },
+
+//     // Search
+//     ...(search
+//       ? [
+//           {
+//             $match: {
+//               $or: [
+//                 { productName: { $regex: search, $options: "i" } },
+//                 { hsnCode: { $regex: search, $options: "i" } },
+//                 { salesmanName: { $regex: search, $options: "i" } },
+//               ],
+//             },
+//           },
+//         ]
+//       : []),
+
+//     { $sort: { date: -1 } },
+//   ];
+
+//   // Count
+//   const countResult = await Order.aggregate([...pipeline, { $count: "total" }]);
+//   const total = countResult[0]?.total || 0;
+
+//   // Data
+//   const data = await Order.aggregate([
+//     ...pipeline,
+//     { $skip: skip },
+//     { $limit: limitNum },
+//   ]);
+
+//   // Stats
+//   const statsResult = await Order.aggregate([
+//     ...pipeline,
+//     {
+//       $group: {
+//         _id: null,
+//         totalQty: { $sum: "$qty" },
+//         totalRevenue: { $sum: "$total" },
+//         totalTax: {
+//           $sum: isIndia
+//             ? { $add: ["$cgst", "$sgst", "$igst"] }
+//             : "$vatAmount"
+//         },
+//         uniqueProducts: { $addToSet: "$productName" },
+//       },
+//     },
+//     {
+//       $project: {
+//         totalQty: 1,
+//         totalRevenue: 1,
+//         totalTax: 1,
+//         uniqueProducts: { $size: "$uniqueProducts" },
+//       },
+//     },
+//   ]);
+
+//   const stats = statsResult[0] || {
+//     totalQty: 0,
+//     totalRevenue: 0,
+//     totalTax: 0,
+//     uniqueProducts: 0,
+//   };
+
+//   res.json({
+//     success: true,
+//     data,
+//     stats,
+//     isIndia,
+//     pagination: {
+//       total,
+//       totalPages: Math.ceil(total / limitNum),
+//       currentPage: pageNum,
+//       limit: limitNum,
+//     },
+//   });
+// });
+
+// controllers/reportController.js
+// exports.getProductWiseReport = asyncHandler(async (req, res) => {
+//   const {
+//     companyId,
+//     page = 1,
+//     limit = 15,
+//     search = "",
+//     salesmanId = "all",
+//     startDate,
+//     endDate,
+//   } = req.query;
+
+//   if (!companyId || !mongoose.Types.ObjectId.isValid(companyId)) {
+//     return res.status(400).json({ success: false, message: "Valid companyId required" });
+//   }
+
+//   const pageNum = Math.max(1, parseInt(page));
+//   const limitNum = Math.max(1, parseInt(limit));
+//   const skip = (pageNum - 1) * limitNum;
+
+//   const companyObjId = new mongoose.Types.ObjectId(companyId);
+
+//   // Get company country
+//   const company = await Company.findById(companyObjId).lean();
+//   const isIndia = company?.country === "India";
+
+//   const matchStage = {
+//     companyId: companyObjId,
+//     status: "approved",
+//   };
+
+//   if (salesmanId && salesmanId !== "all") {
+//     matchStage.userId = new mongoose.Types.ObjectId(salesmanId);
+//   }
+
+//   if (startDate || endDate) {
+//     matchStage.createdAt = {};
+//     if (startDate) matchStage.createdAt.$gte = new Date(startDate);
+//     if (endDate) {
+//       const end = new Date(endDate);
+//       end.setUTCHours(23, 59, 59, 999);
+//       matchStage.createdAt.$lte = end;
+//     }
+//   }
+
+//   const pipeline = [
+//     { $match: matchStage },
+//     { $unwind: "$items" },
+
+//     // Lookup product
+//     {
+//       $lookup: {
+//         from: "stockitems",
+//         localField: "items.productId",
+//         foreignField: "_id",
+//         as: "product",
+//       },
+//     },
+//     { $unwind: { path: "$product", preserveNullAndEmptyArrays: true } },
+
+//     // Lookup salesman
+//     {
+//       $lookup: {
+//         from: "users",
+//         localField: "userId",
+//         foreignField: "_id",
+//         as: "salesman",
+//       },
+//     },
+//     { $unwind: { path: "$salesman", preserveNullAndEmptyArrays: true } },
+
+//     // FINAL PROJECT — NO MIXED INCLUSION/EXCLUSION
+//     {
+//       $project: {
+//         date: "$createdAt",
+//         productName: { $ifNull: ["$product.ItemName", "Unknown Product"] },
+//         hsnCode: { $ifNull: ["$product.productId.taxConfiguration.hsnCode", "-"] },
+//         qty: "$items.quantity",
+//         rate: "$items.price",
+//         taxable: "$items.taxableValue",
+//         total: "$items.total",
+//         salesmanName: { $ifNull: ["$salesman.name", "System"] },
+
+//         // Always include all fields — use 0 for hidden ones
+//         cgst: { $cond: [isIndia, { $ifNull: [{ $toDouble: "$items.CGST" }, 0] }, 0] },
+//         sgst: { $cond: [isIndia, { $ifNull: [{ $toDouble: "$items.SGST" }, 0] }, 0] },
+//         igst: { $cond: [isIndia, { $ifNull: [{ $toDouble: "$items.IGST" }, 0] }, 0] },
+
+//         vatRate: { $cond: [isIndia, 0, { $ifNull: [{ $toDouble: "$items.taxPercentage" }, 0] }] },
+//         vatAmount: { $cond: [isIndia, 0, { $ifNull: [{ $toDouble: "$items.taxAmount" }, 0] }] },
+//       },
+//     },
+
+//     // Search
+//     ...(search
+//       ? [
+//           {
+//             $match: {
+//               $or: [
+//                 { productName: { $regex: search, $options: "i" } },
+//                 { hsnCode: { $regex: search, $options: "i" } },
+//                 { salesmanName: { $regex: search, $options: "i" } },
+//               ],
+//             },
+//           },
+//         ]
+//       : []),
+
+//     { $sort: { date: -1 } },
+//   ];
+
+//   // Count
+//   const countResult = await Order.aggregate([...pipeline, { $count: "total" }]);
+//   const total = countResult[0]?.total || 0;
+
+//   // Data
+//   const data = await Order.aggregate([
+//     ...pipeline,
+//     { $skip: skip },
+//     { $limit: limitNum },
+//   ]);
+
+//   // Stats
+//   const statsResult = await Order.aggregate([
+//     ...pipeline,
+//     {
+//       $group: {
+//         _id: null,
+//         totalQty: { $sum: "$qty" },
+//         totalRevenue: { $sum: "$total" },
+//         totalTax: {
+//           $sum: {
+//             $cond: [
+//               isIndia,
+//               { $add: ["$cgst", "$sgst", "$igst"] },
+//               "$vatAmount",
+//             ],
+//           },
+//         },
+//         uniqueProducts: { $addToSet: "$productName" },
+//       },
+//     },
+//     {
+//       $project: {
+//         totalQty: 1,
+//         totalRevenue: 1,
+//         totalTax: 1,
+//         uniqueProducts: { $size: "$uniqueProducts" },
+//       },
+//     },
+//   ]);
+
+//   const stats = statsResult[0] || {
+//     totalQty: 0,
+//     totalRevenue: 0,
+//     totalTax: 0,
+//     uniqueProducts: 0,
+//   };
+
+//   res.json({
+//     success: true,
+//     data,
+//     stats,
+//     isIndia,
+//     pagination: {
+//       total,
+//       totalPages: Math.ceil(total / limitNum),
+//       currentPage: pageNum,
+//       limit: limitNum,
+//     },
+//   });
+// });
+// controllers/reportController.js
+// exports.getProductWiseReport = asyncHandler(async (req, res) => {
+//   const {
+//     companyId,
+//     page = 1,
+//     limit = 15,
+//     search = "",
+//     salesmanId = "all",
+//     startDate,
+//     endDate,
+//   } = req.query;
+
+//   if (!companyId || !mongoose.Types.ObjectId.isValid(companyId)) {
+//     return res.status(400).json({ success: false, message: "Valid companyId required" });
+//   }
+
+//   const pageNum = Math.max(1, parseInt(page));
+//   const limitNum = Math.max(1, parseInt(limit));
+//   const skip = (pageNum - 1) * limitNum;
+
+//   const companyObjId = new mongoose.Types.ObjectId(companyId);
+
+//   // Get company country
+//   const company = await Company.findById(companyObjId).lean();
+//   const isIndia = company?.country === "India";
+
+//   const matchStage = {
+//     companyId: companyObjId,
+//     status: "approved",
+//   };
+
+//   if (salesmanId && salesmanId !== "all") {
+//     matchStage.userId = new mongoose.Types.ObjectId(salesmanId);
+//   }
+
+//   if (startDate || endDate) {
+//     matchStage.createdAt = {};
+//     if (startDate) matchStage.createdAt.$gte = new Date(startDate);
+//     if (endDate) {
+//       const end = new Date(endDate);
+//       end.setUTCHours(23, 59, 59, 999);
+//       matchStage.createdAt.$lte = end;
+//     }
+//   }
+
+//   const pipeline = [
+//     { $match: matchStage },
+//     { $unwind: "$items" },
+
+//     // Lookup product
+//     {
+//       $lookup: {
+//         from: "stockitems",
+//         localField: "items.productId",
+//         foreignField: "_id",
+//         as: "product",
+//       },
+//     },
+//     { $unwind: { path: "$product", preserveNullAndEmptyArrays: true } },
+
+//     // Lookup salesman
+//     {
+//       $lookup: {
+//         from: "users",
+//         localField: "userId",
+//         foreignField: "_id",
+//         as: "salesman",
+//       },
+//     },
+//     { $unwind: { path: "$salesman", preserveNullAndEmptyArrays: true } },
+
+//     // FINAL PROJECT — SAFE & CORRECT
+//     {
+//       $project: {
+//         date: "$createdAt",
+//         productName: { $ifNull: ["$product.ItemName", "Unknown Product"] },
+//         hsnCode: { $ifNull: ["$product.productId.taxConfiguration.hsnCode", "-"] },
+//         qty: "$items.quantity",
+//         rate: "$items.price",
+//         taxable: "$items.taxableValue",
+//         total: "$items.total",
+//         salesmanName: { $ifNull: ["$salesman.name", "System"] },
+
+//         // TAX LOGIC — CORRECT!
+//         cgst: isIndia ? { $ifNull: [{ $toDouble: "$items.CGST" }, 0] } : 0,
+//         sgst: isIndia ? { $ifNull: [{ $toDouble: "$items.SGST" }, 0] } : 0,
+//         igst: isIndia ? { $ifNull: [{ $toDouble: "$items.IGST" }, 0] } : 0,
+
+//         vatRate: isIndia ? 0 : { $ifNull: [{ $toDouble: "$items.taxPercentage" }, 0] },
+//         vatAmount: isIndia ? 0 : { $ifNull: [{ $toDouble: "$items.taxAmount" }, 0] },
+//       },
+//     },
+
+//     // Search
+//     ...(search
+//       ? [
+//         {
+//           $match: {
+//             $or: [
+//               { productName: { $regex: search, $options: "i" } },
+//               { hsnCode: { $regex: search, $options: "i" } },
+//               { salesmanName: { $regex: search, $options: "i" } },
+//             ],
+//           },
+//         },
+//       ]
+//     : []),
+
+//     { $sort: { date: -1 } },
+//   ];
+
+//   // Count
+//   const countResult = await Order.aggregate([...pipeline, { $count: "total" }]);
+//   const total = countResult[0]?.total || 0;
+
+//   // Data
+//   const data = await Order.aggregate([
+//     ...pipeline,
+//     { $skip: skip },
+//     { $limit: limitNum },
+//   ]);
+
+//   // Stats
+//   const statsResult = await Order.aggregate([
+//     ...pipeline,
+//     {
+//       $group: {
+//         _id: null,
+//         totalQty: { $sum: "$qty" },
+//         totalRevenue: { $sum: "$total" },
+//         totalTax: {
+//           $sum: {
+//             $cond: [
+//               isIndia,
+//               { $add: ["$cgst", "$sgst", "$igst"] },
+//               "$vatAmount",
+//             ],
+//           },
+//         },
+//         uniqueProducts: { $addToSet: "$productName" },
+//       },
+//     },
+//     {
+//       $project: {
+//         totalQty: 1,
+//         totalRevenue: 1,
+//         totalTax: 1,
+//         uniqueProducts: { $size: "$uniqueProducts" },
+//       },
+//     },
+//   ]);
+
+//   const stats = statsResult[0] || {
+//     totalQty: 0,
+//     totalRevenue: 0,
+//     totalTax: 0,
+//     uniqueProducts: 0,
+//   };
+
+//   res.json({
+//     success: true,
+//     data,
+//     stats,
+//     isIndia,
+//     pagination: {
+//       total,
+//       totalPages: Math.ceil(total / limitNum),
+//       currentPage: pageNum,
+//       limit: limitNum,
+//     },
+//   });
+// });
+
+// controllers/reportController.js
+// exports.getProductWiseReport = asyncHandler(async (req, res) => {
+//   const {
+//     companyId,
+//     page = 1,
+//     limit = 15,
+//     search = "",
+//     salesmanId = "all",
+//     startDate,
+//     endDate,
+//   } = req.query;
+
+//   if (!companyId || !mongoose.Types.ObjectId.isValid(companyId)) {
+//     return res.status(400).json({ success: false, message: "Valid companyId required" });
+//   }
+
+//   const pageNum = Math.max(1, parseInt(page));
+//   const limitNum = Math.max(1, parseInt(limit));
+//   const skip = (pageNum - 1) * limitNum;
+
+//   const companyObjId = new mongoose.Types.ObjectId(companyId);
+
+//   // Get company country
+//   const company = await Company.findById(companyObjId).lean();
+//   const isIndia = company?.country === "India";
+
+//   const matchStage = {
+//     companyId: companyObjId,
+//     status: "approved",
+//   };
+
+//   if (salesmanId && salesmanId !== "all") {
+//     matchStage.userId = new mongoose.Types.ObjectId(salesmanId);
+//   }
+
+//   if (startDate || endDate) {
+//     matchStage.createdAt = {};
+//     if (startDate) matchStage.createdAt.$gte = new Date(startDate);
+//     if (endDate) {
+//       const end = new Date(endDate);
+//       end.setUTCHours(23, 59, 59, 999);
+//       matchStage.createdAt.$lte = end;
+//     }
+//   }
+
+//   const pipeline = [
+//     { $match: matchStage },
+//     { $unwind: "$items" },
+
+//     // Lookup product
+//     {
+//       $lookup: {
+//         from: "stockitems",
+//         localField: "items.productId",
+//         foreignField: "_id",
+//         as: "product",
+//       },
+//     },
+//     { $unwind: { path: "$product", preserveNullAndEmptyArrays: true } },
+
+//     // Lookup salesman
+//     {
+//       $lookup: {
+//         from: "users",
+//         localField: "userId",
+//         foreignField: "_id",
+//         as: "salesman",
+//       },
+//     },
+//     { $unwind: { path: "$salesman", preserveNullAndEmptyArrays: true } },
+
+//     // FINAL PROJECT — ALL FIELDS INCLUDED, NO EXCLUSION!
+//     {
+//       $project: {
+//         date: "$createdAt",
+//         productName: { $ifNull: ["$product.ItemName", "Unknown Product"] },
+//         hsnCode: { $ifNull: ["$product.productId.taxConfiguration.hsnCode", "-"] },
+//         qty: "$items.quantity",
+//         rate: "$items.price",
+//         taxable: "$items.taxableValue",
+//         total: "$items.total",
+//         salesmanName: { $ifNull: ["$salesman.name", "System"] },
+
+//         // ALWAYS include all tax fields — just set to 0 when not used
+//         cgst: isIndia ? { $ifNull: [{ $toDouble: "$items.CGST" }, 0] } : 0,
+//         sgst: isIndia ? { $ifNull: [{ $toDouble: "$items.SGST" }, 0] } : 0,
+//         igst: isIndia ? { $ifNull: [{ $toDouble: "$items.IGST" }, 0] } : 0,
+
+//         vatRate: isIndia ? 0 : { $ifNull: [{ $toDouble: "$items.taxPercentage" }, 0] },
+//         vatAmount: isIndia ? 0 : { $ifNull: [{ $toDouble: "$items.taxAmount" }, 0] },
+//       },
+//     },
+
+//     // Search
+//     ...(search
+//       ? [
+//           {
+//             $match: {
+//               $or: [
+//                 { productName: { $regex: search, $options: "i" } },
+//                 { hsnCode: { $regex: search, $options: "i" } },
+//                 { salesmanName: { $regex: search, $options: "i" } },
+//               ],
+//             },
+//           },
+//         ]
+//       : []),
+
+//     { $sort: { date: -1 } },
+//   ];
+
+//   // Count
+//   const countResult = await Order.aggregate([...pipeline, { $count: "total" }]);
+//   const total = countResult[0]?.total || 0;
+
+//   // Data
+//   const data = await Order.aggregate([
+//     ...pipeline,
+//     { $skip: skip },
+//     { $limit: limitNum },
+//   ]);
+
+//   // Stats
+//   const statsResult = await Order.aggregate([
+//     ...pipeline,
+//     {
+//       $group: {
+//         _id: null,
+//         totalQty: { $sum: "$qty" },
+//         totalRevenue: { $sum: "$total" },
+//         totalTax: {
+//           $sum: {
+//             $cond: [
+//               isIndia,
+//               { $add: ["$cgst", "$sgst", "$igst"] },
+//               "$vatAmount",
+//             ],
+//           },
+//         },
+//         uniqueProducts: { $addToSet: "$productName" },
+//       },
+//     },
+//     {
+//       $project: {
+//         totalQty: 1,
+//         totalRevenue: 1,
+//         totalTax: 1,
+//         uniqueProducts: { $size: "$uniqueProducts" },
+//       },
+//     },
+//   ]);
+
+//   const stats = statsResult[0] || {
+//     totalQty: 0,
+//     totalRevenue: 0,
+//     totalTax: 0,
+//     uniqueProducts: 0,
+//   };
+
+//   res.json({
+//     success: true,
+//     data,
+//     stats,
+//     isIndia,
+//     pagination: {
+//       total,
+//       totalPages: Math.ceil(total / limitNum),
+//       currentPage: pageNum,
+//       limit: limitNum,
+//     },
+//   });
+// });
+// controllers/reportController.js
+// controllers/reportController.js
+// controllers/reportController.js
+exports.getProductWiseReport = asyncHandler(async (req, res) => {
+  const {
+    companyId,
+    page = 1,
+    limit = 15,
+    search = "",
+    salesmanId = "all",
+    startDate,
+    endDate,
+  } = req.query;
+
+  if (!companyId || !mongoose.Types.ObjectId.isValid(companyId)) {
+    return res.status(400).json({ success: false, message: "Valid companyId required" });
+  }
+
+  const pageNum = Math.max(1, parseInt(page));
+  const limitNum = Math.max(1, parseInt(limit));
+  const skip = (pageNum - 1) * limitNum;
+
+  const companyObjId = new mongoose.Types.ObjectId(companyId);
+
+  // Get company country
+  const company = await Company.findById(companyObjId).lean();
+  const isIndia = company?.country === "India";
+
+  const matchStage = {
+    companyId: companyObjId,
+    status: "approved",
+  };
+
+  if (salesmanId && salesmanId !== "all") {
+    matchStage.userId = new mongoose.Types.ObjectId(salesmanId);
+  }
+
+  if (startDate || endDate) {
+    matchStage.createdAt = {};
+    if (startDate) matchStage.createdAt.$gte = new Date(startDate);
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setUTCHours(23, 59, 59, 999);
+      matchStage.createdAt.$lte = end;
+    }
+  }
+
+  const pipeline = [
+    { $match: matchStage },
+    { $unwind: "$items" },
+
+    // Lookup product
+    {
+      $lookup: {
+        from: "stockitems",
+        localField: "items.productId",
+        foreignField: "_id",
+        as: "product",
+      },
+    },
+    { $unwind: { path: "$product", preserveNullAndEmptyArrays: true } },
+
+    // Lookup salesman
+    {
+      $lookup: {
+        from: "users",
+        localField: "userId",
+        foreignField: "_id",
+        as: "salesman",
+      },
+    },
+    { $unwind: { path: "$salesman", preserveNullAndEmptyArrays: true } },
+
+    // FINAL PROJECT — FIXED HSN CODE
+    {
+      $project: {
+        date: "$createdAt",
+        productName: { $ifNull: ["$product.ItemName", "Unknown Product"] },
+
+        // ✅ HSN CODE FIXED — Now returns string only
+        hsnCode: {
+          $ifNull: ["$items.hsnCode", "-"]
+        },
+
+        qty: "$items.quantity",
+        rate: "$items.price",
+        taxable: "$items.taxableValue",
+        total: "$items.total",
+        salesmanName: { $ifNull: ["$salesman.name", "System"] },
+
+        // Tax Logic
+        cgst: isIndia ? { $ifNull: [{ $toDouble: "$items.CGST" }, 0] } : null,
+        sgst: isIndia ? { $ifNull: [{ $toDouble: "$items.SGST" }, 0] } : null,
+        igst: isIndia ? { $ifNull: [{ $toDouble: "$items.IGST" }, 0] } : null,
+
+        vatRate: isIndia ? null : { $ifNull: [{ $toDouble: "$items.taxPercentage" }, 0] },
+        vatAmount: isIndia ? null : { $ifNull: [{ $toDouble: "$items.taxAmount" }, 0] },
+      },
+    },
+
+    // Search filter
+    ...(search
+      ? [
+          {
+            $match: {
+              $or: [
+                { productName: { $regex: search, $options: "i" } },
+                { hsnCode: { $regex: search, $options: "i" } },
+                { salesmanName: { $regex: search, $options: "i" } },
+              ],
+            },
+          },
+        ]
+      : []),
+
+    { $sort: { date: -1 } },
+  ];
+
+  // Count
+  const countResult = await Order.aggregate([...pipeline, { $count: "total" }]);
+  const total = countResult[0]?.total || 0;
+
+  // Paginated Data
+  const data = await Order.aggregate([
+    ...pipeline,
+    { $skip: skip },
+    { $limit: limitNum },
+  ]);
+
+  // Stats
+  const statsResult = await Order.aggregate([
+    ...pipeline,
+    {
+      $group: {
+        _id: null,
+        totalQty: { $sum: "$qty" },
+        totalRevenue: { $sum: "$total" },
+        totalTax: {
+          $sum: {
+            $add: [
+              { $ifNull: ["$cgst", 0] },
+              { $ifNull: ["$sgst", 0] },
+              { $ifNull: ["$igst", 0] },
+              { $ifNull: ["$vatAmount", 0] },
+            ],
+          },
+        },
+        uniqueProducts: { $addToSet: "$productName" },
+      },
+    },
+    {
+      $project: {
+        totalQty: 1,
+        totalRevenue: 1,
+        totalTax: 1,
+        uniqueProducts: { $size: "$uniqueProducts" },
+      },
+    },
+  ]);
+
+  const stats = statsResult[0] || {
+    totalQty: 0,
+    totalRevenue: 0,
+    totalTax: 0,
+    uniqueProducts: 0,
+  };
+
+  res.json({
+    success: true,
+    data,
+    stats,
+    isIndia,
+    pagination: {
+      total,
+      totalPages: Math.ceil(total / limitNum),
+      currentPage: pageNum,
+      limit: limitNum,
+    },
+  });
+});

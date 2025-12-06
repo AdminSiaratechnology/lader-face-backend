@@ -25,6 +25,7 @@ const paymentRoute =require("./routes/paymentRoutes")
 const projectRoute = require("./routes/projectRoutes")
 const customerGroupRoute=require("./routes/customerGroupRoutes")
 const BillTemplateRoute = require("./routes/billTemplateRoutes");
+
 const app = express();
 app.use(cors());
 // app.use(

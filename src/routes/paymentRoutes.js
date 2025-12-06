@@ -8,7 +8,10 @@ const {
   updatePayment,
   deletePayment,
   getPaymnetsForCustomer,
-  getAllPaymentsByCompanyId
+  getAllPaymentsByCompanyId,
+  getPaymentReport,
+  getCustomerWiseReport
+  
 } = require("../controllers/paymentController");
 
 const upload = require('../config/s3');
@@ -21,6 +24,9 @@ router.post(
 
 // Get all payments for an order
 router.get("/order/:orderId", getPaymentsByOrder);
+router.get("/report",getPaymentReport)
+// routes/reportRoutes.js
+router.get("/report/customer-wise", getCustomerWiseReport);
 
 // Get single payment
 router.get("/:paymentId", getPayment);
