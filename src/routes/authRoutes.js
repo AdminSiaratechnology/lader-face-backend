@@ -17,7 +17,7 @@ router.post("/send-otp", authController.sendResetOTP);
 router.post("/verify-otp",authController.verifyOTP );
 // reset password (requires verified OTP)_
 router.post("/reset-password", authController.resetPassword);
-
+router.get("/hierarchy", authController.getUserHierarchy);
 
 module.exports = router;
 

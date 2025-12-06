@@ -222,7 +222,6 @@ exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
 
   const clientId = req.user.clientID;
   if (!clientId) throw new ApiError(404, "Client not found for this agent");
-
   const { search, status, sortBy, sortOrder, limit = 3, page = 1 } = req.query;
 
   let filter = { client: clientId, status: { $ne: "delete" } };
@@ -268,22 +267,22 @@ exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
   const [gstRegistered, msmeRegistered, activeCompanies, vatRegistered] = await Promise.all([
     Company.countDocuments({
       client: clientId,
-      isDeleted: false,
+      // isDeleted: false,
       gstNumber: { $exists: true, $ne: "" },
     }),
     Company.countDocuments({
       client: clientId,
-      isDeleted: false,
+      // isDeleted: false,
       msmeNumber: { $exists: true, $ne: "" },
     }),
     Company.countDocuments({
       client: clientId,
-      isDeleted: false,
+      // isDeleted: false,
       status: "active",
     }),
     Company.countDocuments({
       client: clientId,
-      isDeleted: false,
+      // isDeleted: false,
       vatNumber: { $exists: true, $ne: "" },
     }),
   ]);

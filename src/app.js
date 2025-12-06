@@ -24,6 +24,7 @@ const cartRoute =require("./routes/cartRoutes")
 const paymentRoute =require("./routes/paymentRoutes")
 const projectRoute = require("./routes/projectRoutes")
 const customerGroupRoute=require("./routes/customerGroupRoutes")
+const BillTemplateRoute = require("./routes/billTemplateRoutes");
 
 const app = express();
 app.use(cors());
@@ -57,7 +58,7 @@ app.use(express.urlencoded({limit: '50mb', extended: true }));
 
 app.get("/",(req,res)=>{
 
-    res.send("API is working 25/11")
+    res.send("API is working 04/12")
 
 
 })
@@ -91,6 +92,7 @@ app.use("/api/auditLog",auditLogRoutes)
 app.use("/api/order",orderRoute)
 app.use("/api/cart",cartRoute)
 app.use("/api/payment",paymentRoute)
+app.use("/api/bill-templates",BillTemplateRoute)
 // Not found middleware (for invalid routes)
 app.use(notFound);
 
