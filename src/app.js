@@ -24,6 +24,7 @@ const cartRoute =require("./routes/cartRoutes")
 const paymentRoute =require("./routes/paymentRoutes")
 const projectRoute = require("./routes/projectRoutes")
 const customerGroupRoute=require("./routes/customerGroupRoutes")
+
 const app = express();
 app.use(cors());
 // app.use(
