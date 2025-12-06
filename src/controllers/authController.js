@@ -10,7 +10,7 @@ const { generate6DigitUniqueId } = require("../utils/generate6DigitUniqueId");
 const Customer = require("../models/Customer");
 const sendEmail = require("../utils/sendEmail");
 const OTP = require("../models/OTP");
-const generateOTPTemplate =require("../utils/pdfTemplates/generateOTPTemplate")
+const generateOTPTemplate = require("../utils/pdfTemplates/generateOTPTemplate");
 
 // 🔐 Token Generator
 const signToken = (userId, clientID, role, deviceId) => {
@@ -39,9 +39,8 @@ exports.register = asyncHandler(async (req, res) => {
     pincode,
     region,
     multiplePhones,
-
   } = req.body;
- let  clientID= req.body.clientID || req.user.clientID 
+  let clientID = req.body.clientID || req.user.clientID;
   // Backend - parse each projects entry
   let projects = req.body.projects || [];
 
@@ -215,7 +214,7 @@ exports.register = asyncHandler(async (req, res) => {
       }
     );
   }
-    if (role === "Sub Partner" && limit) {
+  if (role === "Sub Partner" && limit) {
     await User.updateOne(
       { _id: user._id },
       {
@@ -709,7 +708,7 @@ exports.deleteUser = asyncHandler(async (req, res) => {
 // ==========================================
 exports.loginClientPortal = asyncHandler(async (req, res) => {
   const { email, password, deviceId } = req.body;
-  console.log(email,"email")
+  console.log(email, "email");
 
   // 1. Basic Validation
   if (!email || !password)
@@ -735,7 +734,7 @@ exports.loginClientPortal = asyncHandler(async (req, res) => {
   const allowedRoles = ["Admin", "Client", "Salesman", "Customer"];
   if (!allowedRoles.includes(user.role)) {
     throw new ApiError(
-      403, 
+      403,
       "Access Denied: This account belongs to the Management Portal."
     );
   }
@@ -743,12 +742,14 @@ exports.loginClientPortal = asyncHandler(async (req, res) => {
   // 4. Verify Password
   const isMatch = await bcrypt.compare(password, user.password);
   if (!isMatch) throw new ApiError(401, "Invalid credentials");
-  const newDeviceId= req?.headers["auth-source"]=="Api" ?  user.currentDeviceId:deviceId;
-  console.log(req?.headers["auth-source"],"fhjefvghergh",newDeviceId)
+  const newDeviceId =
+    req?.headers["auth-source"] == "Api" ? user.currentDeviceId : deviceId;
+  console.log(req?.headers["auth-source"], "fhjefvghergh", newDeviceId);
 
   // 5. Generate Token
   const token = signToken(user._id, user.clientID, user.role, newDeviceId);
-  const newToken=req?.headers["auth-source"]=="Api" ? user.currentToken:token
+  const newToken =
+    req?.headers["auth-source"] == "Api" ? user.currentToken : token;
   // Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36
 
   // 6. Update Login History & Audit Logs
@@ -774,15 +775,20 @@ exports.loginClientPortal = asyncHandler(async (req, res) => {
   delete safeUser.auditLogs;
   safeUser.access = [...(user.access || [])];
 
-  // Note: Client portal usually doesn't need the complex stats object, 
+  // Note: Client portal usually doesn't need the complex stats object,
   // but if you have specific stats for them, add here.
-  const stats = {}; 
+  const stats = {};
 
-  res.status(200).json(
-    new ApiResponse(200, { token, user: safeUser, stats }, "Client Portal Login successful")
-  );
+  res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        { token, user: safeUser, stats },
+        "Client Portal Login successful"
+      )
+    );
 });
-
 
 // ==========================================
 // 2. MANAGEMENT PORTAL LOGIN
@@ -815,7 +821,7 @@ exports.loginManagementPortal = asyncHandler(async (req, res) => {
   const allowedRoles = ["SuperAdmin", "Partner", "Sub Partner"];
   if (!allowedRoles.includes(user.role)) {
     throw new ApiError(
-      403, 
+      403,
       "Access Denied: This account belongs to the Client Portal."
     );
   }
@@ -914,7 +920,11 @@ exports.loginManagementPortal = asyncHandler(async (req, res) => {
   res
     .status(200)
     .json(
-      new ApiResponse(200, { token, user: safeUser, stats }, "Management Portal Login successful")
+      new ApiResponse(
+        200,
+        { token, user: safeUser, stats },
+        "Management Portal Login successful"
+      )
     );
 });
 exports.logout = asyncHandler(async (req, res) => {
@@ -939,9 +949,8 @@ exports.logout = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, null, "User logged out successfully"));
 });
 
-const WINDOW = 5 * 60 * 1000; 
-const MAX_ATTEMPTS = 3; 
-
+const WINDOW = 5 * 60 * 1000;
+const MAX_ATTEMPTS = 3;
 
 exports.sendResetOTP = async (req, res) => {
   try {
@@ -949,20 +958,18 @@ exports.sendResetOTP = async (req, res) => {
 
     const user = await User.findOne({ email });
 
-   
     if (!user) {
       console.log(`Attempted OTP request for non-existent email: ${email}`);
-      return res.status(200).json({ 
-        message: "If the email is registered, an OTP has been sent.", 
-        attemptsLeft: MAX_ATTEMPTS, 
-        window: WINDOW / 1000 
+      return res.status(200).json({
+        message: "If the email is registered, an OTP has been sent.",
+        attemptsLeft: MAX_ATTEMPTS,
+        window: WINDOW / 1000,
       });
     }
 
     const now = Date.now();
     let otpRecord = await OTP.findOne({ email });
     let attemptsLeft = MAX_ATTEMPTS;
-
 
     if (otpRecord) {
       if (now - otpRecord.firstRequestAt < WINDOW) {
@@ -971,10 +978,10 @@ exports.sendResetOTP = async (req, res) => {
           attemptsLeft = 0;
           return res.status(429).json({
             message: `Too many OTP requests (${MAX_ATTEMPTS} attempts). Try again after 5 minutes.`,
-            attemptsLeft: 0
+            attemptsLeft: 0,
           });
         }
-        
+
         // Increase counter and overwrite OTP
         otpRecord.attempts += 1;
         attemptsLeft = MAX_ATTEMPTS - otpRecord.attempts;
@@ -1012,18 +1019,18 @@ exports.sendResetOTP = async (req, res) => {
       html: generateOTPTemplate(otpRecord.otp, WINDOW / 60000), // Send time in minutes
     });
 
-    return res.json({ 
-      message: "OTP sent successfully.", 
-      attemptsLeft, 
-      window: WINDOW / 1000 // Return window in seconds
+    return res.json({
+      message: "OTP sent successfully.",
+      attemptsLeft,
+      window: WINDOW / 1000, // Return window in seconds
     });
-
   } catch (err) {
     console.error("Error sending OTP:", err);
-    res.status(500).json({ message: "An error occurred while sending the OTP." });
+    res
+      .status(500)
+      .json({ message: "An error occurred while sending the OTP." });
   }
 };
-
 
 exports.verifyOTP = async (req, res) => {
   try {
@@ -1039,15 +1046,17 @@ exports.verifyOTP = async (req, res) => {
     // 1. Check for expiration
     if (now > record.expiresAt) {
       // Optional: Delete expired record
-      await OTP.deleteOne({ _id: record._id }); 
-      return res.status(400).json({ message: "OTP has expired. Please request a new code." });
+      await OTP.deleteOne({ _id: record._id });
+      return res
+        .status(400)
+        .json({ message: "OTP has expired. Please request a new code." });
     }
 
     // 2. Check for matching OTP value
     if (record.otp !== otp) {
       return res.status(400).json({ message: "Invalid OTP." });
     }
-    
+
     // 3. Mark as verified and save
     record.isVerified = true;
     await record.save();
@@ -1055,13 +1064,14 @@ exports.verifyOTP = async (req, res) => {
     // Note: The OTP record is not deleted here; it's needed for the resetPassword step.
     // It is deleted after the password is successfully reset.
 
-    return res.json({ message: "OTP verified successfully. Proceed to set new password." });
+    return res.json({
+      message: "OTP verified successfully. Proceed to set new password.",
+    });
   } catch (err) {
     console.error("Error verifying OTP:", err);
     res.status(500).json({ message: "An error occurred during verification." });
   }
 };
-
 
 exports.resetPassword = async (req, res) => {
   try {
@@ -1069,11 +1079,13 @@ exports.resetPassword = async (req, res) => {
 
     // --- Modern Password Validation ---
     // Min 8 chars, 1 uppercase, 1 lowercase, 1 number, 1 special char
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
-    
+    const passwordRegex =
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+
     if (!passwordRegex.test(newPassword)) {
       return res.status(400).json({
-        message: "Password must be at least 8 characters, and contain uppercase, lowercase, number, and special characters."
+        message:
+          "Password must be at least 8 characters, and contain uppercase, lowercase, number, and special characters.",
       });
     }
 
@@ -1082,7 +1094,8 @@ exports.resetPassword = async (req, res) => {
 
     if (!otpRecord) {
       return res.status(400).json({
-        message: "OTP not verified or has expired. Please verify the code again."
+        message:
+          "OTP not verified or has expired. Please verify the code again.",
       });
     }
 
@@ -1096,9 +1109,128 @@ exports.resetPassword = async (req, res) => {
     await OTP.deleteMany({ email });
 
     return res.json({ message: "Password reset successful" });
-
   } catch (err) {
     console.error("Error resetting password:", err);
-    res.status(500).json({ message: "An error occurred while resetting the password." });
+    res
+      .status(500)
+      .json({ message: "An error occurred while resetting the password." });
+  }
+};
+
+const ALLOWED_CHAIN = {
+  SuperAdmin: ["Partner", "Client"],
+  Partner: ["SubPartner", "Client"],
+  SubPartner: ["Client"],
+  Client: [], 
+  ClientAdmin: [], 
+};
+
+function isValidParentChild(parentRole, childRole) {
+  return ALLOWED_CHAIN[parentRole]?.includes(childRole);
+}
+
+function buildUserTree(users, clientUserCounts) {
+  const map = new Map();
+
+  users.forEach((u) => {
+    map.set(u._id.toString(), { ...u, children: [] });
+  });
+
+  const roots = [];
+
+  users.forEach((u) => {
+    const id = u._id.toString();
+    const node = map.get(id);
+    if (u.role === "Client") {
+      node.totalUsers = clientUserCounts[id] || 0;
+      node.children = [];
+    }
+
+    if (u.parent && map.has(u.parent.toString())) {
+      const parentNode = map.get(u.parent.toString());
+
+      if (isValidParentChild(parentNode.role, u.role)) {
+        parentNode.children.push(node);
+      }
+    } else {
+      if (u.role === "SuperAdmin") {
+        roots.push(node);
+      }
+    }
+  });
+
+  return roots;
+}
+
+exports.getUserHierarchy = async (req, res) => {
+  try {
+    const users = await User.find(
+      {},
+      "_id name email role status parent clientID"
+    ).lean();
+
+    const superAdmins = users.filter((u) => u.role === "SuperAdmin");
+
+    const clientUserCounts = {};
+    users.forEach((u) => {
+      if (u.clientID) {
+        const cid = u.clientID.toString();
+        clientUserCounts[cid] = (clientUserCounts[cid] || 0) + 1;
+      }
+    });
+    const globalCounts = users.reduce((acc, u) => {
+      acc[u.role] = (acc[u.role] || 0) + 1;
+      return acc;
+    }, {});
+
+    const final = superAdmins.map((sa) => {
+      const queue = [sa];
+      const related = new Map();
+      related.set(sa._id.toString(), sa);
+
+      while (queue.length) {
+        const current = queue.shift();
+        const currentId = current._id.toString();
+
+        const children = users.filter(
+          (u) => u.parent?.toString() === currentId
+        );
+
+        children.forEach((child) => {
+          if (isValidParentChild(current.role, child.role)) {
+            const cid = child._id.toString();
+            if (!related.has(cid)) {
+              related.set(cid, child);
+              queue.push(child);
+            }
+          }
+        });
+      }
+      const roleCounts = {};
+      [...related.values()].forEach((u) => {
+        roleCounts[u.role] = (roleCounts[u.role] || 0) + 1;
+      });
+
+      const hierarchy = buildUserTree([...related.values()], clientUserCounts);
+
+      return {
+        superAdmin: sa.name,
+        superAdminId: sa._id,
+        counts: roleCounts,
+        hierarchy,
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      count: final.length,
+      data: final,
+      globalCounts,
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: err.message,
+    });
   }
 };
