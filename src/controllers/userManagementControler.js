@@ -434,6 +434,7 @@ exports.getClients = asyncHandler(async (req, res) => {
     page = 1,
     limit = 10,
     partnerId = "",
+    subPartnerId = "",
   } = req.query;
   const userId = req.user.id;
   const user = await User.findById(userId);
@@ -450,6 +451,10 @@ exports.getClients = asyncHandler(async (req, res) => {
     console.log(userId);
     matchStage.parent = new mongoose.Types.ObjectId(userId);
   }
+  if (user.role === "SubPartner") {
+    console.log(userId);
+    matchStage.parent = new mongoose.Types.ObjectId(userId);
+  }
   if (search?.trim()) {
     matchStage.$or = [
       { name: { $regex: search, $options: "i" } },
@@ -461,6 +466,9 @@ exports.getClients = asyncHandler(async (req, res) => {
   // Partner-based restriction
   if (user.role === "Partner") {
     // Partner should only access their own clients
+    matchStage.parent = new mongoose.Types.ObjectId(userId);
+  } else if (user.role === "SubPartner") {
+    // SubPartner should only access their own clients
     matchStage.parent = new mongoose.Types.ObjectId(userId);
   } else {
     // Admin / SuperAdmin can filter by partner
@@ -915,7 +923,8 @@ exports.getSubPartners = asyncHandler(async (req, res) => {
     page = 1,
     limit = 10,
   } = req.query;
-
+  const partnerId = req.user.id;
+  console.log(partnerId);
   const perPage = parseInt(limit, 10);
   const currentPage = Math.max(parseInt(page, 10), 1);
   const skip = (currentPage - 1) * perPage;
@@ -924,7 +933,7 @@ exports.getSubPartners = asyncHandler(async (req, res) => {
 
   // Match filters
   const matchStage = { role: "SubPartner", status: { $ne: "delete" } };
-
+  matchStage.parent = new mongoose.Types.ObjectId(partnerId);
   if (search?.trim()) {
     matchStage.$or = [
       { name: { $regex: search, $options: "i" } },
