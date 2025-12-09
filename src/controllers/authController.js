@@ -39,6 +39,9 @@ exports.register = asyncHandler(async (req, res) => {
     pincode,
     region,
     multiplePhones,
+    isDemo,
+    maxDemoDays,
+    demoPeriod,
   } = req.body;
   let clientID = req.body.clientID || req.user.clientID;
   // Backend - parse each projects entry
@@ -135,10 +138,16 @@ exports.register = asyncHandler(async (req, res) => {
     ],
   });
   if (role === "Client") {
+  if (user.isDemo === true) {
+    user.demoExpiry = new Date(
+      Date.now() + user.demoPeriod * 24 * 60 * 60 * 1000
+    );
+    await user.save();
+  }
     const assignedLimit = limit || 0;
 
     // Only check/deduct if creator is Partner
-    if (creatorInfo.role === "Partner") {
+    if (creatorInfo.role === "Partner" || creatorInfo.role === "SubPartner") {
       const partnerRemainingLimit = creatorInfo.limit || 0;
 
       if (assignedLimit > partnerRemainingLimit) {
@@ -214,7 +223,28 @@ exports.register = asyncHandler(async (req, res) => {
       }
     );
   }
-  if (role === "Sub Partner" && limit) {
+  if (role === "SubPartner" && limit) {
+    const assignedLimit = limit || 0;
+
+    // Only check/deduct if creator is Partner
+    if (creatorInfo.role === "Partner") {
+      const partnerRemainingLimit = creatorInfo.limit || 0;
+
+      if (assignedLimit > partnerRemainingLimit) {
+        throw new ApiError(
+          400,
+          `Partner limit exceeded. You have ${partnerRemainingLimit} remaining.`
+        );
+      }
+
+      // Deduct assigned limit from Partner
+      await User.updateOne(
+        { _id: creatorInfo._id },
+        {
+          $inc: { limit: -assignedLimit },
+        }
+      );
+    }
     await User.updateOne(
       { _id: user._id },
       {
@@ -818,7 +848,7 @@ exports.loginManagementPortal = asyncHandler(async (req, res) => {
   if (!user) throw new ApiError(401, "Invalid credentials");
 
   // 3. 🛡️ ROLE GUARD: Portal 2 Specific
-  const allowedRoles = ["SuperAdmin", "Partner", "Sub Partner"];
+  const allowedRoles = ["SuperAdmin", "Partner", "SubPartner"];
   if (!allowedRoles.includes(user.role)) {
     throw new ApiError(
       403,
@@ -1121,8 +1151,8 @@ const ALLOWED_CHAIN = {
   SuperAdmin: ["Partner", "Client"],
   Partner: ["SubPartner", "Client"],
   SubPartner: ["Client"],
-  Client: [], 
-  ClientAdmin: [], 
+  Client: [],
+  ClientAdmin: [],
 };
 
 function isValidParentChild(parentRole, childRole) {
