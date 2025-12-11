@@ -24,8 +24,343 @@ const signToken = (userId, clientID, role, deviceId) => {
 };
 
 // ✅ REGISTER USER
+// exports.register = asyncHandler(async (req, res) => {
+//   const adminId = req?.user?.id;
+//   const {
+//     name,
+//     email,
+//     password,
+//     role,
+//     city,
+//     country,
+//     state,
+//     area,
+//     limit,
+//     pincode,
+//     region,
+//     multiplePhones,
+//   } = req.body;
+//   let clientID = req.body.clientID || req.user.clientID;
+//   // Backend - parse each projects entry
+//   let projects = req.body.projects || [];
+
+//   // If it's a single JSON string
+//   if (typeof projects === "string") {
+//     projects = [projects];
+//   }
+
+//   if (Array.isArray(projects)) {
+//     projects = projects
+//       .map((p) => {
+//         if (typeof p === "string") {
+//           try {
+//             return JSON.parse(p);
+//           } catch (e) {
+//             return null;
+//           }
+//         }
+//         return p;
+//       })
+//       .filter(Boolean);
+//   }
+
+//   // Now projects will be properly formatted array of objects
+//   let access = structuredClone(req.body.access);
+//   if (!name || !email || !password || !role) {
+//     throw new ApiError(400, "Missing required fields");
+//   }
+
+//   const exists = await User.findOne({ email: email.toLowerCase() });
+//   if (exists) throw new ApiError(409, "Email already in use");
+
+//   const creatorInfo = await User.findById(adminId);
+//   if (creatorInfo.role === "SuperAdmin" || creatorInfo.role === "Partner") {
+//     req.body.projects = projects;
+//   }
+
+//   if (creatorInfo.role !== "SuperAdmin") {
+//     if (creatorInfo.role === "Admin") {
+//       // Admin can only create users under their assigned client
+//       if (!clientID)
+//         throw new ApiError(
+//           400,
+//           "Client ID is required for Admin-created users"
+//         );
+
+//       const client = await User.findById(clientID);
+//       if (!client) throw new ApiError(404, "Client not found");
+
+//       if (client.limit <= 0) {
+//         throw new ApiError(400, "Client limit exceeded");
+//       }
+//     }
+//   }
+
+//   const hash = await bcrypt.hash(password, 10);
+//   const uploadedDocs = req.files?.documents || [];
+//   const uploadedUrls = uploadedDocs.map((file) => file.location);
+
+//   // Final documents array (uploaded OR body OR fallback)
+//   const finalDocuments =
+//     uploadedUrls.length > 0
+//       ? uploadedUrls
+//       : Array.isArray(req.body.documents)
+//       ? req.body.documents
+//       : [];
+
+//   const user = await User.create({
+//     ...req.body,
+//     email: email.toLowerCase(),
+//     password: hash,
+//     clientID: clientID || creatorInfo?.clientID,
+//     createdBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+//     parent: creatorInfo?._id || null,
+//     city,
+//     country,
+//     state,
+//     area,
+//     limit,
+//     pincode,
+//     region,
+//     access: access,
+//     documents: finalDocuments,
+//     multiplePhones,
+//     auditLogs: [
+//       {
+//         action: "create",
+//         performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+//         timestamp: new Date(),
+//         details: "User created",
+//       },
+//     ],
+//   });
+//   if (role === "Client") {
+//     const assignedLimit = limit || 0;
+
+//     // Only check/deduct if creator is Partner
+//     if (creatorInfo.role === "Partner") {
+//       const partnerRemainingLimit = creatorInfo.limit || 0;
+
+//       if (assignedLimit > partnerRemainingLimit) {
+//         throw new ApiError(
+//           400,
+//           `Partner limit exceeded. You have ${partnerRemainingLimit} remaining.`
+//         );
+//       }
+
+//       // Deduct assigned limit from Partner
+//       await User.updateOne(
+//         { _id: creatorInfo._id },
+//         {
+//           $inc: { limit: -assignedLimit },
+//         }
+//       );
+//     }
+
+//     // Assign initial limit to the Client regardless of creator role
+//     if (assignedLimit > 0) {
+//       await User.updateOne(
+//         { _id: user._id },
+//         {
+//           $push: {
+//             limitHistory: {
+//               performedBy: adminId
+//                 ? new mongoose.Types.ObjectId(adminId)
+//                 : null,
+//               initialLimit: assignedLimit,
+//               previousLimit: 0,
+//               newLimit: assignedLimit,
+//               action: "assigned",
+//               reason:
+//                 creatorInfo.role === "Partner"
+//                   ? "Initial limit assigned by Partner"
+//                   : "Initial limit assigned by SuperAdmin",
+//               timestamp: new Date(),
+//             },
+//           },
+//         }
+//       );
+//     }
+//     // If client is being created, attach project list given
+//     user.projects = projects;
+//     user.clientID = user._id;
+//     console.log(user, "userclientid");
+//     await user.save();
+//   }
+//   if (role === "Admin") {
+//     const client = await User.findById(clientID).select("projects");
+
+//     user.projects = client?.projects || [];
+//     await user.save();
+
+//     // Deduct 1 license from Client
+//     await User.updateOne({ _id: user.clientID }, { $inc: { limit: -1 } });
+//   }
+
+//   if (role === "Partner" && limit) {
+//     await User.updateOne(
+//       { _id: user._id },
+//       {
+//         $push: {
+//           limitHistory: {
+//             performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+//             initialLimit: limit,
+//             previousLimit: 0,
+//             newLimit: limit,
+//             action: "assigned",
+//             reason: "Initial limit assigned on creation",
+//             timestamp: new Date(),
+//           },
+//         },
+//       }
+//     );
+//   }
+//   if (role === "Sub Partner" && limit) {
+//     await User.updateOne(
+//       { _id: user._id },
+//       {
+//         $push: {
+//           limitHistory: {
+//             performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+//             initialLimit: limit,
+//             previousLimit: 0,
+//             newLimit: limit,
+//             action: "assigned",
+//             reason: "Initial limit assigned on creation",
+//             timestamp: new Date(),
+//           },
+//         },
+//       }
+//     );
+//   }
+
+//   if (role === "Customer" && Array.isArray(access) && access.length > 0) {
+//     console.log("Auto-creating customers for access:", access);
+//     for (const acc of access) {
+//       const companyId = acc.company;
+
+//       if (!companyId) continue;
+
+//       const code = await generateUniqueId(Customer, "code");
+
+//       const customer = await Customer.create({
+//         company: companyId,
+//         clientId: creatorInfo?.clientID || adminId,
+
+//         // Required fields
+//         customerName: name,
+//         contactPerson: name,
+//         emailAddress: email.toLowerCase(),
+//         customerType: "company",
+//         code,
+
+//         createdBy: adminId,
+//         auditLogs: [
+//           {
+//             action: "create",
+//             performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+//             timestamp: new Date(),
+//             details: "Customer auto-created from user registration",
+//           },
+//         ],
+//       });
+//       // Customer inherits creator's projects (client projects)
+//       user.projects = creatorInfo.projects || [];
+//       await user.save();
+
+//       // ✅ Debug log
+//       console.log(
+//         `✅ Auto-Created Customer --> ID: ${
+//           customer._id
+//         }, Company: ${companyId}, Code: ${code}, Email: ${email.toLowerCase()}`
+//       );
+//     }
+//   }
+//   const code = await generate6DigitUniqueId(User, "code");
+//   await User.updateOne(
+//     { _id: user._id },
+//     {
+//       $set: {
+//         code,
+//       },
+//     }
+//   );
+//   // After all role-based updates (Client, Admin deduction, Partner limit history, Customer auto-creation)
+//   // BEFORE generating code
+
+//   // 📩 Send email to Admin user with credentials
+//   if (role === "Admin") {
+//     const emailSubject = "Your Admin Account Credentials";
+//     const emailText = `
+// Hello ${name},
+
+// Your admin account has been created successfully.
+
+// Login Credentials:
+// Email: ${email}
+// Password: ${password}
+
+// Please log in to continue working.
+
+// Regards,
+// Team
+// `;
+
+//     const emailHtml = `
+//   <p>Hello <strong>${name}</strong>,</p>
+//   <p>Your admin account has been successfully created.</p>
+//   <p><strong>Login Credentials:</strong></p>
+//   <ul>
+//     <li><strong>Email:</strong> ${email}</li>
+//     <li><strong>Password:</strong> ${password}</li>
+//   </ul>
+//   <p>Please change your password after first login.</p>
+//   <br/>
+//   <p>Regards,<br/>Team</p>
+//   `;
+
+//     const emailStatus = await sendEmail({
+//       to: email,
+//       subject: emailSubject,
+//       text: emailText,
+//       html: emailHtml,
+//     });
+
+//     if (!emailStatus.success) {
+//       console.error(
+//         "⚠️ Failed to send admin credentials email:",
+//         emailStatus.error
+//       );
+//     }
+//   }
+
+//   const userResponse = user.toObject();
+//   delete userResponse.password;
+//   let ipAddress =
+//     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+
+//   // convert ::1 → 127.0.0.1
+//   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+//     ipAddress = "127.0.0.1";
+//   }
+//   await createAuditLog({
+//     module: "User",
+//     action: "create",
+//     performedBy: req.user.id,
+//     referenceId: user._id,
+//     clientId: req.user.clientID,
+//     details: "User created successfully",
+//     ipAddress,
+//   });
+//   res
+//     .status(201)
+//     .json(new ApiResponse(201, userResponse, "User registered successfully"));
+// });
+
 exports.register = asyncHandler(async (req, res) => {
   const adminId = req?.user?.id;
+
+  // Extract important fields safely
   const {
     name,
     email,
@@ -43,67 +378,93 @@ exports.register = asyncHandler(async (req, res) => {
     maxDemoDays,
     demoPeriod,
   } = req.body;
+
   let clientID = req.body.clientID || req.user.clientID;
-  // Backend - parse each projects entry
-  let projects = req.body.projects || [];
 
-  // If it's a single JSON string
-  if (typeof projects === "string") {
-    projects = [projects];
-  }
-
-  if (Array.isArray(projects)) {
-    projects = projects
-      .map((p) => {
-        if (typeof p === "string") {
-          try {
-            return JSON.parse(p);
-          } catch (e) {
-            return null;
-          }
-        }
-        return p;
-      })
-      .filter(Boolean);
-  }
-
-  // Now projects will be properly formatted array of objects
-  let access = structuredClone(req.body.access);
+  // ================================
+  // 1️⃣ BASIC VALIDATION
+  // ================================
   if (!name || !email || !password || !role) {
     throw new ApiError(400, "Missing required fields");
   }
 
+  // Email duplication check
   const exists = await User.findOne({ email: email.toLowerCase() });
   if (exists) throw new ApiError(409, "Email already in use");
 
+  // Fetch creator info
   const creatorInfo = await User.findById(adminId);
+  console.log(creatorInfo, "creatorInfo");
+
+  // ================================
+  // 2️⃣ PARSE PROJECTS SAFELY
+  // ================================
+  let projects = req.body.projects || [];
+  if (typeof projects === "string") projects = [projects];
+  if (Array.isArray(projects)) {
+    projects = projects
+      .map((p) => {
+        try {
+          return typeof p === "string" ? JSON.parse(p) : p;
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+  }
+
+  // Clone access
+  let access = req.body.access ? structuredClone(req.body.access) : [];
+
+  // Allow partner/superadmin to pass projects
   if (creatorInfo.role === "SuperAdmin" || creatorInfo.role === "Partner") {
     req.body.projects = projects;
   }
 
-  if (creatorInfo.role !== "SuperAdmin") {
-    if (creatorInfo.role === "Admin") {
-      // Admin can only create users under their assigned client
-      if (!clientID)
-        throw new ApiError(
-          400,
-          "Client ID is required for Admin-created users"
-        );
+  // ================================
+  // 3️⃣ ADMIN CAN ONLY CREATE USERS UNDER SAME CLIENT
+  // ================================
+  if (creatorInfo.role === "Admin") {
+    if (!clientID)
+      throw new ApiError(400, "Client ID is required for Admin-created users");
 
-      const client = await User.findById(clientID);
-      if (!client) throw new ApiError(404, "Client not found");
+    const client = await User.findById(clientID);
+    if (!client) throw new ApiError(404, "Client not found");
 
-      if (client.limit <= 0) {
-        throw new ApiError(400, "Client limit exceeded");
-      }
+    if (client.limit <= 0) {
+      throw new ApiError(400, "Client limit exceeded");
     }
   }
 
+  // ================================
+  // 4️⃣ STRICT LIMIT VALIDATION (NEW)
+  //    🚫 prevents user creation if limit > partner limit
+  // ================================
+  if (
+    (creatorInfo.role === "Partner" || creatorInfo.role === "Sub Partner") &&
+    limit
+  ) {
+    const partnerAvailableLimit = creatorInfo.limit || 0;
+
+    if (limit > partnerAvailableLimit) {
+      throw new ApiError(
+        400,
+        `Assigned limit ${limit} cannot exceed creator's available limit (${partnerAvailableLimit}). User creation blocked.`
+      );
+    }
+  }
+
+  // ================================
+  // 5️⃣ HASH PASSWORD
+  // ================================
   const hash = await bcrypt.hash(password, 10);
+
+  // ================================
+  // 6️⃣ HANDLE DOCUMENT UPLOADS
+  // ================================
   const uploadedDocs = req.files?.documents || [];
   const uploadedUrls = uploadedDocs.map((file) => file.location);
 
-  // Final documents array (uploaded OR body OR fallback)
   const finalDocuments =
     uploadedUrls.length > 0
       ? uploadedUrls
@@ -111,8 +472,12 @@ exports.register = asyncHandler(async (req, res) => {
       ? req.body.documents
       : [];
 
+  // ================================
+  // 7️⃣ CREATE USER (same behavior as before)
+  // ================================
   const user = await User.create({
-    ...req.body,
+    ...req.body, // KEEPING your old behavior
+    name,
     email: email.toLowerCase(),
     password: hash,
     clientID: clientID || creatorInfo?.clientID,
@@ -125,18 +490,24 @@ exports.register = asyncHandler(async (req, res) => {
     limit,
     pincode,
     region,
-    access: access,
+    access,
     documents: finalDocuments,
     multiplePhones,
     auditLogs: [
       {
         action: "create",
-        performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+        performedBy: adminId || null,
         timestamp: new Date(),
         details: "User created",
       },
     ],
   });
+
+  // ================================
+  // 8️⃣ ROLE-BASED LOGIC
+  // ================================
+
+  // CLIENT ROLE
   if (role === "Client") {
   if (user.isDemo === true) {
     user.demoExpiry = new Date(
@@ -146,36 +517,32 @@ exports.register = asyncHandler(async (req, res) => {
   }
     const assignedLimit = limit || 0;
 
+
     // Only check/deduct if creator is Partner
     if (creatorInfo.role === "Partner" || creatorInfo.role === "SubPartner") {
       const partnerRemainingLimit = creatorInfo.limit || 0;
 
-      if (assignedLimit > partnerRemainingLimit) {
+
+      if (assignedLimit > partnerLimit) {
         throw new ApiError(
           400,
-          `Partner limit exceeded. You have ${partnerRemainingLimit} remaining.`
+          `Partner limit exceeded. You have ${partnerLimit} remaining.`
         );
       }
 
-      // Deduct assigned limit from Partner
       await User.updateOne(
         { _id: creatorInfo._id },
-        {
-          $inc: { limit: -assignedLimit },
-        }
+        { $inc: { limit: -assignedLimit } }
       );
     }
 
-    // Assign initial limit to the Client regardless of creator role
     if (assignedLimit > 0) {
       await User.updateOne(
         { _id: user._id },
         {
           $push: {
             limitHistory: {
-              performedBy: adminId
-                ? new mongoose.Types.ObjectId(adminId)
-                : null,
+              performedBy: adminId,
               initialLimit: assignedLimit,
               previousLimit: 0,
               newLimit: assignedLimit,
@@ -190,22 +557,26 @@ exports.register = asyncHandler(async (req, res) => {
         }
       );
     }
-    // If client is being created, attach project list given
+
     user.projects = projects;
     user.clientID = user._id;
     await user.save();
   }
+
+  // ADMIN ROLE
   if (role === "Admin") {
     const client = await User.findById(clientID).select("projects");
 
     user.projects = client?.projects || [];
     await user.save();
 
-    // Deduct 1 license from Client
     await User.updateOne({ _id: user.clientID }, { $inc: { limit: -1 } });
   }
 
-  if (role === "Partner" && limit) {
+
+  // PARTNER / SUB PARTNER ROLE
+  if ((role === "Partner" || role === "Sub Partner") && limit) {
+
     await User.updateOne(
       { _id: user._id },
       {
@@ -245,12 +616,13 @@ exports.register = asyncHandler(async (req, res) => {
         }
       );
     }
+
     await User.updateOne(
       { _id: user._id },
       {
         $push: {
           limitHistory: {
-            performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+            performedBy: adminId,
             initialLimit: limit,
             previousLimit: 0,
             newLimit: limit,
@@ -263,115 +635,61 @@ exports.register = asyncHandler(async (req, res) => {
     );
   }
 
+  // CUSTOMER ROLE — Auto-create customers for each company in access
   if (role === "Customer" && Array.isArray(access) && access.length > 0) {
-    console.log("Auto-creating customers for access:", access);
     for (const acc of access) {
-      const companyId = acc.company;
-
-      if (!companyId) continue;
+      if (!acc.company) continue;
 
       const code = await generateUniqueId(Customer, "code");
 
-      const customer = await Customer.create({
-        company: companyId,
+      await Customer.create({
+        company: acc.company,
         clientId: creatorInfo?.clientID || adminId,
-
-        // Required fields
         customerName: name,
         contactPerson: name,
         emailAddress: email.toLowerCase(),
         customerType: "company",
         code,
-
         createdBy: adminId,
-        auditLogs: [
-          {
-            action: "create",
-            performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
-            timestamp: new Date(),
-            details: "Customer auto-created from user registration",
-          },
-        ],
       });
-      // Customer inherits creator's projects (client projects)
+
       user.projects = creatorInfo.projects || [];
       await user.save();
-
-      // ✅ Debug log
-      console.log(
-        `✅ Auto-Created Customer --> ID: ${
-          customer._id
-        }, Company: ${companyId}, Code: ${code}, Email: ${email.toLowerCase()}`
-      );
     }
   }
+
+  // ================================
+  // 9️⃣ GENERATE 6 DIGIT USER CODE
+  // ================================
   const code = await generate6DigitUniqueId(User, "code");
-  await User.updateOne(
-    { _id: user._id },
-    {
-      $set: {
-        code,
-      },
-    }
-  );
-  // After all role-based updates (Client, Admin deduction, Partner limit history, Customer auto-creation)
-  // BEFORE generating code
+  await User.updateOne({ _id: user._id }, { $set: { code } });
 
-  // 📩 Send email to Admin user with credentials
+  // ================================
+  // 🔟 SEND ADMIN EMAIL
+  // ================================
   if (role === "Admin") {
-    const emailSubject = "Your Admin Account Credentials";
-    const emailText = `
-Hello ${name},
-
-Your admin account has been created successfully.
-
-Login Credentials:
-Email: ${email}
-Password: ${password}
-
-Please log in to continue working.
-
-Regards,
-Team
-`;
-
-    const emailHtml = `
-  <p>Hello <strong>${name}</strong>,</p>
-  <p>Your admin account has been successfully created.</p>
-  <p><strong>Login Credentials:</strong></p>
-  <ul>
-    <li><strong>Email:</strong> ${email}</li>
-    <li><strong>Password:</strong> ${password}</li>
-  </ul>
-  <p>Please change your password after first login.</p>
-  <br/>
-  <p>Regards,<br/>Team</p>
-  `;
-
-    const emailStatus = await sendEmail({
+    await sendEmail({
       to: email,
-      subject: emailSubject,
-      text: emailText,
-      html: emailHtml,
+      subject: "Your Admin Account Credentials",
+      text: `Hello ${name},\nYour admin account has been created.\nEmail: ${email}\nPassword: ${password}`,
+      html: `
+        <p>Hello <strong>${name}</strong>,</p>
+        <p>Your admin account has been created.</p>
+        <ul>
+          <li><strong>Email:</strong> ${email}</li>
+          <li><strong>Password:</strong> ${password}</li>
+        </ul>
+      `,
     });
-
-    if (!emailStatus.success) {
-      console.error(
-        "⚠️ Failed to send admin credentials email:",
-        emailStatus.error
-      );
-    }
   }
 
-  const userResponse = user.toObject();
-  delete userResponse.password;
+  // ================================
+  // 1️⃣1️⃣ AUDIT LOG
+  // ================================
   let ipAddress =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  if (ipAddress === "::1") ipAddress = "127.0.0.1";
 
-  // convert ::1 → 127.0.0.1
-  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
-    ipAddress = "127.0.0.1";
-  }
   await createAuditLog({
     module: "User",
     action: "create",
@@ -381,10 +699,19 @@ Team
     details: "User created successfully",
     ipAddress,
   });
+
+  // ================================
+  // 1️⃣2️⃣ RESPONSE
+  // ================================
+  const userResponse = user.toObject();
+  delete userResponse.password;
+
   res
     .status(201)
     .json(new ApiResponse(201, userResponse, "User registered successfully"));
 });
+
+
 // ✅ REGISTER USER
 exports.registerInside = asyncHandler(async (req, res) => {
   const adminId = req?.user?.id;
