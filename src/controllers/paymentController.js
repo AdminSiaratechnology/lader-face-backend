@@ -3,6 +3,7 @@ const Order = require("../models/order.model");
 const Customer = require("../models/Customer");
 const User = require("../models/User");
 const mongoose = require("mongoose");
+const asyncHandler = require("../utils/asyncHandler");
 
 exports.createPayment = async (req, res, next) => {
   try {
@@ -391,13 +392,14 @@ exports.getPaymentReport = async (req, res) => {
 /**
  * Assumes 'Order' and 'Payment' Mongoose models are imported and available.
  */
-exports.getCustomerWiseReport = async (req, res) => {
+// controllers/reportController.js
+exports.getCustomerWiseReport = asyncHandler(async (req, res) => {
   try {
     const {
       companyId,
       page = 1,
       limit = 1200,
-      search,
+      search = "",
       salesmanId,
       status,
       mode,
@@ -406,9 +408,10 @@ exports.getCustomerWiseReport = async (req, res) => {
     } = req.query;
 
     if (!companyId || !mongoose.Types.ObjectId.isValid(companyId)) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Valid companyId required" });
+      return res.status(400).json({
+        success: false,
+        message: "Valid companyId required",
+      });
     }
 
     const parsedLimit = parseInt(limit);
@@ -416,10 +419,8 @@ exports.getCustomerWiseReport = async (req, res) => {
     const skip = (parsedPage - 1) * parsedLimit;
     const companyObjId = new mongoose.Types.ObjectId(companyId);
 
-    // 1. Build Base Match and Search Criteria
+    // Base match
     const baseMatch = { companyId: companyObjId };
-    
-    // Date filter
     if (startDate || endDate) {
       baseMatch.createdAt = {};
       if (startDate) baseMatch.createdAt.$gte = new Date(startDate);
@@ -430,11 +431,34 @@ exports.getCustomerWiseReport = async (req, res) => {
       }
     }
 
-    const searchRegex = search ? { $regex: search, $options: "i" } : null;
+    // Smart Search Logic
+    let customerSearchFilter = {};
+    const trimmedSearch = search.trim();
 
-    // 2. Define ORDERS PIPELINE (Run on Order Model)
+    // If search is a valid ObjectId → search by customer ID
+    if (trimmedSearch && mongoose.Types.ObjectId.isValid(trimmedSearch)) {
+      customerSearchFilter = {
+        "customer._id": new mongoose.Types.ObjectId(trimmedSearch),
+      };
+    }
+    // Else → search by text (name, phone, order code, etc.)
+    else if (trimmedSearch) {
+      const searchRegex = { $regex: trimmedSearch, $options: "i" };
+      customerSearchFilter = {
+        $or: [
+          { orderCode: searchRegex },
+          { "customer.customerName": searchRegex },
+          { "customer.phone": searchRegex },
+          { "salesman.name": searchRegex },
+        ],
+      };
+    }
+
+    // =============== ORDERS PIPELINE ===============
     const ordersPipeline = [
       { $match: { ...baseMatch, status: "approved" } },
+
+      // Join Customer
       {
         $lookup: {
           from: "customers",
@@ -444,6 +468,8 @@ exports.getCustomerWiseReport = async (req, res) => {
         },
       },
       { $unwind: { path: "$customer", preserveNullAndEmptyArrays: true } },
+
+      // Join Salesman
       {
         $lookup: {
           from: "users",
@@ -453,29 +479,28 @@ exports.getCustomerWiseReport = async (req, res) => {
         },
       },
       { $unwind: { path: "$salesman", preserveNullAndEmptyArrays: true } },
+
+      // FILTERS
       {
         $match: {
           $and: [
+            // Salesman filter
             salesmanId && salesmanId !== "all"
               ? { "salesman._id": new mongoose.Types.ObjectId(salesmanId) }
               : {},
-            searchRegex
-              ? {
-                  $or: [
-                    { orderCode: searchRegex },
-                    { "customer.customerName": searchRegex },
-                    { "salesman.name": searchRegex },
-                  ],
-                }
-              : {},
+
+            // Customer search (ID or text)
+            customerSearchFilter,
+
           ].filter(Boolean),
         },
       },
+
       {
         $project: {
           type: "Order",
           date: "$createdAt",
-          customerName: { $ifNull: ["$customer.customerName", "Unknown"] },
+          customerName: { $ifNull: ["$customer.customerName", "Unknown Customer"] },
           salesmanName: { $ifNull: ["$salesman.name", "System"] },
           orderAmount: "$grandTotal",
           paymentAmount: null,
@@ -486,27 +511,16 @@ exports.getCustomerWiseReport = async (req, res) => {
       },
     ];
 
-    // 3. Define PAYMENTS PIPELINE (Run on Payment Model)
+    // =============== PAYMENTS PIPELINE ===============
     const paymentsPipeline = [
-      { $match: { ...baseMatch } },
-      {
-        $lookup: {
-          from: "customers",
-          localField: "customerId",
-          foreignField: "_id",
-          as: "customer",
-        },
-      },
+      { $match: baseMatch },
+
+      { $lookup: { from: "customers", localField: "customerId", foreignField: "_id", as: "customer" } },
       { $unwind: { path: "$customer", preserveNullAndEmptyArrays: true } },
-      {
-        $lookup: {
-          from: "users",
-          localField: "userId",
-          foreignField: "_id",
-          as: "user",
-        },
-      },
+
+      { $lookup: { from: "users", localField: "userId", foreignField: "_id", as: "user" } },
       { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
+
       {
         $match: {
           $and: [
@@ -515,27 +529,19 @@ exports.getCustomerWiseReport = async (req, res) => {
             salesmanId && salesmanId !== "all"
               ? { "user._id": new mongoose.Types.ObjectId(salesmanId) }
               : {},
-            searchRegex
-              ? {
-                  $or: [
-                    { remarks: searchRegex },
-                    { transactionId: searchRegex },
-                    { "customer.customerName": searchRegex },
-                    { "user.name": searchRegex },
-                  ],
-                }
-              : {},
+            customerSearchFilter, // Same smart search
           ].filter(Boolean),
         },
       },
+
       {
         $project: {
           type: "Payment",
           date: "$createdAt",
-          customerName: { $ifNull: ["$customer.customerName", "Unknown"] },
+          customerName: { $ifNull: ["$customer.customerName", "Unknown Customer"] },
           salesmanName: { $ifNull: ["$user.name", "System"] },
           orderAmount: null,
-          paymentAmount: "$amount", // Confirmed field: "amount"
+          paymentAmount: "$amount",
           status: "$status",
           remarks: { $ifNull: ["$remarks", "Payment Received"] },
           sortDate: "$createdAt",
@@ -543,50 +549,35 @@ exports.getCustomerWiseReport = async (req, res) => {
       },
     ];
 
-    // 4. Execute both pipelines separately
-    const ordersData = await Order.aggregate(ordersPipeline);
-    
-    // NOTE: Replace 'Payment' with your actual Payment Mongoose model name if different
-    const paymentsData = await Payment.aggregate(paymentsPipeline); 
-    
-    // 5. Combine, Sort, and Paginate in Node.js (or Mongoose if data is huge)
-    // If the combined result is massive (millions of records), consider merging the collections
-    // inside MongoDB first. For typical reports, this JavaScript method is sufficient.
-    
-    const combinedData = [...ordersData, ...paymentsData];
+    // =============== EXECUTE & COMBINE ===============
+    const [ordersData, paymentsData] = await Promise.all([
+      Order.aggregate(ordersPipeline),
+      Payment.aggregate(paymentsPipeline),
+    ]);
 
-    // Total count before pagination
+    const combinedData = [...ordersData, ...paymentsData];
+    combinedData.sort((a, b) => new Date(b.sortDate) - new Date(a.sortDate));
+
     const total = combinedData.length;
     const totalPages = Math.ceil(total / parsedLimit);
-    
-    // Sort combined data by 'sortDate' descending
-    combinedData.sort((a, b) => b.sortDate - a.sortDate);
-
-    // Apply pagination
     const paginatedData = combinedData.slice(skip, skip + parsedLimit);
 
-    // 6. Calculate Stats on the PAGINATED data
+    // =============== STATS ===============
     const stats = {
       totalTransactions: paginatedData.length,
-      totalSales: paginatedData.reduce((sum, d) => sum + (d.orderAmount || 0), 0),
-      totalReceived: paginatedData.reduce((sum, d) => sum + (d.paymentAmount || 0), 0),
+      totalSales: paginatedData.reduce((sum, t) => sum + (t.orderAmount || 0), 0),
+      totalReceived: paginatedData.reduce((sum, t) => sum + (t.paymentAmount || 0), 0),
       outstanding: paginatedData.reduce(
-        (sum, d) => sum + ((d.orderAmount || 0) - (d.paymentAmount || 0)),
+        (sum, t) => sum + ((t.orderAmount || 0) - (t.paymentAmount || 0)),
         0
       ),
     };
 
-    // 7. Send Response
     res.json({
       success: true,
       data: paginatedData,
       stats,
-      pagination: {
-        total,
-        totalPages,
-        currentPage: parsedPage,
-        limit: parsedLimit,
-      },
+      pagination: { total, totalPages, currentPage: parsedPage, limit: parsedLimit },
     });
   } catch (error) {
     console.error("Customer Wise Report Error:", error);
@@ -596,4 +587,4 @@ exports.getCustomerWiseReport = async (req, res) => {
       error: error.message,
     });
   }
-};
+});
