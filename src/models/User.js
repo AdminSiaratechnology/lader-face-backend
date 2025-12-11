@@ -162,9 +162,13 @@ const userSchema = new mongoose.Schema(
     projects: [
       {
         projectId: { type: mongoose.Schema.Types.ObjectId, ref: "Project" },
-        projectCode: {type: String}
+        projectCode: { type: String },
       },
     ],
+    isDemo: { type: Boolean, default: false }, // this field is for client to know whether it's a demo account or not
+    demoExpiry: { type: Date, default: null }, // this field is for client to know when the demo account will expire
+    maxDemoDays: { type: Number }, // this is for partner to know how many days they can offer to their demo clients
+    demoPeriod: { type: Number, default: 0 }, // this field is for clients to know how many demo days they have been allotted
   },
   { timestamps: true }
 );
@@ -177,8 +181,18 @@ userSchema.index({ status: 1 });
 userSchema.index({ "access.company": 1 });
 userSchema.index({ lastLogin: -1 });
 userSchema.index({ name: "text", email: "text" });
-userSchema.index({ clientID: 1, "access.company":1 });
+userSchema.index({ clientID: 1, "access.company": 1 });
 
 userSchema.index({ clientID: 1 });
 userSchema.index({ status: 1 });
+userSchema.pre("save", function (next) {
+  if (this.role === "SuperAdmin") {
+    this.maxDemoDays = undefined;
+    this.demoPeriod = 0;
+    this.isDemo = false;
+    this.demoExpiry = null;
+  }
+  next();
+});
+
 module.exports = mongoose.model("User", userSchema);

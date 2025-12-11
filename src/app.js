@@ -24,6 +24,7 @@ const cartRoute =require("./routes/cartRoutes")
 const paymentRoute =require("./routes/paymentRoutes")
 const projectRoute = require("./routes/projectRoutes")
 const customerGroupRoute=require("./routes/customerGroupRoutes")
+const couponRoutes = require("./routes/Coupon");
 const BillTemplateRoute = require("./routes/billTemplateRoutes");
 
 const app = express();
@@ -58,7 +59,7 @@ app.use(express.urlencoded({limit: '50mb', extended: true }));
 
 app.get("/",(req,res)=>{
 
-    res.send("API is working 06/12")
+    res.send("API is working 09/12")
 
 
 })
@@ -68,6 +69,7 @@ app.get("/",(req,res)=>{
 // })
 // Routes
 
+app.use("/api/coupons", couponRoutes);  //coupnonRoutes
 app.use('/api/auth', authRoutes);
 app.use("/api/contactUs",contactRoute)
 app.use("/api/project", projectRoute);
@@ -98,5 +100,7 @@ app.use(notFound);
 
 // Global error handler (must be last)
 app.use(errorHandler);
+
+
 
 module.exports = app;

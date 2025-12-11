@@ -374,6 +374,9 @@ exports.register = asyncHandler(async (req, res) => {
     pincode,
     region,
     multiplePhones,
+    isDemo,
+    maxDemoDays,
+    demoPeriod,
   } = req.body;
 
   let clientID = req.body.clientID || req.user.clientID;
@@ -506,10 +509,19 @@ exports.register = asyncHandler(async (req, res) => {
 
   // CLIENT ROLE
   if (role === "Client") {
+  if (user.isDemo === true) {
+    user.demoExpiry = new Date(
+      Date.now() + user.demoPeriod * 24 * 60 * 60 * 1000
+    );
+    await user.save();
+  }
     const assignedLimit = limit || 0;
 
-    if (creatorInfo.role === "Partner") {
-      const partnerLimit = creatorInfo.limit || 0;
+
+    // Only check/deduct if creator is Partner
+    if (creatorInfo.role === "Partner" || creatorInfo.role === "SubPartner") {
+      const partnerRemainingLimit = creatorInfo.limit || 0;
+
 
       if (assignedLimit > partnerLimit) {
         throw new ApiError(
@@ -561,8 +573,50 @@ exports.register = asyncHandler(async (req, res) => {
     await User.updateOne({ _id: user.clientID }, { $inc: { limit: -1 } });
   }
 
+
   // PARTNER / SUB PARTNER ROLE
   if ((role === "Partner" || role === "Sub Partner") && limit) {
+
+    await User.updateOne(
+      { _id: user._id },
+      {
+        $push: {
+          limitHistory: {
+            performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+            initialLimit: limit,
+            previousLimit: 0,
+            newLimit: limit,
+            action: "assigned",
+            reason: "Initial limit assigned on creation",
+            timestamp: new Date(),
+          },
+        },
+      }
+    );
+  }
+  if (role === "SubPartner" && limit) {
+    const assignedLimit = limit || 0;
+
+    // Only check/deduct if creator is Partner
+    if (creatorInfo.role === "Partner") {
+      const partnerRemainingLimit = creatorInfo.limit || 0;
+
+      if (assignedLimit > partnerRemainingLimit) {
+        throw new ApiError(
+          400,
+          `Partner limit exceeded. You have ${partnerRemainingLimit} remaining.`
+        );
+      }
+
+      // Deduct assigned limit from Partner
+      await User.updateOne(
+        { _id: creatorInfo._id },
+        {
+          $inc: { limit: -assignedLimit },
+        }
+      );
+    }
+
     await User.updateOne(
       { _id: user._id },
       {
@@ -1121,7 +1175,7 @@ exports.loginManagementPortal = asyncHandler(async (req, res) => {
   if (!user) throw new ApiError(401, "Invalid credentials");
 
   // 3. 🛡️ ROLE GUARD: Portal 2 Specific
-  const allowedRoles = ["SuperAdmin", "Partner", "Sub Partner"];
+  const allowedRoles = ["SuperAdmin", "Partner", "SubPartner"];
   if (!allowedRoles.includes(user.role)) {
     throw new ApiError(
       403,
@@ -1424,8 +1478,8 @@ const ALLOWED_CHAIN = {
   SuperAdmin: ["Partner", "Client"],
   Partner: ["SubPartner", "Client"],
   SubPartner: ["Client"],
-  Client: [], 
-  ClientAdmin: [], 
+  Client: [],
+  ClientAdmin: [],
 };
 
 function isValidParentChild(parentRole, childRole) {
