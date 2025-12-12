@@ -26,6 +26,7 @@ const stockGroupSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    code: { type: String },
     auditLogs: [auditLogSchema],
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   },

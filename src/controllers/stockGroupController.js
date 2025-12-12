@@ -112,12 +112,13 @@ exports.createStockGroup = asyncHandler(async (req, res) => {
 
   // Generate unique stockGroupId
   const stockGroupId = await generate6DigitUniqueId(StockGroup, "stockGroupId");
-
-  // Create stock group
+  const code = await generate6DigitUniqueId(StockGroup, "code");
+  // Create stock group 
   const stockGroup = await StockGroup.create({
     clientId,
     companyId,
     stockGroupId,
+    code,
     parent,
     name,
     description,

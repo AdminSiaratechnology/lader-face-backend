@@ -1,14 +1,15 @@
-const Unit = require('../models/Unit');
-const asyncHandler = require('../utils/asyncHandler');
-const ApiResponse = require('../utils/apiResponse');
-const ApiError = require('../utils/apiError');
-const User = require('../models/User');
-const mongoose = require('mongoose');
-const   {createAuditLog}=require("../utils/createAuditLog")
+const Unit = require("../models/Unit");
+const asyncHandler = require("../utils/asyncHandler");
+const ApiResponse = require("../utils/apiResponse");
+const ApiError = require("../utils/apiError");
+const User = require("../models/User");
+const mongoose = require("mongoose");
+const { createAuditLog } = require("../utils/createAuditLog");
+const { generate6DigitUniqueId } = require("../utils/generate6DigitUniqueId");
 
 const insertInBatches = async (data, batchSize) => {
   if (!data || !Array.isArray(data) || data.length === 0) {
-    console.error('No valid data to insert');
+    console.error("No valid data to insert");
     return [];
   }
 
@@ -27,18 +28,28 @@ const insertInBatches = async (data, batchSize) => {
         results.push(...inserted);
         console.log(`Inserted ${inserted.length} records in batch`);
       } else {
-        console.error('No records inserted in batch');
+        console.error("No records inserted in batch");
       }
     } catch (error) {
-      if (error.name === 'MongoBulkWriteError' && error.code === 11000) {
-        const failedDocs = error.writeResult?.result?.writeErrors?.map(err => ({
-          name: err.op.name,
-          error: err.errmsg
-        })) || [];
-        const successfulDocs = batch.filter(doc => !failedDocs.some(f => f.name === doc.name));
-        results.push(...successfulDocs.map(doc => ({ ...doc, _id: doc._id || new mongoose.Types.ObjectId() })));
-        failedDocs.forEach(failed => {
-          console.error(`Failed to insert record with name ${failed.name}: ${failed.error}`);
+      if (error.name === "MongoBulkWriteError" && error.code === 11000) {
+        const failedDocs =
+          error.writeResult?.result?.writeErrors?.map((err) => ({
+            name: err.op.name,
+            error: err.errmsg,
+          })) || [];
+        const successfulDocs = batch.filter(
+          (doc) => !failedDocs.some((f) => f.name === doc.name)
+        );
+        results.push(
+          ...successfulDocs.map((doc) => ({
+            ...doc,
+            _id: doc._id || new mongoose.Types.ObjectId(),
+          }))
+        );
+        failedDocs.forEach((failed) => {
+          console.error(
+            `Failed to insert record with name ${failed.name}: ${failed.error}`
+          );
         });
       } else {
         console.error(`Batch insertion failed: ${error.message}`);
@@ -47,25 +58,34 @@ const insertInBatches = async (data, batchSize) => {
   }
 
   // Verify inserted records
-  const insertedIds = results.map(doc => doc._id);
-  const verifiedDocs = insertedIds.length > 0 ? await Unit.find({ _id: { $in: insertedIds } }) : [];
+  const insertedIds = results.map((doc) => doc._id);
+  const verifiedDocs =
+    insertedIds.length > 0
+      ? await Unit.find({ _id: { $in: insertedIds } })
+      : [];
   console.log(`Verified ${verifiedDocs.length} records in database`);
   return verifiedDocs;
 };
 
 // ✅ Create Unit
 exports.createUnit = asyncHandler(async (req, res) => {
-    // res.status(200).json({ message: "Create Unit - Not Implemented" });
-    const agentId=req.user.id;
-  const {  companyId, name, type, symbol, decimalPlaces, firstUnit, conversion, secondUnit,UQC } = req.body;
+  // res.status(200).json({ message: "Create Unit - Not Implemented" });
+  const agentId = req.user.id;
+  const {
+    companyId,
+    name,
+    type,
+    symbol,
+    decimalPlaces,
+    firstUnit,
+    conversion,
+    secondUnit,
+    UQC,
+  } = req.body;
 
-  if ( !companyId || !name || !type) {
+  if (!companyId || !name || !type) {
     throw new ApiError(400, "clientId, companyId, name and type are required");
-
   }
-  
-
- 
 
   // Sirf clientID field hi le aayenge
   const agentDetail = await User.findById(agentId, { clientID: 1 });
@@ -75,11 +95,18 @@ exports.createUnit = asyncHandler(async (req, res) => {
   }
 
   const clientId = agentDetail.clientID;
-
+  const code = await generate6DigitUniqueId(Unit, "code");
   const unit = await Unit.create({
-    clientId, companyId, name, type,
-    symbol, decimalPlaces,
-    firstUnit, conversion, secondUnit,
+    clientId,
+    companyId,
+    name,
+    type,
+    code,
+    symbol,
+    decimalPlaces,
+    firstUnit,
+    conversion,
+    secondUnit,
     UQC,
     createdBy: agentId,
     auditLogs: [
@@ -90,23 +117,22 @@ exports.createUnit = asyncHandler(async (req, res) => {
         details: "Unit created",
       },
     ],
-
   });
   let ipAddress =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
+
   // convert ::1 → 127.0.0.1
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
   }
-  
+
   console.log(ipAddress, "ipaddress");
-    await createAuditLog({
+  await createAuditLog({
     module: "Unit",
     action: "create",
     performedBy: req.user.id,
     referenceId: unit._id,
-    clientId:req.user.clientID,
+    clientId: req.user.clientID,
     details: "Unit created successfully",
     ipAddress,
   });
@@ -230,18 +256,18 @@ exports.updateUnit = asyncHandler(async (req, res) => {
     "firstUnit",
     "conversion",
     "secondUnit",
-    "status"
+    "status",
   ];
 
   const updateData = {};
-  Object.keys(req.body || {}).forEach(key => {
+  Object.keys(req.body || {}).forEach((key) => {
     if (allowedFields.includes(key)) updateData[key] = req.body[key];
   });
 
   // ✅ Step 3: Track changes for audit log
   const oldData = unit.toObject();
   const changes = {};
-  Object.keys(updateData).forEach(key => {
+  Object.keys(updateData).forEach((key) => {
     if (JSON.stringify(oldData[key]) !== JSON.stringify(updateData[key])) {
       changes[key] = { from: oldData[key], to: updateData[key] };
     }
@@ -257,14 +283,14 @@ exports.updateUnit = asyncHandler(async (req, res) => {
     performedBy: req.user?.id || null,
     details: "Unit updated",
     changes,
-    timestamp: new Date()
+    timestamp: new Date(),
   });
 
   // ✅ Step 6: Save
   await unit.save();
-   let ipAddress =
+  let ipAddress =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
+
   // convert ::1 → 127.0.0.1
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
@@ -283,23 +309,22 @@ exports.updateUnit = asyncHandler(async (req, res) => {
   res.status(200).json(new ApiResponse(200, unit, "Unit updated successfully"));
 });
 
-
 // ✅ Delete Unit
 exports.deleteUnit = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  
-  const unit = await Unit.findByIdAndDelete(id,);
+
+  const unit = await Unit.findByIdAndDelete(id);
 
   if (!unit) throw new ApiError(404, "Unit not found");
 
-let ipAddress =
+  let ipAddress =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
+
   // convert ::1 → 127.0.0.1
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
   }
-    await createAuditLog({
+  await createAuditLog({
     module: "Unit",
     action: "delete",
     performedBy: req.user.id,
@@ -309,13 +334,20 @@ let ipAddress =
     ipAddress,
   });
 
-
   res.status(200).json(new ApiResponse(200, null, "Unit deleted successfully"));
 });
 
 // ✅ Get Units (by client & company)
 exports.getUnits = asyncHandler(async (req, res) => {
-  const { companyId, search, status, sortBy, sortOrder, limit = 10, page = 1 } = req.query;
+  const {
+    companyId,
+    search,
+    status,
+    sortBy,
+    sortOrder,
+    limit = 10,
+    page = 1,
+  } = req.query;
 
   const userId = req.user.id;
   const user = await User.findById(userId);
@@ -369,8 +401,11 @@ exports.getUnits = asyncHandler(async (req, res) => {
   );
 });
 exports.getUnitsByCompanyId = asyncHandler(async (req, res) => {
-  const { companyId, search, status, sortBy, sortOrder, limit = 10, page = 1 } = req.query;
-
+  const { search, status, sortBy, sortOrder, limit = 10, page = 1 } = req.query;
+  const companyId = req.params.companyId;
+  if (!companyId) {
+    throw new ApiError(400, "companyId is required");
+  }
   const userId = req.user.id;
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
@@ -378,7 +413,6 @@ exports.getUnitsByCompanyId = asyncHandler(async (req, res) => {
   let clientId = user.clientID;
 
   const filter = {};
-
   if (clientId) filter.clientId = clientId;
   if (companyId) filter.companyId = companyId;
   if (status && status !== "") filter.status = status;
@@ -442,5 +476,3 @@ exports.getUnitsByCompanyId = asyncHandler(async (req, res) => {
     )
   );
 });
-
-

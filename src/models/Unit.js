@@ -20,7 +20,7 @@ const unitSchema = new mongoose.Schema(
     // ✅ Simple unit fields
     symbol: { type: String }, // like kg, L, pcs
     decimalPlaces: { type: Number }, // rounding ke liye
-    UQC: { type: String, required: true },
+    UQC: { type: String },
 
     // ✅ Compound unit fields
     firstUnit: { type: String }, // like kg
@@ -33,6 +33,7 @@ const unitSchema = new mongoose.Schema(
       enum: ["active", "inactive", "delete"],
       default: "active",
     },
+    code: { type: String },
   },
   { timestamps: true }
 );

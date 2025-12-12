@@ -8,6 +8,7 @@ const mongoose = require("mongoose");
 const User = require("../models/User");
 const { createAuditLog } = require("../utils/createAuditLog");
 const processRegistrationDocs = require("../utils/processRegistrationDocs");
+const { generate6DigitUniqueId } = require("../utils/generate6DigitUniqueId");
 
 //  safe JSON parse_
 const safeParse = (value, fallback) => {
@@ -64,7 +65,7 @@ exports.createCustomer = asyncHandler(async (req, res) => {
       processRegistrationDocs(req.files?.registrationDocs || [], rawDocTypes),
     ]);
 
-    const code = await generateUniqueId(Customer, "code");
+    const code = await generate6DigitUniqueId(Customer, "code");
 
     let banks = [];
     if (req.body.banks) {
