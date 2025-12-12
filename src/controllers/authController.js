@@ -520,7 +520,7 @@ exports.register = asyncHandler(async (req, res) => {
 
     // Only check/deduct if creator is Partner
     if (creatorInfo.role === "Partner" || creatorInfo.role === "SubPartner") {
-      const partnerRemainingLimit = creatorInfo.limit || 0;
+      const partnerLimit = creatorInfo.limit || 0;
 
 
       if (assignedLimit > partnerLimit) {

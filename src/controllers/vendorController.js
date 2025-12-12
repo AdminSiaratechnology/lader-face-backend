@@ -9,6 +9,7 @@ const mongoose = require("mongoose");
 const createAuditLog  = require("../utils/createAuditLogMain");
 const { generateUniqueId } = require("../utils/generate16DigiId");
 const processRegistrationDocs =require("../utils/processRegistrationDocs")
+const { generate6DigitUniqueId } = require("../utils/generate6DigitUniqueId");
 
 // Generate unique 18-digit code using timestamp and index
 // const generateUniqueId = (index) => {
@@ -204,7 +205,7 @@ exports.createVendor = asyncHandler(async (req, res) => {
   );
 
   // ---------- Unique Code ----------
-  const code = await generateUniqueId(Vendor, "code");
+  const code = await generate6DigitUniqueId(Vendor, "code");
 
   // ---------- Banks ----------
   let banks = [];

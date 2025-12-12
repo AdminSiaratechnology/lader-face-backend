@@ -1,14 +1,15 @@
-const Agent = require('../models/Agent');
-const Company = require('../models/Company');
-const asyncHandler = require('../utils/asyncHandler');
-const ApiError = require('../utils/apiError');
-const ApiResponse = require('../utils/apiResponse');
+const Agent = require("../models/Agent");
+const Company = require("../models/Company");
+const asyncHandler = require("../utils/asyncHandler");
+const ApiError = require("../utils/apiError");
+const ApiResponse = require("../utils/apiResponse");
 // const { generateUniqueId } = require('../utils/generate16DigiId');
-const mongoose = require('mongoose');
-const User=require("../models/User")
-const   {createAuditLog}=require("../utils/createAuditLog")
-const { generateUniqueId } = require('../utils/generate16DigiId');
-const processRegistrationDocs =require("../utils/processRegistrationDocs")
+const mongoose = require("mongoose");
+const User = require("../models/User");
+const { createAuditLog } = require("../utils/createAuditLog");
+const { generateUniqueId } = require("../utils/generate16DigiId");
+const processRegistrationDocs = require("../utils/processRegistrationDocs");
+const { generate6DigitUniqueId } = require("../utils/generate6DigitUniqueId");
 
 // Generate unique code using timestamp and index
 // const generateUniqueId = (index) => {
@@ -20,7 +21,7 @@ const processRegistrationDocs =require("../utils/processRegistrationDocs")
 // Insert records in batches with robust error handling
 const insertInBatches = async (data, batchSize) => {
   if (!data || !Array.isArray(data) || data.length === 0) {
-    console.error('No valid data to insert');
+    console.error("No valid data to insert");
     return [];
   }
 
@@ -39,18 +40,28 @@ const insertInBatches = async (data, batchSize) => {
         results.push(...inserted);
         console.log(`Inserted ${inserted.length} records in batch`);
       } else {
-        console.error('No records inserted in batch');
+        console.error("No records inserted in batch");
       }
     } catch (error) {
-      if (error.name === 'MongoBulkWriteError' && error.code === 11000) {
-        const failedDocs = error.writeResult?.result?.writeErrors?.map(err => ({
-          code: err.op.code,
-          error: err.errmsg
-        })) || [];
-        const successfulDocs = batch.filter(doc => !failedDocs.some(f => f.code === doc.code));
-        results.push(...successfulDocs.map(doc => ({ ...doc, _id: doc._id || new mongoose.Types.ObjectId() })));
-        failedDocs.forEach(failed => {
-          console.error(`Failed to insert record with code ${failed.code}: ${failed.error}`);
+      if (error.name === "MongoBulkWriteError" && error.code === 11000) {
+        const failedDocs =
+          error.writeResult?.result?.writeErrors?.map((err) => ({
+            code: err.op.code,
+            error: err.errmsg,
+          })) || [];
+        const successfulDocs = batch.filter(
+          (doc) => !failedDocs.some((f) => f.code === doc.code)
+        );
+        results.push(
+          ...successfulDocs.map((doc) => ({
+            ...doc,
+            _id: doc._id || new mongoose.Types.ObjectId(),
+          }))
+        );
+        failedDocs.forEach((failed) => {
+          console.error(
+            `Failed to insert record with code ${failed.code}: ${failed.error}`
+          );
         });
       } else {
         console.error(`Batch insertion failed: ${error.message}`);
@@ -59,8 +70,11 @@ const insertInBatches = async (data, batchSize) => {
   }
 
   // Verify inserted records
-  const insertedIds = results.map(doc => doc._id);
-  const verifiedDocs = insertedIds.length > 0 ? await Agent.find({ _id: { $in: insertedIds } }) : [];
+  const insertedIds = results.map((doc) => doc._id);
+  const verifiedDocs =
+    insertedIds.length > 0
+      ? await Agent.find({ _id: { $in: insertedIds } })
+      : [];
   console.log(`Verified ${verifiedDocs.length} records in database`);
   return verifiedDocs;
 };
@@ -88,14 +102,17 @@ exports.createAgent = asyncHandler(async (req, res) => {
   let logoUrl = null;
 
   // Logo file
-  if (req?.files?.['logo'] && req?.files?.['logo'][0]) {
-    logoUrl = req.files['logo'][0].location;
+  if (req?.files?.["logo"] && req?.files?.["logo"][0]) {
+    logoUrl = req.files["logo"][0].location;
   }
 
   // Registration docs files - Use processRegistrationDocs like in Company
-  const processedDocs = await processRegistrationDocs(req.files?.registrationDocs || [], rawDocTypes);
+  const processedDocs = await processRegistrationDocs(
+    req.files?.registrationDocs || [],
+    rawDocTypes
+  );
 
-  let code = await generateUniqueId(Agent, "code");
+  let code = await generate6DigitUniqueId(Agent, "code");
   console.log(JSON.parse(req.body.banks), "JSON.parse(req.body.banks)");
 
   const agent = await Agent.create({
@@ -111,25 +128,25 @@ exports.createAgent = asyncHandler(async (req, res) => {
     banks: JSON.parse(req.body.banks),
     company: companyID,
     createdBy: adminId,
-                 auditLogs: [
-                      {
-                        action: "create",
-                        performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
-                        timestamp: new Date(),
-                        details: "Agent created",
-                      },
-                    ],
+    auditLogs: [
+      {
+        action: "create",
+        performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+        timestamp: new Date(),
+        details: "Agent created",
+      },
+    ],
   });
   let ipAddress =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
+
   // convert ::1 → 127.0.0.1
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
   }
-  
+
   console.log(ipAddress, "ipaddress");
-    await createAuditLog({
+  await createAuditLog({
     module: "Agent",
     action: "create",
     performedBy: req.user.id,
@@ -143,8 +160,6 @@ exports.createAgent = asyncHandler(async (req, res) => {
     .status(201)
     .json(new ApiResponse(201, agent, "Agent created successfully"));
 });
-
-
 
 exports.createBulkAgents = asyncHandler(async (req, res) => {
   console.log("Processing agents");
@@ -169,7 +184,7 @@ exports.createBulkAgents = asyncHandler(async (req, res) => {
 
   // Preload existing codes
   const existingAgents = await Agent.find({}, "code");
-  const existingCodes = new Set(existingAgents.map(agent => agent.code));
+  const existingCodes = new Set(existingAgents.map((agent) => agent.code));
 
   const results = [];
   const errors = [];
@@ -203,17 +218,28 @@ exports.createBulkAgents = asyncHandler(async (req, res) => {
       seenCodes.add(code);
 
       // Generate unique shortName if not provided
-      const shortName = body.shortName || `${body.agentName.replace(/\s+/g, '')}${index.toString().padStart(3, '0')}`;
+      const shortName =
+        body.shortName ||
+        `${body.agentName.replace(/\s+/g, "")}${index
+          .toString()
+          .padStart(3, "0")}`;
 
       // Generate unique values for optional fields if not provided
       const contactPerson = body.contactPerson || body.agentName;
       const designation = body.designation || `Agent ${index + 1}`;
-      const phoneNumber = body.phoneNumber || `+919${(973884720 + index).toString().padStart(9, '0')}`;
-      const emailAddress = body.emailAddress || `${body.agentName.replace(/\s+/g, '').toLowerCase()}${index}@gmail.com`;
-      const addressLine1 = body.addressLine1 || `address${index} sector ${body.city || 'Delhi'}`.toLowerCase();
+      const phoneNumber =
+        body.phoneNumber ||
+        `+919${(973884720 + index).toString().padStart(9, "0")}`;
+      const emailAddress =
+        body.emailAddress ||
+        `${body.agentName.replace(/\s+/g, "").toLowerCase()}${index}@gmail.com`;
+      const addressLine1 =
+        body.addressLine1 ||
+        `address${index} sector ${body.city || "Delhi"}`.toLowerCase();
       const city = body.city || "Delhi";
       const state = body.state || "Delhi";
-      const zipCode = body.zipCode || (110094 + index).toString().padStart(6, '0');
+      const zipCode =
+        body.zipCode || (110094 + index).toString().padStart(6, "0");
 
       const agentObj = {
         _id: new mongoose.Types.ObjectId(), // Generate unique_ id
@@ -236,7 +262,9 @@ exports.createBulkAgents = asyncHandler(async (req, res) => {
         currency: body.currency || "INR",
         isTaxExempt: body.isTaxExempt || false,
         reverseCharge: body.reverseCharge || false,
-        acceptedPaymentMethods: body.acceptedPaymentMethods || ["[\"[\\\"[]\\\"]\""],
+        acceptedPaymentMethods: body.acceptedPaymentMethods || [
+          '["[\\"[]\\"]"',
+        ],
         banks: body.banks || [],
         dataSource: body.dataSource || "manual",
         agentPriority: body.agentPriority || "medium",
@@ -313,9 +341,10 @@ exports.updateAgent = asyncHandler(async (req, res) => {
   // Banks
   if (req.body.banks) {
     try {
-      updateData.banks = typeof req.body.banks === "string"
-        ? JSON.parse(req.body.banks)
-        : req.body.banks;
+      updateData.banks =
+        typeof req.body.banks === "string"
+          ? JSON.parse(req.body.banks)
+          : req.body.banks;
     } catch {
       throw new ApiError(400, "Invalid banks JSON");
     }
@@ -325,14 +354,17 @@ exports.updateAgent = asyncHandler(async (req, res) => {
   if (processedNewDocs.length > 0) {
     let parsedTypes = [];
     try {
-      parsedTypes = typeof rawDocTypes === "string" ? JSON.parse(rawDocTypes) : rawDocTypes || [];
+      parsedTypes =
+        typeof rawDocTypes === "string"
+          ? JSON.parse(rawDocTypes)
+          : rawDocTypes || [];
     } catch (e) {
       parsedTypes = [];
     }
 
     // Keep existing docs that are NOT being updated
     const existingDocs = (agent.registrationDocs || []).filter(
-      doc => !parsedTypes.includes(doc.type)
+      (doc) => !parsedTypes.includes(doc.type)
     );
 
     // Replace only the types that were uploaded
@@ -340,7 +372,7 @@ exports.updateAgent = asyncHandler(async (req, res) => {
     processedNewDocs.forEach((newDoc, idx) => {
       const type = parsedTypes[idx];
       if (type) {
-        const existingIndex = finalDocs.findIndex(d => d.type === type);
+        const existingIndex = finalDocs.findIndex((d) => d.type === type);
         if (existingIndex !== -1) {
           finalDocs[existingIndex] = newDoc;
         } else {
@@ -356,7 +388,7 @@ exports.updateAgent = asyncHandler(async (req, res) => {
   // 6. Track changes for audit
   const oldData = agent.toObject();
   const changes = {};
-  Object.keys(updateData).forEach(key => {
+  Object.keys(updateData).forEach((key) => {
     if (key === "auditLogs") return;
     if (JSON.stringify(oldData[key]) !== JSON.stringify(updateData[key])) {
       changes[key] = { from: oldData[key], to: updateData[key] };
@@ -364,7 +396,7 @@ exports.updateAgent = asyncHandler(async (req, res) => {
   });
 
   // 7. Apply updates (skip auditLogs)
-  Object.keys(updateData).forEach(key => {
+  Object.keys(updateData).forEach((key) => {
     if (key !== "auditLogs") {
       agent[key] = updateData[key];
     }
@@ -384,7 +416,8 @@ exports.updateAgent = asyncHandler(async (req, res) => {
   await agent.save();
 
   // 10. Create audit log (same as Company)
-  let ipAddress = req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
   }
@@ -401,37 +434,35 @@ exports.updateAgent = asyncHandler(async (req, res) => {
   });
 
   // 11. Respond
-  res.status(200).json(new ApiResponse(200, agent, "Agent updated successfully"));
+  res
+    .status(200)
+    .json(new ApiResponse(200, agent, "Agent updated successfully"));
 });
-
-
 
 // 🟢 Get All Agents (for a company)
 exports.getAgentsByCompany = asyncHandler(async (req, res) => {
-  
-  const clientId=req.user.clientID
-   if (!clientId) throw new ApiError(400, "Client ID is required");
-    const { companyId } = req.params;
-    console.log(req.params,"req.prams")
-       if (!companyId) throw new ApiError(400, "Company ID is required");
+  const clientId = req.user.clientID;
+  if (!clientId) throw new ApiError(400, "Client ID is required");
+  const { companyId } = req.params;
+  console.log(req.params, "req.prams");
+  if (!companyId) throw new ApiError(400, "Company ID is required");
 
-  
   const {
-    search="",
-    status="",
-    sortBy='',
-    sortOrder="desc",
-    page=1,
-    limit=10
-  }=req.query;
-  const perPage=parseInt(limit,10)
-  const currentPage=Math.max(parseInt(page,10),1);
-  const skip=(currentPage-1)*perPage;
-  const filter={clientId,company:companyId,status:{$ne:"delete"}}
+    search = "",
+    status = "",
+    sortBy = "",
+    sortOrder = "desc",
+    page = 1,
+    limit = 10,
+  } = req.query;
+  const perPage = parseInt(limit, 10);
+  const currentPage = Math.max(parseInt(page, 10), 1);
+  const skip = (currentPage - 1) * perPage;
+  const filter = { clientId, company: companyId, status: { $ne: "delete" } };
 
-  if(status && status.trim()!=="") filter.status=status;
-  if(search && search.trim()!=="") {
-     filter.$or = [
+  if (status && status.trim() !== "") filter.status = status;
+  if (search && search.trim() !== "") {
+    filter.$or = [
       { agentName: { $regex: search, $options: "i" } },
       { emailAddress: { $regex: search, $options: "i" } },
       { phoneNumber: { $regex: search, $options: "i" } },
@@ -442,47 +473,44 @@ exports.getAgentsByCompany = asyncHandler(async (req, res) => {
   const sortOptions = { [sortBy || "createdAt"]: sortDirection };
   // Fetch data & total count
   const [agents, total] = await Promise.all([
-    Agent.find(filter).select("-auditLogs")
+    Agent.find(filter)
+      .select("-auditLogs")
       .sort(sortOptions)
       .skip(skip)
       .limit(perPage),
     Agent.countDocuments(filter),
   ]);
- const [
-    gstRegistered,
-    activeAgents,
-    msmeRegistered,
-    vatRegistered
-  ] = await Promise.all([
-    // GST registered
-    Agent.countDocuments({
-      clientId,
-      company: companyId,
-      status: { $ne: "delete" },
-      gstNumber: { $exists: true, $ne: "" }
-    }),
+  const [gstRegistered, activeAgents, msmeRegistered, vatRegistered] =
+    await Promise.all([
+      // GST registered
+      Agent.countDocuments({
+        clientId,
+        company: companyId,
+        status: { $ne: "delete" },
+        gstNumber: { $exists: true, $ne: "" },
+      }),
 
-    // Active agents
-    Agent.countDocuments({
-      clientId,
-      company: companyId,
-      status: "active"
-    }),
+      // Active agents
+      Agent.countDocuments({
+        clientId,
+        company: companyId,
+        status: "active",
+      }),
 
-    Agent.countDocuments({
-      clientId,
-      company: companyId,
-      status: { $ne: "delete" },
-      msmeRegistration: { $exists: true, $ne: "" }
-    }),
+      Agent.countDocuments({
+        clientId,
+        company: companyId,
+        status: { $ne: "delete" },
+        msmeRegistration: { $exists: true, $ne: "" },
+      }),
 
-    Agent.countDocuments({
-      clientId,
-      company: companyId,
-      status: { $ne: "delete" },
-      vatNumber: { $exists: true, $ne: "" }
-    }),
-  ]);
+      Agent.countDocuments({
+        clientId,
+        company: companyId,
+        status: { $ne: "delete" },
+        vatNumber: { $exists: true, $ne: "" },
+      }),
+    ]);
 
   res.status(200).json(
     new ApiResponse(
@@ -499,13 +527,12 @@ exports.getAgentsByCompany = asyncHandler(async (req, res) => {
           gstRegistered,
           activeAgents,
           msmeRegistered,
-          vatRegistered
-        }
+          vatRegistered,
+        },
       },
       agents.length ? "Agents fetched successfully" : "No agents found"
     )
   );
-
 });
 
 exports.getAgentsByClient = asyncHandler(async (req, res) => {
@@ -543,10 +570,7 @@ exports.getAgentsByClient = asyncHandler(async (req, res) => {
 
   // Fetch data & total count
   const [agents, total] = await Promise.all([
-    Agent.find(filter)
-      .sort(sortOptions)
-      .skip(skip)
-      .limit(perPage),
+    Agent.find(filter).sort(sortOptions).skip(skip).limit(perPage),
     Agent.countDocuments(filter),
   ]);
 
@@ -567,12 +591,13 @@ exports.getAgentsByClient = asyncHandler(async (req, res) => {
   );
 });
 
-
 // 🟢 Get Single Agent
 exports.getAgentById = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  const agent = await Agent.findById(id).select("-auditLogs").populate("company");
+  const agent = await Agent.findById(id)
+    .select("-auditLogs")
+    .populate("company");
   if (!agent) throw new ApiError(404, "Agent not found");
 
   res
@@ -602,22 +627,22 @@ exports.deleteAgent = asyncHandler(async (req, res) => {
 
   // soft delete
   agent.status = "delete";
-    agent.auditLogs.push({
-            action: "delete",
-            performedBy: new mongoose.Types.ObjectId(req.user.id),
-            timestamp: new Date(),
-            details: "Agent marked as deleted",
-          });
+  agent.auditLogs.push({
+    action: "delete",
+    performedBy: new mongoose.Types.ObjectId(req.user.id),
+    timestamp: new Date(),
+    details: "Agent marked as deleted",
+  });
   await agent.save();
 
   let ipAddress =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-  
+
   // convert ::1 → 127.0.0.1
   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
     ipAddress = "127.0.0.1";
   }
-    await createAuditLog({
+  await createAuditLog({
     module: "Agent",
     action: "delete",
     performedBy: req.user.id,

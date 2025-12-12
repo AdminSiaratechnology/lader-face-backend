@@ -7,6 +7,7 @@ const asyncHandler = require("../utils/asyncHandler");
 const User = require("../models/User");
 const { default: mongoose } = require("mongoose");
 const { createAuditLog } = require("../utils/createAuditLog");
+const { generate6DigitUniqueId } = require("../utils/generate6DigitUniqueId");
 
 // ===== Helpers ===== //
 const ensureFound = (doc, message = "Resource not found") => {
@@ -92,12 +93,13 @@ exports.createStockCategory = asyncHandler(async (req, res) => {
   }
 
   const clientId = agentDetail.clientID;
-
+  const code = await generate6DigitUniqueId(StockCategory, "code");
   // Create category
   const category = await StockCategory.create({
     clientId,
     companyId,
     name,
+    code,
     description,
     parent,
     status: "active",

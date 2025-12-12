@@ -14,6 +14,7 @@ const stockCategorySchema = new mongoose.Schema(
       ref: "Company",
       required: true,
     },
+    code: { type: String},
     parent: { type: mongoose.Schema.Types.ObjectId, ref: "StockCategory" },
     // stockGroupId: {
     //   type: mongoose.Schema.Types.ObjectId,

@@ -56,7 +56,7 @@ exports.createProduct = asyncHandler(async (req, res) => {
     console.log("req.body", req.body);
 
     // Validate required fields
-    const required = ["companyId", "code", "name"];
+    const required = ["companyId", "name"];
     for (const r of required) {
       if (!body[r]) {
         throw new ApiError(400, `${r} is required`);

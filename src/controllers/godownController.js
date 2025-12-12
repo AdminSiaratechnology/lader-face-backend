@@ -7,6 +7,7 @@ const User = require("../models/User");
 const { generateUniqueId } = require("../utils/generate16DigiId");
 // const { createAuditLog } = require("../utils/createAuditLog");
 const  createAuditLog  = require("../utils/createAuditLogMain");
+const { generate6DigitUniqueId } = require("../utils/generate6DigitUniqueId");
 
 // Generate unique 18-digit code using timestamp and index
 const generateUniqueIdBulk = (index) => {
@@ -95,7 +96,7 @@ exports.createGodown = asyncHandler(async (req, res) => {
     state,
     status,
   } = req.body;
-  let code = await generateUniqueId(Godown, "code");
+  let code = await generate6DigitUniqueId(Godown, "code");
 
   // ✅ Required fields check
   if (!company || !name) {
