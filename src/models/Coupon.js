@@ -2,19 +2,33 @@ const { Schema, model, default: mongoose } = require("mongoose");
 
 const bogoSchema = new Schema({
   template: String,
+
   buyQty: Number,
   getQty: Number,
+
   buyProducts: [String],
+
+  // keep this if you want (optional now)
   freeProducts: [String],
+
   freeMode: { type: String, enum: ["same", "different"] },
+
+  // 🔥 ADD THIS
+  productFreeMapping: {
+    type: Map,
+    of: [String],   // buyProduct -> [freeProducts]
+    default: {},
+  },
+
 }, { _id: false });
+
 
 const couponSchema = new Schema(
   {
     company: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true },
 
     name: { type: String, required: true },
-    code: { type: String, unique: true, trim: true },
+    code: { type: String, trim: true },
    enableCouponType: { type: Boolean, default: false },
 couponType: { type: String, default: "" },
 

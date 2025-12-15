@@ -76,18 +76,36 @@ exports.createCoupon = async (req, res) => {
 
     // 1️⃣ Auto-generate code if not provided
     if (!data.code || data.code.trim() === "") {
-      data.code = await generateCouponCode(); 
+      data.code = await generateCouponCode();
     }
 
+    // 2️⃣ CHECK DUPLICATE (company + code)
+    const existing = await CouponModel.findOne({
+      company: data.company,
+      code: data.code,
+    });
+
+    if (existing) {
+      return res.status(400).json({
+        success: false,
+        message: "Coupon code already exists for this company",
+      });
+    }
+
+    // 3️⃣ CREATE COUPON
     const coupon = await CouponModel.create(data);
+
     res.json({ success: true, data: coupon });
 
   } catch (err) {
-    console.log(err);
-    res.status(500).json({ success: false, message: err.message });
+    console.error(err);
+
+    res.status(500).json({
+      success: false,
+      message: "Something went wrong while creating coupon",
+    });
   }
 };
-
 
 
 

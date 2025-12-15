@@ -26,6 +26,7 @@ const projectRoute = require("./routes/projectRoutes")
 const customerGroupRoute=require("./routes/customerGroupRoutes")
 const couponRoutes = require("./routes/Coupon");
 const BillTemplateRoute = require("./routes/billTemplateRoutes");
+const posRoutes  = require('./routes/posRoutes')
 
 const app = express();
 app.use(cors());
@@ -68,7 +69,7 @@ app.get("/",(req,res)=>{
 //     res.send("API is working")
 // })
 // Routes
-
+app.use("/api/pos",posRoutes)
 app.use("/api/coupons", couponRoutes);  //coupnonRoutes
 app.use('/api/auth', authRoutes);
 app.use("/api/contactUs",contactRoute)
