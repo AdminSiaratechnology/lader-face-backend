@@ -18,6 +18,8 @@ router.post("/verify-otp",authController.verifyOTP );
 // reset password (requires verified OTP)_
 router.post("/reset-password", authController.resetPassword);
 router.get("/hierarchy", authController.getUserHierarchy);
+router.patch("/convert/:id",authMiddleware, authController.convertDemoToLive)
+router.patch("/extend/:id",authMiddleware, authController.extendDemoClient)
 
 module.exports = router;
 

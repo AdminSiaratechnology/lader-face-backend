@@ -11,15 +11,28 @@ router.put(
   userManagement.updateUserProfile
 );
 router.get("/partners", userManagement.getPartners);
-router.get("/clients", userManagement.getClients)
-router.post("/sendEmail", upload.array("supportingDocuments"),userManagement.sendEmail)
-router.get("/insideUsers", userManagement.getSubRoleUsers)
-router.post("/request-limit",upload.array("supportingDocuments"), userManagement.requestLimit)
-router.get("/limit", userManagement.getPendingLimitRequests)
-router.patch("/limit/:userId", userManagement.approveLimitRequest)
+router.get("/clients", userManagement.getClients);
+router.post(
+  "/sendEmail",
+  upload.array("supportingDocuments"),
+  userManagement.sendEmail
+);
+router.get("/insideUsers", userManagement.getSubRoleUsers);
+router.post(
+  "/request-limit",
+  upload.array("supportingDocuments"),
+  userManagement.requestLimit
+);
+router.get("/limit", userManagement.getPendingLimitRequests);
+router.patch("/limit/:userId", userManagement.approveLimitRequest);
 router.get("/partners/all", userManagement.getAllPartners);
 router.get("/subPartners", userManagement.getSubPartners);
-router.get("/dashboard/stats-super", userManagement.getDashboardStatsSuperAdmin);
-
-
+router.get(
+  "/dashboard/stats-super",
+  userManagement.getDashboardStatsSuperAdmin
+);
+router.get("/users-by-location", userManagement.getUsersByLocation);
+router.get("/summary", userManagement.getDemoStatsSummary);
+router.get("/demo-analytics", userManagement.getDemoAnalytics);
+router.get("/client/:userId", userManagement.getDemoClientDetails);
 module.exports = router;
