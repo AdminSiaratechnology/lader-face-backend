@@ -509,19 +509,22 @@ exports.register = asyncHandler(async (req, res) => {
 
   // CLIENT ROLE
   if (role === "Client") {
-  if (user.isDemo === true) {
-    user.demoExpiry = new Date(
-      Date.now() + user.demoPeriod * 24 * 60 * 60 * 1000
-    );
-    await user.save();
-  }
+    if (user.isDemo === true) {
+      user.demoExpiry = new Date(
+        Date.now() + user.demoPeriod * 24 * 60 * 60 * 1000
+      );
+      await user.save();
+      user.demoHistory.push({
+        action: "created",
+        performedBy: req.user.id,
+      });
+    }
     const assignedLimit = limit || 0;
-
 
     // Only check/deduct if creator is Partner
     if (creatorInfo.role === "Partner" || creatorInfo.role === "SubPartner") {
+      console.log("Checking partner limit deduction...");
       const partnerLimit = creatorInfo.limit || 0;
-
 
       if (assignedLimit > partnerLimit) {
         throw new ApiError(
@@ -573,10 +576,8 @@ exports.register = asyncHandler(async (req, res) => {
     await User.updateOne({ _id: user.clientID }, { $inc: { limit: -1 } });
   }
 
-
   // PARTNER / SUB PARTNER ROLE
   if ((role === "Partner" || role === "Sub Partner") && limit) {
-
     await User.updateOne(
       { _id: user._id },
       {
@@ -710,7 +711,6 @@ exports.register = asyncHandler(async (req, res) => {
     .status(201)
     .json(new ApiResponse(201, userResponse, "User registered successfully"));
 });
-
 
 // ✅ REGISTER USER
 exports.registerInside = asyncHandler(async (req, res) => {
@@ -1591,3 +1591,268 @@ exports.getUserHierarchy = async (req, res) => {
     });
   }
 };
+
+exports.convertDemoToLive = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  console.log(id);
+  const { limit } = req.body;
+  console.log(req.user);
+
+  const performedBy = req.user.id;
+  const role = req.user.role;
+  const performerInfo = await User.findById(performedBy);
+  if (!["SuperAdmin", "Partner", "SubPartner"].includes(role)) {
+    return res.status(403).json({
+      success: false,
+      message: "Not authorized",
+    });
+  }
+
+  const user = await User.findById(id);
+  if (!user) {
+    return res.status(404).json({
+      success: false,
+      message: "User not found",
+    });
+  }
+
+  if (!user.isDemo) {
+    return res.status(400).json({
+      success: false,
+      message: "User is already a live account",
+    });
+  }
+
+  user.isDemo = false;
+  user.demoExpiry = null;
+  user.demoPeriod = 0;
+  user.maxDemoDays = undefined;
+
+  user.demoHistory.push({
+    action: "converted",
+    performedBy,
+  });
+  // if (performerInfo.role === "Partner" || performerInfo.role === "SubPartner") {
+  //   console.log("Checking partner limit deduction...");
+  //   const partnerLimit = performerInfo.limit || 0;
+
+  //   if (limit > partnerLimit) {
+  //     throw new ApiError(
+  //       400,
+  //       `Partner limit exceeded. You have ${partnerLimit} remaining.`
+  //     );
+  //   }
+
+  //   await User.updateOne(
+  //     { _id: performerInfo._id },
+  //     { $inc: { limit: -limit } }
+  //   );
+  // }
+  let limitOwner = null;
+
+  // Case 1: Performer is Partner/SubPartner → deduct from performer
+  if (["Partner", "SubPartner"].includes(performerInfo.role)) {
+    limitOwner = performerInfo;
+  }
+
+  // Case 2: Performer is SuperAdmin → deduct from user's parent (if not SuperAdmin)
+  if (performerInfo.role === "SuperAdmin" && user.parent) {
+    const parentUser = await User.findById(user.parent);
+
+    if (parentUser && ["Partner", "SubPartner"].includes(parentUser.role)) {
+      limitOwner = parentUser;
+    }
+  }
+
+  // Deduct limit if applicable
+  if (limitOwner) {
+    const availableLimit = limitOwner.limit || 0;
+
+    if (limit > availableLimit) {
+      throw new ApiError(
+        400,
+        `Limit exceeded. ${limitOwner.role} has only ${availableLimit} remaining.`
+      );
+    }
+
+    await User.updateOne({ _id: limitOwner._id }, { $inc: { limit: -limit } });
+  }
+
+  if (typeof limit === "number") {
+    const previousLimit = user.limit || 0;
+    user.limit = limit;
+
+    user.limitHistory.push({
+      performedBy,
+      initialLimit: previousLimit,
+      previousLimit,
+      newLimit: limit,
+      approvedLimit: limit,
+      action: "assigned",
+      remarks: "Limit assigned during demo to live conversion",
+    });
+  }
+
+  user.auditLogs.push({
+    action: "update",
+    performedBy,
+    description: "Demo client converted to live account",
+    changes: {
+      isDemo: { from: true, to: false },
+      demoExpiry: { from: user.demoExpiry, to: null },
+    },
+  });
+  let ipAddress =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+
+  if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
+    ipAddress = "127.0.0.1";
+  }
+  await createAuditLog({
+    module: "User",
+    action: "update",
+    performedBy: req.user.id,
+    referenceId: user._id,
+    clientId: req.user.clientID,
+    details: "demo to client updated successfully",
+    changes: {
+      isDemo: { from: true, to: false },
+      demoExpiry: { from: user.demoExpiry, to: null },
+    },
+    ipAddress,
+  });
+  await user.save();
+
+  res.status(200).json({
+    success: true,
+    message: "Demo client converted to live successfully",
+  });
+});
+
+exports.extendDemoClient = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { extendDays, remarks } = req.body;
+
+  const performedBy = req.user.id;
+  const role = req.user.role;
+
+  if (!extendDays || extendDays <= 0) {
+    return res.status(400).json({
+      success: false,
+      message: "Extend days must be greater than zero",
+    });
+  }
+
+  if (!["SuperAdmin", "Partner", "SubPartner"].includes(role)) {
+    return res.status(403).json({
+      success: false,
+      message: "Not authorized to extend demo",
+    });
+  }
+
+  const user = await User.findById(id);
+  if (!user) {
+    return res.status(404).json({
+      success: false,
+      message: "User not found",
+    });
+  }
+
+  /* ===============================
+     Demo validation
+  =============================== */
+  if (!user.isDemo) {
+    return res.status(400).json({
+      success: false,
+      message: "This user is not a demo account",
+    });
+  }
+
+  if (!user.demoExpiry) {
+    return res.status(400).json({
+      success: false,
+      message: "Demo expiry not set",
+    });
+  }
+
+  // ❌ Block extension if demo expired
+  if (new Date() > new Date(user.demoExpiry)) {
+    return res.status(400).json({
+      success: false,
+      message: "Demo has expired and cannot be extended",
+    });
+  }
+
+  /* ===============================
+     Role-based demo cap
+  =============================== */
+  if (role !== "SuperAdmin") {
+    const maxDays = req.user.maxDemoDays || 0;
+    if (extendDays > maxDays) {
+      return res.status(400).json({
+        success: false,
+        message: `You can extend demo by maximum ${maxDays} days`,
+      });
+    }
+  }
+
+  /* ===============================
+     Extend demo
+  =============================== */
+  const oldExpiry = user.demoExpiry;
+
+  user.demoExpiry = new Date(
+    new Date(user.demoExpiry).getTime() + extendDays * 24 * 60 * 60 * 1000
+  );
+
+  user.demoPeriod = (user.demoPeriod || 0) + Number(extendDays);
+
+  /* ===============================
+     Demo History
+  =============================== */
+  user.demoHistory.push({
+    action: "extended",
+    performedBy,
+    remarks: remarks || `Demo extended by ${extendDays} days`,
+  });
+
+  /* ===============================
+     Audit Logs
+  =============================== */
+  user.auditLogs.push({
+    action: "EXTEND_DEMO",
+    performedBy,
+    description: "Demo period extended",
+    changes: {
+      demoExpiry: {
+        from: oldExpiry,
+        to: user.demoExpiry,
+      },
+    },
+  });
+  await createAuditLog({
+    module: "User",
+    action: "update",
+    performedBy: req.user.id,
+    referenceId: user._id,
+    clientId: req.user.clientID,
+    details: "demo to client updated successfully",
+    changes: {
+      demoExpiry: {
+        from: oldExpiry,
+        to: user.demoExpiry,
+      },
+    },
+    ipAddress,
+  });
+  await user.save();
+
+  res.status(200).json({
+    success: true,
+    message: "Demo extended successfully",
+    data: {
+      demoExpiry: user.demoExpiry,
+      demoPeriod: user.demoPeriod,
+    },
+  });
+});

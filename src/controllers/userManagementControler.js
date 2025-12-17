@@ -4,7 +4,7 @@ const User = require("../models/User");
 const mongoose = require("mongoose");
 const ApiError = require("../utils/apiError");
 const sendEmail = require("../utils/sendEmail");
-
+const buildDateRange = require("../utils/dateFilter");
 exports.getAllClientUsersWithCompany = asyncHandler(async (req, res) => {
   const clientId = req.user.clientID; // Logged-in user's client ID
   const { companyId } = req.params;
@@ -211,41 +211,41 @@ exports.getAllClientUsers = asyncHandler(async (req, res) => {
     ],
     { maxTimeMS: 60000, allowDiskUse: true }
   );
-// 🔥 Extra Count Aggregation (Role Counts + Active Count)
-const countStats = await User.aggregate([
-  {
-    $match: {
-      clientID: new mongoose.Types.ObjectId(clientId),
-      status: { $ne: "delete" }
-    }
-  },
-  {
-    $group: {
-      _id: null,
-      adminCount: {
-        $sum: { $cond: [{ $eq: ["$role", "Admin"] }, 1, 0] }
+  // 🔥 Extra Count Aggregation (Role Counts + Active Count)
+  const countStats = await User.aggregate([
+    {
+      $match: {
+        clientID: new mongoose.Types.ObjectId(clientId),
+        status: { $ne: "delete" },
       },
-      salesmanCount: {
-        $sum: { $cond: [{ $eq: ["$role", "Salesman"] }, 1, 0] }
+    },
+    {
+      $group: {
+        _id: null,
+        adminCount: {
+          $sum: { $cond: [{ $eq: ["$role", "Admin"] }, 1, 0] },
+        },
+        salesmanCount: {
+          $sum: { $cond: [{ $eq: ["$role", "Salesman"] }, 1, 0] },
+        },
+        customerCount: {
+          $sum: { $cond: [{ $eq: ["$role", "Customer"] }, 1, 0] },
+        },
+        activeUsers: {
+          $sum: { $cond: [{ $eq: ["$status", "active"] }, 1, 0] },
+        },
       },
-      customerCount: {
-        $sum: { $cond: [{ $eq: ["$role", "Customer"] }, 1, 0] }
-      },
-      activeUsers: {
-        $sum: { $cond: [{ $eq: ["$status", "active"] }, 1, 0] }
-      }
-    }
-  }
-]);
+    },
+  ]);
 
   const users = result?.[0]?.records || [];
   const total = result?.[0]?.totalCount?.[0]?.count || 0;
-const stats = countStats?.[0] || {
-  adminCount: 0,
-  salesmanCount: 0,
-  customerCount: 0,
-  activeUsers: 0
-};
+  const stats = countStats?.[0] || {
+    adminCount: 0,
+    salesmanCount: 0,
+    customerCount: 0,
+    activeUsers: 0,
+  };
 
   res.status(200).json(
     new ApiResponse(
@@ -262,8 +262,8 @@ const stats = countStats?.[0] || {
           adminCount: stats.adminCount,
           salesmanCount: stats.salesmanCount,
           customerCount: stats.customerCount,
-          activeUsers: stats.activeUsers
-        }
+          activeUsers: stats.activeUsers,
+        },
       },
       users.length ? "Users fetched successfully" : "No users found"
     )
@@ -329,7 +329,7 @@ exports.getPartners = asyncHandler(async (req, res) => {
     matchStage.$or = [
       { name: { $regex: search, $options: "i" } },
       { email: { $regex: search, $options: "i" } },
-      { code: {$regex: search, $options: "i" }}
+      { code: { $regex: search, $options: "i" } },
     ];
   }
 
@@ -459,7 +459,7 @@ exports.getClients = asyncHandler(async (req, res) => {
     matchStage.$or = [
       { name: { $regex: search, $options: "i" } },
       { email: { $regex: search, $options: "i" } },
-      { code: {$regex: search, $options: "i" }}
+      { code: { $regex: search, $options: "i" } },
     ];
   }
   console.log(matchStage);
@@ -474,6 +474,9 @@ exports.getClients = asyncHandler(async (req, res) => {
     // Admin / SuperAdmin can filter by partner
     if (partnerId) {
       matchStage.parent = new mongoose.Types.ObjectId(partnerId);
+    }
+    if (subPartnerId) {
+      matchStage.parent = new mongoose.Types.ObjectId(subPartnerId);
     }
   }
 
@@ -501,11 +504,36 @@ exports.getClients = asyncHandler(async (req, res) => {
           totalClientUsers: { $size: "$clientUsers" },
         },
       },
+      // 🔍 Get createdBy user role
+      {
+        $lookup: {
+          from: "users",
+          localField: "createdBy",
+          foreignField: "_id",
+          as: "createdByUser",
+          pipeline: [
+            {
+              $project: {
+                role: 1,
+                _id: 0,
+              },
+            },
+          ],
+        },
+      },
+      {
+        $addFields: {
+          createdByRole: {
+            $arrayElemAt: ["$createdByUser.role", 0],
+          },
+        },
+      },
       {
         $project: {
           password: 0,
           __v: 0,
           clientUsers: 0,
+          createdByUser: 0,
         },
       },
     ]),
@@ -615,7 +643,7 @@ exports.getSubRoleUsers = asyncHandler(async (req, res) => {
     matchStage.$or = [
       { name: { $regex: search, $options: "i" } },
       { email: { $regex: search, $options: "i" } },
-      { code: {$regex: search, $options: "i" }}
+      { code: { $regex: search, $options: "i" } },
     ];
   }
 
@@ -738,13 +766,13 @@ exports.requestLimit = asyncHandler(async (req, res) => {
       })),
     });
 
-    if (!result.success) {
-      return res.status(500).json({
-        success: false,
-        message: "Limit request saved but email failed",
-        error: result.error,
-      });
-    }
+    // if (!result.success) {
+    //   return res.status(500).json({
+    //     success: false,
+    //     message: "Limit request saved but email failed",
+    //     error: result.error,
+    //   });
+    // }
 
     return res.status(200).json({
       success: true,
@@ -766,7 +794,7 @@ exports.approveLimitRequest = asyncHandler(async (req, res) => {
     const approverId = req.user.id;
     const { userId } = req.params;
     const { approvedLimit, comment } = req.body;
-const approver = await User.findById(approverId);
+    const approver = await User.findById(approverId);
     if (!approvedLimit) {
       return res.status(400).json({
         success: false,
@@ -862,22 +890,71 @@ exports.rejectLimit = asyncHandler(async (req, res) => {
 
 exports.getPendingLimitRequests = asyncHandler(async (req, res) => {
   try {
-    const adminId = req.user.id;
+    const userId = req.user.id;
+    const role = req.user.role;
 
-    // Find all users who requested limit TO this admin
-    const requests = await User.find({
+    let matchFilter = {
       limitHistory: {
-        $elemMatch: {
-          action: "requested",
-          requestedTo: adminId,
-        },
+        $elemMatch: { action: "requested" },
       },
-    }).select("name limit limitHistory email");
+    };
+
+    // Non-SuperAdmins see only their assigned requests
+    if (role !== "SuperAdmin") {
+      matchFilter.limitHistory.$elemMatch.requestedTo = userId;
+    }
+
+    let requests = await User.find(matchFilter).select(
+      "name limit limitHistory email role"
+    );
+
+    // Build the final list with canApprove
+    const finalRequests = await Promise.all(
+      requests.map(async (user) => {
+        // get last request entry
+        const lastRequest = user.limitHistory
+          .filter((h) => h.action === "requested")
+          .pop();
+
+        let canApprove = false;
+        let requestedToRole = null;
+
+        if (lastRequest) {
+          // fetch assigned user's role
+          const targetUser = await User.findById(
+            lastRequest.requestedTo
+          ).select("role");
+          requestedToRole = targetUser?.role || null;
+
+          // Approval rules:
+          if (role === "SuperAdmin") {
+            // super admin can approve ONLY if request is targeted to super admin
+            if (requestedToRole === "SuperAdmin") {
+              canApprove = true;
+            }
+          } else {
+            // partners/subpartners/clients
+            if (
+              String(lastRequest.requestedTo) === String(userId) &&
+              requestedToRole === role
+            ) {
+              canApprove = true;
+            }
+          }
+        }
+
+        return {
+          ...user.toObject(),
+          requestedToRole,
+          canApprove,
+        };
+      })
+    );
 
     return res.status(200).json({
       success: true,
-      count: requests.length,
-      requests,
+      count: finalRequests.length,
+      requests: finalRequests,
     });
   } catch (err) {
     console.error("Fetch Assigned Requests Error:", err);
@@ -898,20 +975,17 @@ exports.getAllPartners = asyncHandler(async (req, res) => {
   if (search.trim()) {
     matchStage.$or = [
       { name: { $regex: search, $options: "i" } },
-      { email: { $regex: search, $options: "i" } }
+      { email: { $regex: search, $options: "i" } },
     ];
   }
 
-  const partners = await User.find(matchStage)
-    .select("name email _id code status createdAt");
-
-  return res.status(200).json(
-    new ApiResponse(
-      200,
-      partners,
-      "All Partners fetched successfully"
-    )
+  const partners = await User.find(matchStage).select(
+    "name email _id code status createdAt"
   );
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, partners, "All Partners fetched successfully"));
 });
 
 exports.getSubPartners = asyncHandler(async (req, res) => {
@@ -938,7 +1012,7 @@ exports.getSubPartners = asyncHandler(async (req, res) => {
     matchStage.$or = [
       { name: { $regex: search, $options: "i" } },
       { email: { $regex: search, $options: "i" } },
-      { code: {$regex: search, $options: "i" }}
+      { code: { $regex: search, $options: "i" } },
     ];
   }
 
@@ -1034,8 +1108,6 @@ exports.getSubPartners = asyncHandler(async (req, res) => {
   );
 });
 
-
-
 exports.getDashboardStatsSuperAdmin = async (req, res) => {
   try {
     const user = req.user; // middleware se mila
@@ -1058,14 +1130,24 @@ exports.getDashboardStatsSuperAdmin = async (req, res) => {
 
     // Partner Stats
     if (user.role === "Partner") {
-      const totalClients = await User.countDocuments({ parent: user._id, role: "Client" });
-      const totalUsers = await User.countDocuments({ parent: user._id });
-      
+      const totalClients = await User.countDocuments({
+        parent: user.id,
+        role: "Client",
+      });
+      const totalUsers = await User.countDocuments({
+        parent: user.id,
+        role: "Client",
+      });
+      const totalSubPartners = await User.countDocuments({
+        parent: user.id,
+        role: "SubPartner",
+      });
       return res.json({
         success: true,
         stats: {
           totalClients,
           totalUsers,
+          totalSubPartners,
           limit: user.limit || 0,
         },
       });
@@ -1077,3 +1159,716 @@ exports.getDashboardStatsSuperAdmin = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
+exports.getUsersByLocation = async (req, res) => {
+  try {
+    const { state, city, area, region, status = "active" } = req.query;
+
+    const match = { status };
+
+    if (state) match.state = state;
+    if (city) match.city = city;
+    if (area) match.area = area;
+    if (region) match.region = region;
+
+    // 🔐 Role-based visibility
+    let allowedRoles = [];
+
+    if (req.user.role === "SuperAdmin") {
+      allowedRoles = ["Client", "Partner"];
+    }
+
+    if (req.user.role === "Partner") {
+      allowedRoles = ["Client", "SubPartner"];
+      match.parent = new mongoose.Types.ObjectId(req.user.id);
+    }
+    if (req.user.role === "SubPartner") {
+      allowedRoles = ["Client"];
+      match.parent = new mongoose.Types.ObjectId(req.user.id);
+    }
+
+    match.role = { $in: allowedRoles };
+
+    const data = await User.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: {
+            role: "$role",
+            state: "$state",
+            city: "$city",
+            area: "$area",
+          },
+          count: { $sum: 1 },
+        },
+      },
+      {
+        $sort: {
+          "_id.role": 1,
+          "_id.state": 1,
+          "_id.city": 1,
+          "_id.area": 1,
+        },
+      },
+    ]);
+
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch users by location",
+    });
+  }
+};
+
+//         
+//   try {
+//     const { clientID, role } = req.user;
+//     const { fromDate, toDate } = req.query;
+
+//     // 🔢 Pagination for all tables - DIFFERENT LIMITS FOR EACH TABLE
+//     const expiredPage = Number(req.query.expiredPage) || 1;
+//     const expiredLimit = Number(req.query.expiredLimit) || 7;
+//     const expiringPage = Number(req.query.expiringPage) || 1;
+//     const expiringLimit = Number(req.query.expiringLimit) || 7;
+//     const convertedPage = Number(req.query.convertedPage) || 1;
+//     const convertedLimit = Number(req.query.convertedLimit) || 7;
+
+//     const expiredSkip = (expiredPage - 1) * expiredLimit;
+//     const expiringSkip = (expiringPage - 1) * expiringLimit;
+//     const convertedSkip = (convertedPage - 1) * convertedLimit;
+
+//     // 🔐 Role based base query
+//     let baseQuery = {};
+//     if (role === "SuperAdmin") baseQuery = {};
+//     else if (role === "Partner" || role === "SubPartner")
+//       baseQuery = { parent: clientID };
+//     else if (role === "Admin" || role === "Client")
+//       baseQuery = { clientID };
+//     else
+//       return res.status(403).json({ success: false, message: "Unauthorized" });
+
+//     const now = new Date();
+
+//     const demoExpiryFilter = buildDateRange("demoExpiry", fromDate, toDate);
+//     const convertedDateFilter = buildDateRange(
+//       "demoHistory.timestamp",
+//       fromDate,
+//       toDate
+//     );
+
+//     // 1️⃣ Expired demos (WITH PAGINATION)
+//     const [expiredDemoClients, totalExpiredCount] = await Promise.all([
+//       User.find({
+//         ...baseQuery,
+//         role: "Client",
+//         isDemo: true,
+//         demoExpiry: { $lt: now },
+//         ...demoExpiryFilter,
+//         status: { $nin: ["delete"] },
+//       })
+//         .select("name email demoExpiry demoPeriod createdAt")
+//         .sort({ demoExpiry: -1 })
+//         .skip(expiredSkip)
+//         .limit(expiredLimit)
+//         .lean(),
+
+//       User.countDocuments({
+//         ...baseQuery,
+//         role: "Client",
+//         isDemo: true,
+//         demoExpiry: { $lt: now },
+//         ...demoExpiryFilter,
+//         status: { $nin: ["delete"] },
+//       }),
+//     ]);
+
+//     // 2️⃣ Active demos (no pagination, optional for summary)
+//     const activeDemoClients = await User.find({
+//       ...baseQuery,
+//       role: "Client",
+//       isDemo: true,
+//       demoExpiry: { $gte: now },
+//       status: { $nin: ["delete"] },
+//     })
+//       .select("name email demoExpiry demoPeriod createdAt")
+//       .lean();
+
+//     // 3️⃣ Converted demos (WITH PAGINATION)
+//     const [convertedClients, totalConvertedCount] = await Promise.all([
+//       User.find({
+//         ...baseQuery,
+//         role: "Client",
+//         isDemo: false,
+//         "demoHistory.action": "converted",
+//         ...convertedDateFilter,
+//         status: { $nin: ["delete"] },
+//       })
+//         .select("name email createdAt demoHistory")
+//         .sort({ createdAt: -1 })
+//         .skip(convertedSkip)
+//         .limit(convertedLimit)
+//         .lean(),
+
+//       User.countDocuments({
+//         ...baseQuery,
+//         role: "Client",
+//         isDemo: false,
+//         "demoHistory.action": "converted",
+//         ...convertedDateFilter,
+//         status: { $nin: ["delete"] },
+//       }),
+//     ]);
+
+//     // ⏳ Expiring soon (next 7 days WITH PAGINATION)
+//     const sevenDays = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+//     const [expiringSoonClients, totalExpiringCount] = await Promise.all([
+//       User.find({
+//         ...baseQuery,
+//         role: "Client",
+//         isDemo: true,
+//         demoExpiry: { $gte: now, $lte: sevenDays },
+//         status: { $nin: ["delete"] },
+//       })
+//         .select("name email demoExpiry")
+//         .sort({ demoExpiry: 1 })
+//         .skip(expiringSkip)
+//         .limit(expiringLimit)
+//         .lean(),
+
+//       User.countDocuments({
+//         ...baseQuery,
+//         role: "Client",
+//         isDemo: true,
+//         demoExpiry: { $gte: now, $lte: sevenDays },
+//         status: { $nin: ["delete"] },
+//       }),
+//     ]);
+
+//     // 📊 Timeline (last 30 days default)
+//     const timelineFrom =
+//       fromDate || toDate
+//         ? new Date(fromDate)
+//         : new Date(new Date().setDate(new Date().getDate() - 30));
+
+//     const expiredTimeline = await User.aggregate([
+//       {
+//         $match: {
+//           ...baseQuery,
+//           role: "Client",
+//           isDemo: true,
+//           demoExpiry: { $gte: timelineFrom, $lt: now },
+//           status: { $nin: ["delete"] },
+//         },
+//       },
+//       {
+//         $project: {
+//           date: { $dateToString: { format: "%Y-%m-%d", date: "$demoExpiry" } },
+//         },
+//       },
+//       { $group: { _id: "$date", count: { $sum: 1 } } },
+//       { $sort: { _id: 1 } },
+//     ]);
+
+//     const convertedTimeline = await User.aggregate([
+//       {
+//         $match: {
+//           ...baseQuery,
+//           role: "Client",
+//           isDemo: false,
+//           "demoHistory.action": "converted",
+//           status: { $nin: ["delete"] },
+//         },
+//       },
+//       { $unwind: "$demoHistory" },
+//       {
+//         $match: {
+//           "demoHistory.action": "converted",
+//           ...buildDateRange("demoHistory.timestamp", fromDate, toDate),
+//         },
+//       },
+//       {
+//         $project: {
+//           date: {
+//             $dateToString: { format: "%Y-%m-%d", date: "$demoHistory.timestamp" },
+//           },
+//         },
+//       },
+//       { $group: { _id: "$date", count: { $sum: 1 } } },
+//       { $sort: { _id: 1 } },
+//     ]);
+
+//     // 📈 Summary
+//     const totalExpired = totalExpiredCount;
+//     const totalActive = activeDemoClients.length;
+//     const totalConverted = totalConvertedCount;
+
+//     const totalDemo = totalExpired + totalActive + totalConverted;
+//     const conversionRate =
+//       totalDemo > 0 ? ((totalConverted / totalDemo) * 100).toFixed(2) : 0;
+
+//     return res.json({
+//       success: true,
+//       data: {
+//         summary: {
+//           totalExpired,
+//           totalActive,
+//           totalConverted,
+//           conversionRate: Number(conversionRate),
+//         },
+//         charts: {
+//           expiredTimeline: expiredTimeline.map((i) => ({ date: i._id, count: i.count })),
+//           convertedTimeline: convertedTimeline.map((i) => ({ date: i._id, count: i.count })),
+//         },
+//         expiredDemoClients,
+//         expiringSoonClients,
+//         convertedClients,
+//         pagination: {
+//           expired: {
+//             page: expiredPage,
+//             limit: expiredLimit,  // ✅ Use separate limit
+//             totalRecords: totalExpiredCount,
+//             totalPages: Math.ceil(totalExpiredCount / expiredLimit), // ✅ Correct calculation
+//           },
+//           expiring: {
+//             page: expiringPage,
+//             limit: expiringLimit,  // ✅ Use separate limit
+//             totalRecords: totalExpiringCount,
+//             totalPages: Math.ceil(totalExpiringCount / expiringLimit), // ✅ Correct calculation
+//           },
+//           converted: {
+//             page: convertedPage,
+//             limit: convertedLimit,  // ✅ Use separate limit
+//             totalRecords: totalConvertedCount,
+//             totalPages: Math.ceil(totalConvertedCount / convertedLimit), // ✅ Correct calculation
+//           },
+//         },
+//       },
+//     });
+//   } catch (error) {
+//     console.error(error);
+//     res.status(500).json({ success: false, message: "Demo analytics failed" });
+//   }
+// };
+
+
+
+exports.getDemoClientDetails = async (req, res) => {
+  try {
+    const { clientID, role } = req.user;
+    const { userId } = req.params;
+
+    // Build authorization query
+    let authQuery = { _id: userId };
+
+    if (role === "Partner" || role === "SubPartner") {
+      authQuery.parent = clientID;
+    } else if (role === "Admin" || role === "Client") {
+      authQuery.clientID = clientID;
+    } else if (role !== "SuperAdmin") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access",
+      });
+    }
+
+    const client = await User.findOne(authQuery)
+      .select(
+        "name email role isDemo demoExpiry demoPeriod demoHistory createdAt status documents"
+      )
+      .lean();
+
+    if (!client) {
+      return res.status(404).json({
+        success: false,
+        message: "Client not found",
+      });
+    }
+
+    // Calculate additional metrics
+    const now = new Date();
+    let additionalInfo = {};
+
+    if (client.isDemo) {
+      const daysRemaining = Math.ceil(
+        (new Date(client.demoExpiry) - now) / (1000 * 60 * 60 * 24)
+      );
+      additionalInfo = {
+        daysRemaining: daysRemaining > 0 ? daysRemaining : 0,
+        isExpired: daysRemaining <= 0,
+        expiryStatus:
+          daysRemaining > 7
+            ? "active"
+            : daysRemaining > 0
+            ? "expiring-soon"
+            : "expired",
+      };
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        ...client,
+        ...additionalInfo,
+      },
+    });
+  } catch (error) {
+    console.error("Error in getDemoClientDetails:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch demo client details",
+      error: error.message,
+    });
+  }
+};
+
+// Updated backend API endpoints with expiringSoonDays parameter
+
+exports.getDemoAnalytics = async (req, res) => {
+  try {
+    const { clientID, role } = req.user;
+    const { fromDate, toDate } = req.query;
+
+    // 🔢 Pagination for all tables
+    const expiredPage = Number(req.query.expiredPage) || 1;
+    const expiredLimit = Number(req.query.expiredLimit) || 7;
+    const expiringPage = Number(req.query.expiringPage) || 1;
+    const expiringLimit = Number(req.query.expiringLimit) || 7;
+    const convertedPage = Number(req.query.convertedPage) || 1;
+    const convertedLimit = Number(req.query.convertedLimit) || 7;
+    
+    // 🆕 NEW: Expiring soon days parameter (default: 7)
+    const expiringSoonDays = Number(req.query.expiringSoonDays) || 7;
+
+    const expiredSkip = (expiredPage - 1) * expiredLimit;
+    const expiringSkip = (expiringPage - 1) * expiringLimit;
+    const convertedSkip = (convertedPage - 1) * convertedLimit;
+
+    // 🔐 Role based base query
+    let baseQuery = {};
+    if (role === "SuperAdmin") baseQuery = {};
+    else if (role === "Partner" || role === "SubPartner")
+      baseQuery = { parent: req.user.id };
+    else if (role === "Admin" || role === "Client")
+      baseQuery = { clientID };
+    else
+      return res.status(403).json({ success: false, message: "Unauthorized" });
+console.log("Base Query:", baseQuery);
+
+    const now = new Date();
+
+    const demoExpiryFilter = buildDateRange("demoExpiry", fromDate, toDate);
+    const convertedDateFilter = buildDateRange(
+      "demoHistory.timestamp",
+      fromDate,
+      toDate
+    );
+
+    // 1️⃣ Expired demos (WITH PAGINATION)
+    const [expiredDemoClients, totalExpiredCount] = await Promise.all([
+      User.find({
+        ...baseQuery,
+        role: "Client",
+        isDemo: true,
+        demoExpiry: { $lt: now },
+        ...demoExpiryFilter,
+        status: { $nin: ["delete"] },
+      })
+        .select("name email demoExpiry demoPeriod createdAt")
+        .sort({ demoExpiry: -1 })
+        .skip(expiredSkip)
+        .limit(expiredLimit)
+        .lean(),
+
+      User.countDocuments({
+        ...baseQuery,
+        role: "Client",
+        isDemo: true,
+        demoExpiry: { $lt: now },
+        ...demoExpiryFilter,
+        status: { $nin: ["delete"] },
+      }),
+    ]);
+
+    // 2️⃣ Active demos (no pagination, optional for summary)
+    const activeDemoClients = await User.find({
+      ...baseQuery,
+      role: "Client",
+      isDemo: true,
+      demoExpiry: { $gte: now },
+      status: { $nin: ["delete"] },
+    })
+      .select("name email demoExpiry demoPeriod createdAt")
+      .lean();
+
+    // 3️⃣ Converted demos (WITH PAGINATION)
+    const [convertedClients, totalConvertedCount] = await Promise.all([
+      User.find({
+        ...baseQuery,
+        role: "Client",
+        isDemo: false,
+        "demoHistory.action": "converted",
+        ...convertedDateFilter,
+        status: { $nin: ["delete"] },
+      })
+        .select("name email createdAt demoHistory")
+        .sort({ createdAt: -1 })
+        .skip(convertedSkip)
+        .limit(convertedLimit)
+        .lean(),
+
+      User.countDocuments({
+        ...baseQuery,
+        role: "Client",
+        isDemo: false,
+        "demoHistory.action": "converted",
+        ...convertedDateFilter,
+        status: { $nin: ["delete"] },
+      }),
+    ]);
+
+    // ⏳ Expiring soon (WITH CUSTOM DAYS & PAGINATION) 🆕
+    const expiringDate = new Date(now.getTime() + expiringSoonDays * 24 * 60 * 60 * 1000);
+
+    const [expiringSoonClients, totalExpiringCount] = await Promise.all([
+      User.find({
+        ...baseQuery,
+        role: "Client",
+        isDemo: true,
+        demoExpiry: { $gte: now, $lte: expiringDate }, // 🆕 Use custom days
+        status: { $nin: ["delete"] },
+      })
+        .select("name email demoExpiry")
+        .sort({ demoExpiry: 1 })
+        .skip(expiringSkip)
+        .limit(expiringLimit)
+        .lean(),
+
+      User.countDocuments({
+        ...baseQuery,
+        role: "Client",
+        isDemo: true,
+        demoExpiry: { $gte: now, $lte: expiringDate }, // 🆕 Use custom days
+        status: { $nin: ["delete"] },
+      }),
+    ]);
+console.log("Expiring Soon Clients:", expiringSoonClients, totalExpiringCount);
+    // 📊 Timeline (last 30 days default)
+    const timelineFrom =
+      fromDate || toDate
+        ? new Date(fromDate)
+        : new Date(new Date().setDate(new Date().getDate() - 30));
+
+    const expiredTimeline = await User.aggregate([
+      {
+        $match: {
+          ...baseQuery,
+          role: "Client",
+          isDemo: true,
+          demoExpiry: { $gte: timelineFrom, $lt: now },
+          status: { $nin: ["delete"] },
+        },
+      },
+      {
+        $project: {
+          date: { $dateToString: { format: "%Y-%m-%d", date: "$demoExpiry" } },
+        },
+      },
+      { $group: { _id: "$date", count: { $sum: 1 } } },
+      { $sort: { _id: 1 } },
+    ]);
+
+    const convertedTimeline = await User.aggregate([
+      {
+        $match: {
+          ...baseQuery,
+          role: "Client",
+          isDemo: false,
+          "demoHistory.action": "converted",
+          status: { $nin: ["delete"] },
+        },
+      },
+      { $unwind: "$demoHistory" },
+      {
+        $match: {
+          "demoHistory.action": "converted",
+          ...buildDateRange("demoHistory.timestamp", fromDate, toDate),
+        },
+      },
+      {
+        $project: {
+          date: {
+            $dateToString: { format: "%Y-%m-%d", date: "$demoHistory.timestamp" },
+          },
+        },
+      },
+      { $group: { _id: "$date", count: { $sum: 1 } } },
+      { $sort: { _id: 1 } },
+    ]);
+
+    // 📈 Summary
+    const totalExpired = totalExpiredCount;
+    const totalActive = activeDemoClients.length;
+    const totalConverted = totalConvertedCount;
+
+    const totalDemo = totalExpired + totalActive + totalConverted;
+    const conversionRate =
+      totalDemo > 0 ? ((totalConverted / totalDemo) * 100).toFixed(2) : 0;
+
+    return res.json({
+      success: true,
+      data: {
+        summary: {
+          totalExpired,
+          totalActive,
+          totalConverted,
+          conversionRate: Number(conversionRate),
+        },
+        charts: {
+          expiredTimeline: expiredTimeline.map((i) => ({ date: i._id, count: i.count })),
+          convertedTimeline: convertedTimeline.map((i) => ({ date: i._id, count: i.count })),
+        },
+        expiredDemoClients,
+        expiringSoonClients,
+        convertedClients,
+        pagination: {
+          expired: {
+            page: expiredPage,
+            limit: expiredLimit,
+            totalRecords: totalExpiredCount,
+            totalPages: Math.ceil(totalExpiredCount / expiredLimit),
+          },
+          expiring: {
+            page: expiringPage,
+            limit: expiringLimit,
+            totalRecords: totalExpiringCount,
+            totalPages: Math.ceil(totalExpiringCount / expiringLimit),
+          },
+          converted: {
+            page: convertedPage,
+            limit: convertedLimit,
+            totalRecords: totalConvertedCount,
+            totalPages: Math.ceil(totalConvertedCount / convertedLimit),
+          },
+        },
+      },
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Demo analytics failed" });
+  }
+};
+
+exports.getDemoStatsSummary = async (req, res) => {
+  try {
+    const { clientID, role } = req.user;
+    const { fromDate, toDate } = req.query;
+    
+    // 🆕 NEW: Expiring soon days parameter (default: 7)
+    const expiringSoonDays = Number(req.query.expiringSoonDays) || 7;
+
+    let baseQuery = {};
+    if (role === "SuperAdmin") baseQuery = {};
+    else if (role === "Partner" || role === "SubPartner")
+      baseQuery = { parent: req.user.id };
+    else if (role === "Admin" || role === "Client") baseQuery = { clientID };
+    else
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized",
+      });
+console.log("Base Query:", baseQuery);
+    const now = new Date();
+
+    const expiredDemoDateFilter = buildDateRange(
+      "demoExpiry",
+      fromDate,
+      toDate
+    );
+
+    const convertedDateFilter = buildDateRange(
+      "demoHistory.timestamp",
+      fromDate,
+      toDate
+    );
+
+    // 🆕 Calculate expiring date based on custom days
+    const expiringDate = new Date(now.getTime() + expiringSoonDays * 24 * 60 * 60 * 1000);
+
+    const [
+      totalActiveDemo,
+      totalExpiredDemo,
+      totalConverted,
+      expiringSoonCount,
+    ] = await Promise.all([
+      // Active demo (no date filter)
+      User.countDocuments({
+        ...baseQuery,
+        role: "Client",
+        isDemo: true,
+        demoExpiry: { $gte: now },
+        status: { $nin: ["delete"] },
+      }),
+
+      // Expired demo
+      User.countDocuments({
+        ...baseQuery,
+        role: "Client",
+        isDemo: true,
+        demoExpiry: { $lt: now },
+        ...expiredDemoDateFilter,
+        status: { $nin: ["delete"] },
+      }),
+
+      // Converted
+      User.countDocuments({
+        ...baseQuery,
+        role: "Client",
+        isDemo: false,
+        "demoHistory.action": "converted",
+        ...convertedDateFilter,
+        status: { $nin: ["delete"] },
+      }),
+
+      // Expiring soon (with custom days) 🆕
+      User.countDocuments({
+        ...baseQuery,
+        role: "Client",
+        isDemo: true,
+        demoExpiry: {
+          $gte: now,
+          $lte: expiringDate, // 🆕 Use custom days
+        },
+        status: { $nin: ["delete"] },
+      }),
+    ]);
+
+    const totalDemo = totalActiveDemo + totalExpiredDemo + totalConverted;
+
+    const conversionRate =
+      totalDemo > 0 ? ((totalConverted / totalDemo) * 100).toFixed(2) : 0;
+
+    return res.json({
+      success: true,
+      data: {
+        totalActiveDemo,
+        totalExpiredDemo,
+        totalConverted,
+        expiringSoonCount,
+        conversionRate: Number(conversionRate),
+      },
+    });
+  } catch (error) {
+    console.error("getDemoStatsSummary error:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Stats fetch failed" });
+  }
+};
+
+
