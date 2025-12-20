@@ -27,6 +27,8 @@ const customerGroupRoute=require("./routes/customerGroupRoutes")
 const couponRoutes = require("./routes/Coupon");
 const BillTemplateRoute = require("./routes/billTemplateRoutes");
 const posRoutes  = require('./routes/posRoutes')
+// const BulkUploadRoute = require('./routes/bulkUploadRoute');
+const shiftRoutes = require('./routes/shift.routes');
 
 const app = express();
 app.use(cors());
@@ -60,7 +62,7 @@ app.use(express.urlencoded({limit: '50mb', extended: true }));
 
 app.get("/",(req,res)=>{
 
-    res.send("API is working 09/12")
+    res.send("API is working 20/12")
 
 
 })
@@ -70,6 +72,7 @@ app.get("/",(req,res)=>{
 // })
 // Routes
 app.use("/api/pos",posRoutes)
+app.use("/api/shift" ,shiftRoutes )
 app.use("/api/coupons", couponRoutes);  //coupnonRoutes
 app.use('/api/auth', authRoutes);
 app.use("/api/contactUs",contactRoute)
@@ -97,6 +100,7 @@ app.use("/api/cart",cartRoute)
 app.use("/api/payment",paymentRoute)
 app.use("/api/bill-templates",BillTemplateRoute)
 // Not found middleware (for invalid routes)
+// app.use('/api/bulk', BulkUploadRoute);
 app.use(notFound);
 
 // Global error handler (must be last)

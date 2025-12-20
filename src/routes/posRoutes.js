@@ -24,19 +24,21 @@ router.post("/hold", async (req, res) => {
     res.status(500).json({ success: false, error: e.message });
   }
 });
-
-
 router.get("/", async (req, res) => {
   try {
     const {
       companyId,
       startDate,
       endDate,
+      customerId,
+      paymentType,
+      billNumber,
+      customer,
+      status,
       page = 1,
       limit = 10,
     } = req.query;
 
-    // companyId is mandatory
     if (!companyId) {
       return res.status(400).json({
         success: false,
@@ -44,75 +46,57 @@ router.get("/", async (req, res) => {
       });
     }
 
-    // -------------------------
-    // FILTER
-    // -------------------------
-    const filter = {
-      companyId,
-      held: false, // ❗ only completed bills
-    };
+    const filter = { companyId };
 
+    /* ---------- DATE RANGE (FIXED) ---------- */
     if (startDate && endDate) {
       filter.createdAt = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate),
+        $gte: new Date(startDate + "T00:00:00"),
+        $lte: new Date(endDate + "T23:59:59.999"),
       };
     }
 
-    const skip = (Number(page) - 1) * Number(limit);
+    /* ---------- CUSTOMER NAME ---------- */
+    if (customer) {
+      filter["customer.name"] = {
+        $regex: customer.trim(),
+        $options: "i",
+      };
+    }
 
-    // -------------------------
-    // DATA + COUNT
-    // -------------------------
+    /* ---------- BILL NUMBER ---------- */
+    if (billNumber) {
+      filter.billNumber = billNumber.trim();
+    }
+
+    /* ---------- PAYMENT TYPE (REGEX + i) ---------- */
+    if (paymentType) {
+      const safePayment = paymentType.trim().toUpperCase();
+
+      filter["paymentInfo.paymentType"] = {
+        $regex: `^${safePayment}$`,
+        $options: "i",
+      };
+    }
+
+    /* ---------- CUSTOMER ID ---------- */
+    if (customerId) {
+      filter["customer.customerId"] = customerId;
+    }
+
+    const skip = (page - 1) * limit;
+
     const [data, total] = await Promise.all([
       POS.find(filter)
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(Number(limit)),
-
       POS.countDocuments(filter),
-    ]);
-
-    // -------------------------
-    // STATS (Company Wise)
-    // -------------------------
-    const statsAgg = await POS.aggregate([
-      { $match: filter },
-      {
-        $group: {
-          _id: null,
-          totalBills: { $sum: 1 },
-          totalSales: { $sum: "$grandTotal" },
-
-          cashSales: {
-            $sum: {
-              $cond: [{ $eq: ["$paymentMode", "cash"] }, "$grandTotal", 0],
-            },
-          },
-          cardSales: {
-            $sum: {
-              $cond: [{ $eq: ["$paymentMode", "card"] }, "$grandTotal", 0],
-            },
-          },
-          upiSales: {
-            $sum: {
-              $cond: [{ $eq: ["$paymentMode", "upi"] }, "$grandTotal", 0],
-            },
-          },
-        },
-      },
     ]);
 
     res.json({
       success: true,
       data,
-      stats: statsAgg[0] || {
-        totalBills: 0,
-        totalSales: 0,
-        cashSales: 0,
-        cardSales: 0,
-        upiSales: 0,
-      },
       pagination: {
         total,
         page: Number(page),
@@ -121,12 +105,12 @@ router.get("/", async (req, res) => {
       },
     });
   } catch (e) {
-    console.error("POS GET ERROR:", e);
-    res.status(500).json({
-      success: false,
-      error: e.message,
-    });
+    res.status(500).json({ success: false, error: e.message });
   }
 });
+
+
+
+
 
 module.exports = router;

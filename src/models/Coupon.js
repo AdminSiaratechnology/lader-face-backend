@@ -1,26 +1,34 @@
 const { Schema, model, default: mongoose } = require("mongoose");
 
-const bogoSchema = new Schema({
-  template: String,
+const bogoRuleSchema = new Schema(
+  {
+    buyQty: { type: Number, required: true, min: 1 },
+    getQty: { type: Number, required: true, min: 1 },
 
-  buyQty: Number,
-  getQty: Number,
+    buyProducts: { type: [String], default: [] },
+    freeProducts: { type: [String], default: [] },
 
-  buyProducts: [String],
+    freeMode: { type: String, enum: ["same", "different"], default: "same" },
 
-  // keep this if you want (optional now)
-  freeProducts: [String],
-
-  freeMode: { type: String, enum: ["same", "different"] },
-
-  // 🔥 ADD THIS
-  productFreeMapping: {
-    type: Map,
-    of: [String],   // buyProduct -> [freeProducts]
-    default: {},
+    productFreeMapping: {
+      type: Map,
+      of: [String],
+      default: {},
+    },
   },
+  { _id: false }
+);
 
-}, { _id: false });
+const bogoSchema = new Schema(
+  {
+    template: String,
+    rules: {
+      type: [bogoRuleSchema],
+      default: [],
+    },
+  },
+  { _id: false }
+);
 
 
 const couponSchema = new Schema(
@@ -29,17 +37,17 @@ const couponSchema = new Schema(
 
     name: { type: String, required: true },
     code: { type: String, trim: true },
-   enableCouponType: { type: Boolean, default: false },
-couponType: { type: String, default: "" },
+    enableCouponType: { type: Boolean, default: false },
+    couponType: { type: String, default: "" },
 
-enableSchemeName: { type: Boolean, default: false },
-schemeName: { type: String, default: "" },
+    enableSchemeName: { type: Boolean, default: false },
+    schemeName: { type: String, default: "" },
 
     description: { type: String, default: "" },
 
     validFrom: { type: Date, required: true },
     validTo: { type: Date, required: true },
-    
+    status : {type :String , required :true},
 
     discountType: { type: String, enum: ["PERCENT", "FIXED"], default: null },
     discountValue: { type: Number, default: 0 },
@@ -58,8 +66,10 @@ schemeName: { type: String, default: "" },
     customerGroups: { type: [String], default: [] },
     stockGroups: { type: [String], default: [] },
     stockItems: { type: [String], default: [] },
-
-    bogoConfig: { type: bogoSchema, default: null },
+    bogoConfig: {
+      type: bogoSchema,
+      default: null,
+    },
     status: {
       type: String,
       enum: ["active", "inactive", "expired", "delete"],

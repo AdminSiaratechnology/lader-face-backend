@@ -7,6 +7,7 @@ const {
   getCouponById,
   updateCoupon,
   deleteCoupon,
+  getBogoCoupons,
 } = require("../controllers/couponController");
 
 // CREATE
@@ -22,5 +23,7 @@ router.put("/:id", updateCoupon);
 
 // DELETE
 router.delete("/:id", deleteCoupon);
+
+router.get("/bogo/:companyId", getBogoCoupons);
 
 module.exports = router;

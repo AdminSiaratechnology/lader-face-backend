@@ -74,12 +74,12 @@ exports.createCoupon = async (req, res) => {
   try {
     const data = req.body;
 
-    // 1️⃣ Auto-generate code if not provided
+    // 1️⃣ Auto-generate code
     if (!data.code || data.code.trim() === "") {
       data.code = await generateCouponCode();
     }
 
-    // 2️⃣ CHECK DUPLICATE (company + code)
+    // 2️⃣ Duplicate check
     const existing = await CouponModel.findOne({
       company: data.company,
       code: data.code,
@@ -92,20 +92,28 @@ exports.createCoupon = async (req, res) => {
       });
     }
 
-    // 3️⃣ CREATE COUPON
+
+
+    // 🔍 Debug (temporary)
+    console.log(
+      "INCOMING BOGO 👉",
+      JSON.stringify(data.bogoConfig, null, 2)
+    );
+
+    // 4️⃣ Create
     const coupon = await CouponModel.create(data);
 
     res.json({ success: true, data: coupon });
 
   } catch (err) {
     console.error(err);
-
     res.status(500).json({
       success: false,
       message: "Something went wrong while creating coupon",
     });
   }
 };
+
 
 
 
@@ -251,3 +259,19 @@ exports.deleteCoupon = async (req, res) => {
   }
 };
 
+exports.getBogoCoupons = async (req, res) => {
+  try {
+    const { companyId } = req.params;
+
+    const coupons = await CouponModel.find({
+      company: companyId,
+      status: "active",
+      bogoConfig: { $ne: null }
+    }).lean();
+
+    res.status(200).json(coupons);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to fetch BOGO coupons" });
+  }
+};
