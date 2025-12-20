@@ -169,6 +169,20 @@ const userSchema = new mongoose.Schema(
     demoExpiry: { type: Date, default: null }, // this field is for client to know when the demo account will expire
     maxDemoDays: { type: Number }, // this is for partner to know how many days they can offer to their demo clients
     demoPeriod: { type: Number, default: 0 }, // this field is for clients to know how many demo days they have been allotted
+    demoHistory: [
+      {
+        action: {
+          type: String,
+          enum: ["created", "extended", "expired", "converted"],
+          required: true,
+        },
+        performedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+        },
+        timestamp: { type: Date, default: Date.now },
+      },
+    ],
   },
   { timestamps: true }
 );

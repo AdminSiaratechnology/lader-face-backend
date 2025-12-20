@@ -25,6 +25,11 @@ const VendorSchema = new mongoose.Schema(
     company: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Company",
+      // required: true,
+    }, // reference to company
+    companyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Company",
       required: true,
     }, // reference to company
     clientId: {
@@ -33,9 +38,9 @@ const VendorSchema = new mongoose.Schema(
       required: true,
     },
 
-    vendorType: { type: String, required: true },
-    code: { type: String, required: true, unique: true },
-    vendorName: { type: String, required: true },
+    vendorType: { type: String },
+    code: { type: String, required: true, },
+    vendorName: { type: String},
     shortName: { type: String },
     vendorGroup: { type: String },
     industryType: { type: String },
@@ -48,6 +53,11 @@ const VendorSchema = new mongoose.Schema(
       enum: ["active", "inactive", "delete"],
       default: "active",
     },
+
+    name:{ type: String,required: true },
+    type:{ type: String, required: true },
+    group:{ type: String },
+    category:{ type: String },
 
     contactPerson: { type: String },
     designation: { type: String },
@@ -130,10 +140,32 @@ const VendorSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-// 📂 vendor.model.js (or where schema is defined)
+VendorSchema.pre("validate", async function (next) {
+  try {
+    if (this.code) return next();
 
-// ----------------------------
-// 🔹 1. Main Filters + Sorting
+    const Counter = mongoose.model("Counter");
+
+    const counter = await Counter.findOneAndUpdate(
+      {
+        clientId: this.clientId,
+        companyId: this.companyId,
+        type: "vendor",
+      },
+      { $inc: { seq: 1 } },
+      {
+        new: true,
+        upsert: true,
+      }
+    );
+
+    this.code = counter.seq.toString().padStart(6, "0");
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 // ----------------------------
 VendorSchema.index({ clientId: 1, company: 1, status: 1, createdAt: -1 });
 // 👉 Speeds up getVendorsByCompany() and getVendorsByClient()
@@ -142,7 +174,7 @@ VendorSchema.index({ clientId: 1, company: 1, status: 1, createdAt: -1 });
 // ---------------------------------
 // 🔹 2. Unique Vendor Code per Client
 // ---------------------------------
-VendorSchema.index({ clientId: 1, code: 1 }, { unique: true });
+VendorSchema.index({ clientId: 1, code: 1 });
 // 👉 Ensures each vendor code is unique for that client
 //    (prevents accidental duplicates across same client)
 

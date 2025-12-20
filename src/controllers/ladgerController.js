@@ -44,13 +44,13 @@ const insertInBatches = async (data, batchSize) => {
     } catch (error) {
       if (error.name === 'MongoBulkWriteError' && error.code === 11000) {
         const failedDocs = error.writeResult?.result?.writeErrors?.map(err => ({
-          code: err.op.ledgerCode,
+          code: err.op.code,
           error: err.errmsg
         })) || [];
-        const successfulDocs = batch.filter(doc => !failedDocs.some(f => f.code === doc.ledgerCode));
+        const successfulDocs = batch.filter(doc => !failedDocs.some(f => f.code === doc.code));
         results.push(...successfulDocs.map(doc => ({ ...doc, _id: doc._id || new mongoose.Types.ObjectId() })));
         failedDocs.forEach(failed => {
-          console.error(`Failed to insert record with ledgerCode ${failed.code}: ${failed.error}`);
+          console.error(`Failed to insert record with code ${failed.code}: ${failed.error}`);
         });
       } else {
         console.error(`Batch insertion failed: ${error.message}`);
@@ -69,14 +69,14 @@ const insertInBatches = async (data, batchSize) => {
 // 🟢 Create Ledger
 // exports.createLedger = asyncHandler(async (req, res) => {
 //   const {
-//     ledgerName,
+//     name,
 //     emailAddress,
 //     phoneNumber,
 //     companyID, // company reference
 //     ...rest
 //   } = req.body;
 
-//   if (!ledgerName) {
+//   if (!name) {
 //     throw new ApiError(400, "Ledger name and code are required");
 //   }
 //   const clientId = req.user.clientID;
@@ -105,11 +105,11 @@ const insertInBatches = async (data, batchSize) => {
 //         fileName: file.originalname
 //       }));
 //     }
-//   let ledgerCode = await generateUniqueId(Ledger, "ledgerCode");
+//   let code = await generateUniqueId(Ledger, "code");
 
 //   const ledger = await Ledger.create({
-//     ledgerName,
-//     ledgerCode,
+//     name,
+//     code,
 //     clientId,
 //     emailAddress,
 //     phoneNumber,
@@ -155,10 +155,10 @@ const insertInBatches = async (data, batchSize) => {
 // Create Ledger
 exports.createLedger = asyncHandler(async (req, res) => {
   const {
-    ledgerName,
+    name,
     emailAddress,
     phoneNumber,
-    companyID,
+    companyId,
     registrationDocTypes: rawDocTypes,
     ...rest
   } = req.body;
@@ -166,7 +166,7 @@ exports.createLedger = asyncHandler(async (req, res) => {
   const adminId = req?.user?.id;
   const clientId = req.user.clientID;
 
-  if (!ledgerName) {
+  if (!name) {
     throw new ApiError(400, "Ledger name is required");
   }
   if (!clientId) {
@@ -179,8 +179,8 @@ exports.createLedger = asyncHandler(async (req, res) => {
     processRegistrationDocs(req.files?.registrationDocs || [], rawDocTypes),
   ]);
 
-  // Generate unique ledgerCode
-  const ledgerCode = await generateUniqueId(Ledger, "ledgerCode");
+  // Generate unique code
+  // const code = await generateUniqueId(Ledger, "code");
 
   // Parse banks safely
   let banks = [];
@@ -195,17 +195,17 @@ exports.createLedger = asyncHandler(async (req, res) => {
   }
 
   const ledger = await Ledger.create({
-    ledgerName,
-    ledgerCode,
+    name,
+    // code,
     clientId,
     emailAddress,
     phoneNumber,
-    companyID,
+    companyId,
     ...rest,
     logo: logoUrl || "",
     registrationDocs: processedDocs,
     banks,
-    company: companyID,
+    company: companyId,
     createdBy: adminId,
     auditLogs: [
       {
@@ -229,7 +229,7 @@ exports.createLedger = asyncHandler(async (req, res) => {
     performedBy: req.user.id,
     referenceId: ledger._id,
     clientId,
-    details: "Ledger created successfully",
+    details: ` ledger ${ledger?.name} created successfully`,
     ipAddress,
   });
 
@@ -258,8 +258,8 @@ exports.createBulkLedgers = asyncHandler(async (req, res) => {
   const validCompanyIds = new Set(companies.map((c) => String(c._id)));
 
   // Preload existing ledger codes
-  const existingLedgers = await Ledger.find({}, "ledgerCode");
-  const existingCodes = new Set(existingLedgers.map(ledger => ledger.ledgerCode));
+  const existingLedgers = await Ledger.find({}, "code");
+  const existingCodes = new Set(existingLedgers.map(ledger => ledger.code));
 
   const results = [];
   const errors = [];
@@ -269,37 +269,37 @@ exports.createBulkLedgers = asyncHandler(async (req, res) => {
   for (const [index, body] of ledgers.entries()) {
     try {
       // Required fields
-      if (!body.ledgerName || !body.companyID) {
-        throw new Error("ledgerName and companyID are required");
+      if (!body.name || !body.companyID) {
+        throw new Error("name and companyID are required");
       }
       if (!validCompanyIds.has(String(body.companyID))) {
         throw new Error("Invalid company ID");
       }
 
-      // Generate or validate ledgerCode
-      let ledgerCode = body.ledgerCode;
-      if (!ledgerCode) {
-        ledgerCode = generateUniqueId(index); // Generate 18-digit code
+      // Generate or validate code
+      let code = body.code;
+      if (!code) {
+        code = generateUniqueId(index); // Generate 18-digit code
       } else {
-        // Check for duplicate ledgerCode in the input batch
-        if (seenCodes.has(ledgerCode)) {
-          throw new Error("Duplicate ledgerCode within batch");
+        // Check for duplicate code in the input batch
+        if (seenCodes.has(code)) {
+          throw new Error("Duplicate code within batch");
         }
-        // Check for duplicate ledgerCode in the database
-        if (existingCodes.has(ledgerCode)) {
-          throw new Error("LedgerCode already exists in database");
+        // Check for duplicate code in the database
+        if (existingCodes.has(code)) {
+          throw new Error("code already exists in database");
         }
       }
-      seenCodes.add(ledgerCode);
+      seenCodes.add(code);
 
       // Generate unique values for optional fields if not provided
-      const emailAddress = body.emailAddress || `${body.ledgerName.replace(/\s+/g, '').toLowerCase()}${index}@gmail.com`;
+      const emailAddress = body.emailAddress || `${body.name.replace(/\s+/g, '').toLowerCase()}${index}@gmail.com`;
       const phoneNumber = body.phoneNumber || `+919${(973884720 + index).toString().padStart(9, '0')}`;
 
       const ledgerObj = {
         _id: new mongoose.Types.ObjectId(), // Generate unique_ id
-        ledgerName: body.ledgerName,
-        ledgerCode,
+        name: body.name,
+        code,
         clientId,
         emailAddress,
         phoneNumber,
@@ -324,8 +324,8 @@ exports.createBulkLedgers = asyncHandler(async (req, res) => {
     } catch (err) {
       errors.push({
         index,
-        ledgerName: body?.ledgerName,
-        ledgerCode: body?.ledgerCode,
+        name: body?.name,
+        code: body?.code,
         error: err.message,
       });
     }
@@ -558,7 +558,7 @@ exports.updateLedger = asyncHandler(async (req, res) => {
     performedBy: req.user.id,
     referenceId: ledger._id,
     clientId: req.user.clientID,
-    details: "Ledger updated successfully",
+    details: `Ledger ${ledger?.name} updated successfully`,
     changes,
     ipAddress,
   });
@@ -595,11 +595,12 @@ exports.getLedgersByCompany = asyncHandler(async (req, res) => {
 
   if (search && search.trim() !== "") {
     filter.$or = [
-      { ledgerName: { $regex: search, $options: "i" } },
+      { name: { $regex: search, $options: "i" } },
       { emailAddress: { $regex: search, $options: "i" } },
       { phoneNumber: { $regex: search, $options: "i" } },
     ];
   }
+ 
 
   // Sorting
   const sortDirection = sortOrder === "asc" ? 1 : -1;
@@ -781,7 +782,7 @@ exports.deleteLedger = asyncHandler(async (req, res) => {
     performedBy: req.user.id,
     referenceId: ledger._id,
     clientId: req.user.clientID,
-    details: "ledger marked as deleted",
+    details: `Ledger ${ledger?.name} marked as deleted`,
     ipAddress,
   });
 

@@ -6,14 +6,24 @@ const godownSchema = new mongoose.Schema(
     company: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Company",
-      required: true,
+      // required: true,
+    },
+    companyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Company",
+      // required: true,
     },
     client: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User", // Client role wala user
-      required: true,
+      // required: true,
     },
-    code: { type: String, required: true, unique: true },
+      clientId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User", // Client role wala user
+      // required: true,
+    },
+    code: { type: String, required: true, },
     name: { type: String, required: true },
     parent: { type: mongoose.Schema.Types.ObjectId, ref: "Godown" },
     address: { type: String },
@@ -31,6 +41,32 @@ const godownSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+godownSchema.pre("validate", async function (next) {
+  try {
+    if (this.code) return next();
+
+    const Counter = mongoose.model("Counter");
+
+    const counter = await Counter.findOneAndUpdate(
+      {
+        clientId: this.clientId || this.client,
+        companyId: this.companyId || this.company,
+        type: "Godown",
+      },
+      { $inc: { seq: 1 } },
+      {
+        new: true,
+        upsert: true,
+      }
+    );
+
+    this.code = counter.seq.toString().padStart(6, "0");
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 godownSchema.index({ client: 1, company: 1, status: 1, createdAt: -1 });
 godownSchema.index({ code: 1 }, { unique: true });
 godownSchema.index({ name: "text", city: "text", address: "text", manager: "text" });

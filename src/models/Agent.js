@@ -25,7 +25,7 @@ const AgentSchema = new mongoose.Schema(
     company: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Company",
-      required: true,
+      // required: true,
     }, // reference to company
     clientId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -33,11 +33,23 @@ const AgentSchema = new mongoose.Schema(
       required: true,
     },
 
-    agentType: { type: String, required: true },
-    code: { type: String, required: true, unique: true },
-    agentName: { type: String, required: true },
+    agentType: { type: String },
+    code: { type: String, required: true },
+    agentName: { type: String },
     shortName: { type: String },
+
     agentCategory: { type: String },
+    name: { type: String, required: true },
+    companyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Company",
+      // required: true,
+    }, // reference to company
+
+    group: { type: String },
+    type: { type: String },
+    agentCategory: { type: String },
+
     specialty: { type: String },
     territory: { type: String },
     supervisor: { type: String },
@@ -119,14 +131,40 @@ const AgentSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-AgentSchema.index({ code: 1 }, { unique: true });
+AgentSchema.pre("validate", async function (next) {
+  try {
+    if (this.code) return next();
+
+    const Counter = mongoose.model("Counter");
+
+    const counter = await Counter.findOneAndUpdate(
+      {
+        clientId: this.clientId,
+        companyId: this.companyId,
+        type: "agent",
+      },
+      { $inc: { seq: 1 } },
+      {
+        new: true,
+        upsert: true,
+      }
+    );
+
+    this.code = counter.seq.toString().padStart(6, "0");
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+AgentSchema.index({ code: 1 });
 
 AgentSchema.index({ company: 1, clientId: 1, status: 1, createdAt: -1 });
 
 AgentSchema.index({ clientId: 1, status: 1, createdAt: -1 });
 
 AgentSchema.index({
-  agentName: "text",
+  name: "text",
   emailAddress: "text",
   contactPerson: "text",
   phoneNumber: "text",
