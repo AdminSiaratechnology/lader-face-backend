@@ -1523,7 +1523,7 @@ exports.getUserHierarchy = async (req, res) => {
   try {
     const users = await User.find(
       {},
-      "_id name email role status parent clientID"
+      "_id name email role status parent clientID partnerType"
     ).lean();
 
     const superAdmins = users.filter((u) => u.role === "SuperAdmin");

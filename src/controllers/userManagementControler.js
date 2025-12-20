@@ -5,6 +5,7 @@ const mongoose = require("mongoose");
 const ApiError = require("../utils/apiError");
 const sendEmail = require("../utils/sendEmail");
 const buildDateRange = require("../utils/dateFilter");
+const ExcelJS = require("exceljs");
 exports.getAllClientUsersWithCompany = asyncHandler(async (req, res) => {
   const clientId = req.user.clientID; // Logged-in user's client ID
   const { companyId } = req.params;
@@ -515,6 +516,7 @@ exports.getClients = asyncHandler(async (req, res) => {
             {
               $project: {
                 role: 1,
+                limit: 1,
                 _id: 0,
               },
             },
@@ -525,6 +527,9 @@ exports.getClients = asyncHandler(async (req, res) => {
         $addFields: {
           createdByRole: {
             $arrayElemAt: ["$createdByUser.role", 0],
+          },
+          createdByLimit: {
+            $arrayElemAt: ["$createdByUser.limit", 0],
           },
         },
       },
@@ -1225,7 +1230,7 @@ exports.getUsersByLocation = async (req, res) => {
   }
 };
 
-//         
+//
 //   try {
 //     const { clientID, role } = req.user;
 //     const { fromDate, toDate } = req.query;
@@ -1456,8 +1461,6 @@ exports.getUsersByLocation = async (req, res) => {
 //   }
 // };
 
-
-
 exports.getDemoClientDetails = async (req, res) => {
   try {
     const { clientID, role } = req.user;
@@ -1527,8 +1530,6 @@ exports.getDemoClientDetails = async (req, res) => {
   }
 };
 
-// Updated backend API endpoints with expiringSoonDays parameter
-
 exports.getDemoAnalytics = async (req, res) => {
   try {
     const { clientID, role } = req.user;
@@ -1541,7 +1542,7 @@ exports.getDemoAnalytics = async (req, res) => {
     const expiringLimit = Number(req.query.expiringLimit) || 7;
     const convertedPage = Number(req.query.convertedPage) || 1;
     const convertedLimit = Number(req.query.convertedLimit) || 7;
-    
+
     // 🆕 NEW: Expiring soon days parameter (default: 7)
     const expiringSoonDays = Number(req.query.expiringSoonDays) || 7;
 
@@ -1554,11 +1555,10 @@ exports.getDemoAnalytics = async (req, res) => {
     if (role === "SuperAdmin") baseQuery = {};
     else if (role === "Partner" || role === "SubPartner")
       baseQuery = { parent: req.user.id };
-    else if (role === "Admin" || role === "Client")
-      baseQuery = { clientID };
+    else if (role === "Admin" || role === "Client") baseQuery = { clientID };
     else
       return res.status(403).json({ success: false, message: "Unauthorized" });
-console.log("Base Query:", baseQuery);
+    console.log("Base Query:", baseQuery);
 
     const now = new Date();
 
@@ -1633,7 +1633,9 @@ console.log("Base Query:", baseQuery);
     ]);
 
     // ⏳ Expiring soon (WITH CUSTOM DAYS & PAGINATION) 🆕
-    const expiringDate = new Date(now.getTime() + expiringSoonDays * 24 * 60 * 60 * 1000);
+    const expiringDate = new Date(
+      now.getTime() + expiringSoonDays * 24 * 60 * 60 * 1000
+    );
 
     const [expiringSoonClients, totalExpiringCount] = await Promise.all([
       User.find({
@@ -1657,7 +1659,11 @@ console.log("Base Query:", baseQuery);
         status: { $nin: ["delete"] },
       }),
     ]);
-console.log("Expiring Soon Clients:", expiringSoonClients, totalExpiringCount);
+    console.log(
+      "Expiring Soon Clients:",
+      expiringSoonClients,
+      totalExpiringCount
+    );
     // 📊 Timeline (last 30 days default)
     const timelineFrom =
       fromDate || toDate
@@ -1703,7 +1709,10 @@ console.log("Expiring Soon Clients:", expiringSoonClients, totalExpiringCount);
       {
         $project: {
           date: {
-            $dateToString: { format: "%Y-%m-%d", date: "$demoHistory.timestamp" },
+            $dateToString: {
+              format: "%Y-%m-%d",
+              date: "$demoHistory.timestamp",
+            },
           },
         },
       },
@@ -1730,8 +1739,14 @@ console.log("Expiring Soon Clients:", expiringSoonClients, totalExpiringCount);
           conversionRate: Number(conversionRate),
         },
         charts: {
-          expiredTimeline: expiredTimeline.map((i) => ({ date: i._id, count: i.count })),
-          convertedTimeline: convertedTimeline.map((i) => ({ date: i._id, count: i.count })),
+          expiredTimeline: expiredTimeline.map((i) => ({
+            date: i._id,
+            count: i.count,
+          })),
+          convertedTimeline: convertedTimeline.map((i) => ({
+            date: i._id,
+            count: i.count,
+          })),
         },
         expiredDemoClients,
         expiringSoonClients,
@@ -1768,7 +1783,7 @@ exports.getDemoStatsSummary = async (req, res) => {
   try {
     const { clientID, role } = req.user;
     const { fromDate, toDate } = req.query;
-    
+
     // 🆕 NEW: Expiring soon days parameter (default: 7)
     const expiringSoonDays = Number(req.query.expiringSoonDays) || 7;
 
@@ -1782,7 +1797,6 @@ exports.getDemoStatsSummary = async (req, res) => {
         success: false,
         message: "Unauthorized",
       });
-console.log("Base Query:", baseQuery);
     const now = new Date();
 
     const expiredDemoDateFilter = buildDateRange(
@@ -1798,7 +1812,9 @@ console.log("Base Query:", baseQuery);
     );
 
     // 🆕 Calculate expiring date based on custom days
-    const expiringDate = new Date(now.getTime() + expiringSoonDays * 24 * 60 * 60 * 1000);
+    const expiringDate = new Date(
+      now.getTime() + expiringSoonDays * 24 * 60 * 60 * 1000
+    );
 
     const [
       totalActiveDemo,
@@ -1871,4 +1887,172 @@ console.log("Base Query:", baseQuery);
   }
 };
 
+exports.getClientUsers = async (req,res) => {
+  try {
+    const { clientId } = req.params;
+    if(!clientId) {
+      return res.status(400).json({ success: false, message: "Client ID not found for the user" });
+    }
+    const users = await User.find({ clientID: clientId, status: { $ne: "delete" } }).select("name email role status createdAt lastLogin");
+    return res.status(200).json({
+      success: true,
+      count: users.length,
+      users,
+    });
+  }catch{
+    console.error("getClientUsers error:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Client users fetch failed" });  
+  }
+}
 
+exports.exportClientsUsers = async (req, res) => {
+  try {
+    const {
+      search = "",
+      status = "",
+      partnerId = "",
+      subPartnerId = "",
+    } = req.query;
+
+    const userId = req.user.id;
+    const user = await User.findById(userId);
+
+    const matchStage = {
+      role: "Client",
+      status: { $ne: "delete" },
+    };
+
+    if (user.role === "Partner" || user.role === "SubPartner") {
+      matchStage.parent = new mongoose.Types.ObjectId(userId);
+    } else {
+      if (partnerId) matchStage.parent = new mongoose.Types.ObjectId(partnerId);
+      if (subPartnerId) {
+        matchStage.parent = new mongoose.Types.ObjectId(subPartnerId);
+      }
+    }
+
+    if (status) matchStage.status = status;
+
+    if (search?.trim()) {
+      matchStage.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+        { code: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    const clients = await User.find(matchStage)
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Clients & Users");
+
+    // sheet.columns = [
+    //   { header: "Name", key: "name", width: 30 },
+    //   { header: "Email", key: "email", width: 35 },
+    //   { header: "Role", key: "role", width: 15 },
+    //   { header: "Status", key: "status", width: 15 },
+    //   { header: "Last Login", key: "lastLogin", width: 25 },
+    // ];
+
+    /* ---------------- REPORT HEADER ---------------- */
+    sheet.addRow(["CLIENTS & USERS REPORT"]).font = { bold: true };
+    sheet.addRow(["Exported By", user.name]);
+    sheet.addRow(["Role", user.role]);
+    sheet.addRow(["Exported On", new Date().toLocaleString()]);
+    sheet.addRow([]);
+
+    let clientIndex = 1;
+
+    /* ---------------- LOOP CLIENTS ---------------- */
+    for (const client of clients) {
+      const clientHeader = sheet.addRow([
+        `CLIENT ${clientIndex} - ${client.name}`,
+      ]);
+      clientHeader.font = { bold: true };
+
+      sheet.addRow(["Client Code", client.code || "-"]);
+      sheet.addRow(["Email", client.email]);
+      sheet.addRow(["Status", client.status]);
+      sheet.addRow([
+        "Demo Account",
+        client.isDemo ? "Yes" : "No",
+      ]);
+      sheet.addRow([
+        "Demo Period",
+        client.demoPeriod ? `${client.demoPeriod} Days` : "-",
+      ]);
+      sheet.addRow(["User Limit", client.limit ?? "-"]);
+      sheet.addRow([]);
+
+      /* -------- USERS OF CLIENT -------- */
+      const users = await User.find({
+        clientID: client._id,
+        status: { $ne: "delete" },
+      })
+        .select("name email role status lastLogin")
+        .lean();
+
+      const usersHeader = sheet.addRow([
+        `USERS (Total: ${users.length})`,
+      ]);
+      usersHeader.font = { bold: true };
+
+      const tableHeader = sheet.addRow([
+        "Name",
+        "Email",
+        "Role",
+        "Status",
+        "Last Login",
+      ]);
+      tableHeader.font = { bold: true };
+
+      users.forEach((u) => {
+        sheet.addRow([
+          u.name,
+          u.email,
+          u.role,
+          u.status,
+          u.lastLogin
+            ? new Date(u.lastLogin).toLocaleString()
+            : "Never",
+        ]);
+      });
+
+      sheet.addRow([]);
+      sheet.addRow([
+        "------------------------------------------------------------",
+      ]);
+      sheet.addRow([]);
+
+      clientIndex++;
+    }
+
+    /* ---------------- SEND FILE (IMPORTANT PART) ---------------- */
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename=Clients_Users_Report.xlsx"
+    );
+
+    // ✅ DO NOT call res.end()
+    await workbook.xlsx.write(res);
+
+  } catch (error) {
+    console.error("Export error:", error);
+
+    // ✅ Prevent corrupting response if headers already sent
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        message: "Excel export failed",
+      });
+    }
+  }
+};
