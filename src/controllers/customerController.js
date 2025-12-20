@@ -38,10 +38,10 @@ const insertInBatches = async (data, batchSize = 1000) => {
 exports.createCustomer = asyncHandler(async (req, res) => {
   try {
     const {
-      customerName,
+      name,
       emailAddress,
       phoneNumber,
-      companyID,
+      companyId,
       registrationDocTypes: rawDocTypes,
       ...rest
     } = req.body;
@@ -50,7 +50,7 @@ exports.createCustomer = asyncHandler(async (req, res) => {
     const adminId = req?.user?.id;
     const clientId = req.user.clientID;
 
-    if (!customerName) {
+    if (!name) {
       throw new ApiError(400, "Customer name is required");
     }
     if (!clientId) {
@@ -65,7 +65,7 @@ exports.createCustomer = asyncHandler(async (req, res) => {
       processRegistrationDocs(req.files?.registrationDocs || [], rawDocTypes),
     ]);
 
-    const code = await generate6DigitUniqueId(Customer, "code");
+   
 
     let banks = [];
     if (req.body.banks) {
@@ -80,17 +80,18 @@ exports.createCustomer = asyncHandler(async (req, res) => {
     }
 
     const customer = await Customer.create({
-      customerName,
-      code,
+      name,
+      customerName: name,
+    
       clientId,
       emailAddress,
       phoneNumber,
-      companyID,
+      companyId,
       ...rest,
       logo: logoUrl || "",
       registrationDocs: processedDocs,
       banks,
-      company: companyID,
+      company: companyId,
       createdBy: adminId,
       auditLogs: [
         {
@@ -118,7 +119,7 @@ exports.createCustomer = asyncHandler(async (req, res) => {
         performedBy: req.user.id,
         referenceId: customer._id,
         clientId,
-        details: "Customer created successfully",
+        details: `${customer.name} created successfully`,
         ipAddress,
       })
     ).catch((err) => {
@@ -178,8 +179,8 @@ exports.createBulkCustomers = asyncHandler(async (req, res) => {
   // Step 2.1: Pre-process and Group
   customers.forEach((body, index) => {
     try {
-      if (!body.customerName || !body.company) {
-        throw new Error("Missing required fields: customerName or company");
+      if (!body.name || !body.company) {
+        throw new Error("Missing required fields: name or company");
       }
       if (!validCompanyIds.has(String(body.company))) {
         throw new Error(`Invalid company ID: ${body.company}`);
@@ -197,7 +198,7 @@ exports.createBulkCustomers = asyncHandler(async (req, res) => {
     } catch (err) {
       formattingErrors.push({
         index,
-        customerName: body?.customerName || "Unknown",
+        name: body?.name || "Unknown",
         error: err.message,
       });
     }
@@ -316,7 +317,7 @@ exports.createBulkCustomers = asyncHandler(async (req, res) => {
 
         dbErrors.push({
           index: realIndex, 
-          customerName: failedItem.customerName,
+          name: failedItem.name,
           code: failedItem.code,
           error: errMsg,
         });
@@ -446,7 +447,7 @@ exports.updateCustomer = asyncHandler(async (req, res) => {
     performedBy: req.user.id,
     referenceId: customer._id,
     clientId: req.user.clientID,
-    details: "Customer updated successfully",
+    details: `${customer.name} updated successfully`,
     changes,
     ipAddress,
   });
@@ -490,7 +491,7 @@ exports.updateCustomer = asyncHandler(async (req, res) => {
 
 //   if (search && search.trim() !== "") {
 //     filter.$or = [
-//       { customerName: { $regex: search, $options: "i" } },
+//       { name: { $regex: search, $options: "i" } },
 //       { emailAddress: { $regex: search, $options: "i" } },
 //       { contactPerson: { $regex: search, $options: "i" } },
 //     ];
@@ -606,7 +607,7 @@ exports.updateCustomer = asyncHandler(async (req, res) => {
 //   // 🟦 Search filter
 //   if (search && search.trim() !== "") {
 //     filter.$or = [
-//       { customerName: { $regex: search, $options: "i" } },
+//       { name: { $regex: search, $options: "i" } },
 //       { emailAddress: { $regex: search, $options: "i" } },
 //       { contactPerson: { $regex: search, $options: "i" } },
 //     ];
@@ -747,7 +748,7 @@ exports.getCustomersByCompany = asyncHandler(async (req, res) => {
     limit = 10,
     isCustomer = false // String "true" or "false" usually comes from query
   } = req.query;
-  console.log(req.query,"isCustomer")
+ 
 
   const perPage = parseInt(limit, 10);
   const currentPage = Math.max(parseInt(page, 10), 1);
@@ -792,7 +793,7 @@ exports.getCustomersByCompany = asyncHandler(async (req, res) => {
 
   if (search && search.trim() !== "") {
     filter.$or = [
-      { customerName: { $regex: search, $options: "i" } },
+      { name: { $regex: search, $options: "i" } },
       { emailAddress: { $regex: search, $options: "i" } },
       { contactPerson: { $regex: search, $options: "i" } },
     ];
@@ -964,7 +965,7 @@ exports.deleteCustomer = asyncHandler(async (req, res) => {
     action: "delete",
     performedBy: new mongoose.Types.ObjectId(req.user.id),
     timestamp: new Date(),
-    details: "Customer marked as deleted",
+    details: `${customer.name} marked as deleted`,
   });
   await customer.save();
   let ipAddress =
@@ -978,14 +979,14 @@ exports.deleteCustomer = asyncHandler(async (req, res) => {
     performedBy: req.user.id,
     referenceId: customer._id,
     clientId: req.user.clientID,
-    details: "Customer marked as deleted",
+    details: `${customer.name} marked as deleted`,
     ipAddress,
   });
 
   // send response_
   res.status(200).json({
     success: true,
-    message: "Customer deleted successfully",
+    message: `${customer.name} deleted successfully`,
     data: customer,
   });
 });

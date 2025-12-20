@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const Counter = require("./Counter");
 
 const CustomerGroupSchema = new mongoose.Schema(
   {
@@ -21,14 +22,16 @@ const CustomerGroupSchema = new mongoose.Schema(
     },
 
     groupCode: {
-      type: String, 
+      type: String,
+      unique: true,
     },
 
     status: {
       type: String,
-      enum: ["active", "inactive","delete"],
+      enum: ["active", "inactive", "delete"],
       default: "active",
     },
+
     parentGroup: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "CustomerGroup",
@@ -43,46 +46,43 @@ const CustomerGroupSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-
-
+/**
+ * AUTO GENERATE groupCode
+ * - Atomic
+ * - Bulk safe
+ * - insertMany safe
+ */
 CustomerGroupSchema.pre("validate", async function (next) {
   try {
- 
     if (this.groupCode) return next();
 
-    const CustomerGroup =
-      mongoose.models.CustomerGroup ||
-      mongoose.model("CustomerGroup");
+    const Counter = mongoose.model("Counter");
 
-    const lastGroup = await CustomerGroup.findOne({
-      clientId: this.clientId,
-      companyId: this.companyId,
-      isDeleted: false,
-    })
-      .sort({ createdAt: -1 })
-      .select("groupCode");
+    const counter = await Counter.findOneAndUpdate(
+      {
+        clientId: this.clientId,
+        companyId: this.companyId,
+        type: "customerGroup",
+      },
+      { $inc: { seq: 1 } },
+      {
+        new: true,
+        upsert: true,
+      }
+    );
 
-    let newCode = "000000000001";
-
-    if (lastGroup && lastGroup.groupCode) {
-      const lastNum = parseInt(lastGroup.groupCode, 10);
-      const nextNum = (lastNum + 1).toString().padStart(12, "0");
-      newCode = nextNum;
-    }
-
-    this.groupCode = newCode;
+    this.groupCode = counter.seq.toString().padStart(12, "0");
 
     next();
-  } catch (err) {
-    console.error("Error generating groupCode:", err);
-    next(err);
+  } catch (error) {
+    next(error);
   }
 });
 
-
+// Indexes
 CustomerGroupSchema.index({ clientId: 1 });
 CustomerGroupSchema.index({ companyId: 1 });
-CustomerGroupSchema.index({ groupCode: 1 });
 CustomerGroupSchema.index({ groupName: 1 });
+CustomerGroupSchema.index({ groupCode: 1 });
 
 module.exports = mongoose.model("CustomerGroup", CustomerGroupSchema);

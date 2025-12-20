@@ -448,6 +448,7 @@ exports.getCustomerWiseReport = asyncHandler(async (req, res) => {
         $or: [
           { orderCode: searchRegex },
           { "customer.customerName": searchRegex },
+          { "customer.name": searchRegex },
           { "customer.phone": searchRegex },
           { "salesman.name": searchRegex },
         ],
@@ -456,7 +457,9 @@ exports.getCustomerWiseReport = asyncHandler(async (req, res) => {
 
     // =============== ORDERS PIPELINE ===============
     const ordersPipeline = [
-      { $match: { ...baseMatch, status: "approved" } },
+      { $match: { ...baseMatch,   ...(status
+    ? { status: { $regex: `^${status}$`, $options: "i" } }
+    : {}), } },
 
       // Join Customer
       {

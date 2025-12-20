@@ -6,10 +6,12 @@ const {
   getGroupById,
   updateGroup,
   deleteGroup,
+  bulkCreateCustomerGroups
 } = require("../controllers/customerGroupController");
 
 
 router.post("/create", createGroup);
+router.post("/bulk-create",bulkCreateCustomerGroups );
 router.get("/all", getGroups);
 router.get("/:id", getGroupById);
 router.put("/update/:id", updateGroup);
