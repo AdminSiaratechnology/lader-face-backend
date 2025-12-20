@@ -216,6 +216,7 @@ exports.createBulkCompanies = asyncHandler(async (req, res) => {
 // 🟢 Agent ke liye apne client ki saari companies laana
 exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
   const agentId = req.user.id;
+  console.log("Agent ID from tokenggggggg:", agentId);
 
   const agent = await User.findById(agentId);
   if (!agent) throw new ApiError(404, "Agent not found");
@@ -225,6 +226,8 @@ exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
   const { search, status, sortBy, sortOrder, limit = 3, page = 1 } = req.query;
 
   let filter = { client: clientId, status: { $ne: "delete" } };
+  console.log("Search Query:", search);
+  console.log("Status Filter:", status);
 
   if (status && status !== "") {
     filter.status = status;
@@ -236,8 +239,11 @@ exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
       { namePrint: regex },
       { nameStreet: regex },
       { email: regex },
+      { code: regex },
+
     ];
   }
+  console.log("Final Filter Object:", filter);
 
   // sorting
   let sort = {};
@@ -384,32 +390,70 @@ exports.updateCompany = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const user = await User.findById(req.user.id);
   if (!user) throw new ApiError(404, "User not found");
+  
   const company = await Company.findById(id);
   if (!company) throw new ApiError(404, "Company not found");
+
+  // Authorization check
   if (
     user.role === "Client" &&
     company.client.toString() !== user._id.toString()
   ) {
     throw new ApiError(403, "You can only update your own companies");
   }
+
+  // Parse request data
   const {
+    existingBrandingImages: rawExistingImages,
+    newBrandingImages: rawNewImages,
     registrationDocTypes: rawDocTypes,
-    keptBrandingUrls: rawKeptUrls,
     ...rest
   } = req.body;
-  const [logoUrl, processedNewDocs, brandingFiles] = await Promise.all([
-    req.files?.logo?.[0]?.location || null,
-    processRegistrationDocs(
-      req.files?.registrationDocs || [],
-      rawDocTypes || []
-    ), // Reuse helper from create_
-    req.files?.brandingImages || [],
-  ]);
-  // 4️⃣ Prepare update data
-  const updateData = { ...rest }; // shallow copy_
+
+  // Process logo
+  const logoUrl = req.files?.logo?.[0]?.location || null;
+
+  // Process registration documents
+  const processedNewDocs = await processRegistrationDocs(
+    req.files?.registrationDocs || [],
+    rawDocTypes || []
+  );
+
+  // Process branding images
+  const existingBrandingImages = rawExistingImages ? JSON.parse(rawExistingImages) : [];
+  const uploadedBrandingFiles = req.files?.brandingImages || [];
+  
+  // Create map of new images by index for easy lookup
+  const newBrandingImagesData = rawNewImages ? JSON.parse(rawNewImages) : [];
+  
+  // Build final branding images array
+  const finalBrandingImages = [
+    // Keep existing images
+    ...existingBrandingImages.map(img => ({
+      type: img.type || "banner",
+      file: img.previewUrl,
+      fileName: img.fileName,
+      description: img.description || ""
+    })),
+    // Add new images
+    ...uploadedBrandingFiles.map((file, index) => {
+      const imgData = newBrandingImagesData[index] || {};
+      return {
+        type: imgData.type || "banner",
+        file: file.location,
+        fileName: file.originalname,
+        description: imgData.description || ""
+      };
+    })
+  ];
+
+  // Prepare update data
+  const updateData = { ...rest };
+  
   if (logoUrl) {
     updateData.logo = logoUrl;
   }
+  
   if (req.body?.banks) {
     try {
       updateData.banks = JSON.parse(req.body.banks) || [];
@@ -417,46 +461,37 @@ exports.updateCompany = asyncHandler(async (req, res) => {
       throw new ApiError(400, "Banks field must be a valid JSON array");
     }
   }
+  
   if (processedNewDocs.length > 0) {
-    // Filter out existing docs with types that are being updated_
+    // Filter out existing docs with types that are being updated
     const existingDocs = (company.registrationDocs || []).filter(
-      (doc) => !(rawDocTypes || []).includes(doc.type) // Use parsed docTypes_
+      (doc) => !(rawDocTypes || []).includes(doc.type)
     );
     updateData.registrationDocs = [...existingDocs, ...processedNewDocs];
   }
-  //  images update - handle kept + new_
-  const keptBrandingUrls = rawKeptUrls ? JSON.parse(rawKeptUrls) : null;
-  const newBranding = brandingFiles.map((file) => ({
-    type: "banner",
-    file: file.location,
-    fileName: file.originalname,
-    description: "",
-  }));
-  let finalBranding = [];
-  if (keptBrandingUrls !== null) {
-    const existingToKeep = (company.brandingImages || []).filter((img) =>
-      keptBrandingUrls.includes(img.file)
-    );
-    finalBranding = [...existingToKeep, ...newBranding];
-  } else {
-    finalBranding = [...(company.brandingImages || []), ...newBranding];
+  
+  // Set branding images
+  if (finalBrandingImages.length > 0) {
+    updateData.brandingImages = finalBrandingImages;
   }
-  if (finalBranding.length > 0) {
-    updateData.brandingImages = finalBranding;
-  }
-  // If no new files, existing docs remain unchanged_
+
+  // Track changes for audit log
   const oldData = company.toObject();
   const changes = {};
+  
   Object.keys(updateData).forEach((key) => {
     if (key === "auditLogs") return;
-    ; // ✅ skip auditLogs in update_
     if (JSON.stringify(oldData[key]) !== JSON.stringify(updateData[key])) {
       changes[key] = { from: oldData[key], to: updateData[key] };
     }
   });
+
+  // Apply updates to company
   Object.keys(updateData).forEach((key) => {
     if (key !== "auditLogs") company[key] = updateData[key];
   });
+
+  // Add audit log
   if (!company.auditLogs) company.auditLogs = [];
   company.auditLogs.push({
     action: "update",
@@ -465,11 +500,13 @@ exports.updateCompany = asyncHandler(async (req, res) => {
     details: "Company updated",
     changes,
   });
+
   await company.save();
+  
+  // Create async audit log
   createAuditLogAsyncUpdate(req, company._id, changes).catch(console.error);
-  res
-    .status(200)
-    .json(new ApiResponse(200, company, "Company updated successfully"));
+  
+  res.status(200).json(new ApiResponse(200, company, "Company updated successfully"));
 });
 
 // Helper: Async audit log for update (adapted from create)
@@ -567,8 +604,8 @@ exports.deleteCompany = asyncHandler(async (req, res) => {
 });
 
 exports.generateCompanyDocumentationPDF = asyncHandler(async (req, res) => {
-  const companyId = req.query.companyId;
-  const clientID=req.user.clientID;
+  const companyId = req?.query?.companyId;
+  const clientID=req?.user?.clientID;
 
   const companies=await Company.find({client:clientID},{ namePrint: 1, code: 1 });
 

@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const auditLogSchema = require("../middlewares/auditLogSchema");
+const Counter = require("./Counter");
 
 // Bank schema
 const BankSchema = new mongoose.Schema({
@@ -25,7 +26,12 @@ const LedgerSchema = new mongoose.Schema(
     company: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Company",
-      required: true,
+      // required: true,
+    }, // reference to company
+    companyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Company",
+      // required: true,
     }, // reference to company
     clientId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -33,9 +39,9 @@ const LedgerSchema = new mongoose.Schema(
       required: true,
     },
 
-    ledgerType: { type: String, required: true },
-    ledgerCode: { type: String, required: true, unique: true },
-    ledgerName: { type: String, required: true },
+    ledgerType: { type: String},
+    ledgerCode: { type: String },
+    ledgerName: { type: String  },
     shortName: { type: String },
     ledgerGroup: { type: String },
     industryType: { type: String },
@@ -47,6 +53,11 @@ const LedgerSchema = new mongoose.Schema(
       enum: ["active", "inactive", "delete"],
       default: "active",
     },
+    name:{ type: String,required: true },
+    type:{ type: String},
+    group:{ type: String},
+    category:{ type: String },  
+    code:{ type: String,required: true },
 
     contactPerson: { type: String },
     designation: { type: String },
@@ -108,7 +119,33 @@ const LedgerSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-LedgerSchema.index({ ledgerCode: 1 }, { unique: true });
+LedgerSchema.pre("validate", async function (next) {
+  try {
+    if (this.code) return next();
+
+    const Counter = mongoose.model("Counter");
+
+    const counter = await Counter.findOneAndUpdate(
+      {
+        clientId: this.clientId,
+        companyId: this.companyId,
+        type: "ledger",
+      },
+      { $inc: { seq: 1 } },
+      {
+        new: true,
+        upsert: true,
+      }
+    );
+
+    this.code = counter.seq.toString().padStart(6, "0");
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+LedgerSchema.index({ code: 1 });
 
 LedgerSchema.index({ company: 1, clientId: 1, status: 1, createdAt: -1 });
 
