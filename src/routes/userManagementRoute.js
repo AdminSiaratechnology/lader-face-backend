@@ -35,4 +35,6 @@ router.get("/users-by-location", userManagement.getUsersByLocation);
 router.get("/summary", userManagement.getDemoStatsSummary);
 router.get("/demo-analytics", userManagement.getDemoAnalytics);
 router.get("/client/:userId", userManagement.getDemoClientDetails);
+router.get("/client-users/:clientId", userManagement.getClientUsers);
+router.get("/export", userManagement.exportClientsUsers);
 module.exports = router;
