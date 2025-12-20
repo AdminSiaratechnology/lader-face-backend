@@ -82,16 +82,16 @@ const insertInBatches = async (data, batchSize) => {
 // 🟢 Create Agent
 exports.createAgent = asyncHandler(async (req, res) => {
   const {
-    agentName,
+    name,
     emailAddress,
     phoneNumber,
-    companyID, // company reference
+    companyId, // company reference
     registrationDocTypes: rawDocTypes, // Extract rawDocTypes like in Company
     ...rest
   } = req.body;
   const adminId = req?.user?.id;
 
-  if (!agentName) {
+  if (!name) {
     throw new ApiError(400, "Agent name and code are required");
   }
   const clientId = req.user.clientID;
@@ -112,21 +112,21 @@ exports.createAgent = asyncHandler(async (req, res) => {
     rawDocTypes
   );
 
-  let code = await generate6DigitUniqueId(Agent, "code");
-  console.log(JSON.parse(req.body.banks), "JSON.parse(req.body.banks)");
+  // let code = await generate6DigitUniqueId(Agent, "code");
+  // console.log(JSON.parse(req.body.banks), "JSON.parse(req.body.banks)");
 
   const agent = await Agent.create({
-    agentName,
-    code,
+    name,
+    // code,
     clientId,
     emailAddress,
     phoneNumber,
-    companyID,
+    company: companyId,
     ...rest,
     logo: logoUrl || "",
     registrationDocs: processedDocs,
     banks: JSON.parse(req.body.banks),
-    company: companyID,
+    companyId: companyId,
     createdBy: adminId,
     auditLogs: [
       {
@@ -152,7 +152,7 @@ exports.createAgent = asyncHandler(async (req, res) => {
     performedBy: req.user.id,
     referenceId: agent._id,
     clientId,
-    details: "agent created successfully",
+    details: `${agent.name} created successfully`,
     ipAddress,
   });
 
@@ -194,8 +194,8 @@ exports.createBulkAgents = asyncHandler(async (req, res) => {
   for (const [index, body] of agents.entries()) {
     try {
       // Required fields
-      if (!body.agentName || !body.company) {
-        throw new Error("agentName and company are required");
+      if (!body.name || !body.company) {
+        throw new Error("name and company are required");
       }
       if (!validCompanyIds.has(String(body.company))) {
         throw new Error("Invalid company ID");
@@ -220,19 +220,19 @@ exports.createBulkAgents = asyncHandler(async (req, res) => {
       // Generate unique shortName if not provided
       const shortName =
         body.shortName ||
-        `${body.agentName.replace(/\s+/g, "")}${index
+        `${body.name.replace(/\s+/g, "")}${index
           .toString()
           .padStart(3, "0")}`;
 
       // Generate unique values for optional fields if not provided
-      const contactPerson = body.contactPerson || body.agentName;
+      const contactPerson = body.contactPerson || body.name;
       const designation = body.designation || `Agent ${index + 1}`;
       const phoneNumber =
         body.phoneNumber ||
         `+919${(973884720 + index).toString().padStart(9, "0")}`;
       const emailAddress =
         body.emailAddress ||
-        `${body.agentName.replace(/\s+/g, "").toLowerCase()}${index}@gmail.com`;
+        `${body.name.replace(/\s+/g, "").toLowerCase()}${index}@gmail.com`;
       const addressLine1 =
         body.addressLine1 ||
         `address${index} sector ${body.city || "Delhi"}`.toLowerCase();
@@ -246,7 +246,7 @@ exports.createBulkAgents = asyncHandler(async (req, res) => {
         company: body.company,
         clientId,
         agentType: body.agentType || "individual",
-        agentName: body.agentName,
+        name: body.name,
         shortName,
         agentStatus: body.agentStatus || "active",
         status: body.status || "Active",
@@ -263,7 +263,7 @@ exports.createBulkAgents = asyncHandler(async (req, res) => {
         isTaxExempt: body.isTaxExempt || false,
         reverseCharge: body.reverseCharge || false,
         acceptedPaymentMethods: body.acceptedPaymentMethods || [
-          '["[\\"[]\\"]"',
+          
         ],
         banks: body.banks || [],
         dataSource: body.dataSource || "manual",
@@ -288,7 +288,7 @@ exports.createBulkAgents = asyncHandler(async (req, res) => {
     } catch (err) {
       errors.push({
         index,
-        agentName: body?.agentName,
+        name: body?.name,
         code: body?.code,
         error: err.message,
       });
@@ -428,7 +428,7 @@ exports.updateAgent = asyncHandler(async (req, res) => {
     performedBy: req.user.id,
     referenceId: agent._id,
     clientId: req.user.clientID,
-    details: "Agent updated successfully",
+    details: `${agent.name} updated successfully`,
     changes,
     ipAddress,
   });
@@ -447,6 +447,8 @@ exports.getAgentsByCompany = asyncHandler(async (req, res) => {
   console.log(req.params, "req.prams");
   if (!companyId) throw new ApiError(400, "Company ID is required");
 
+
+
   const {
     search = "",
     status = "",
@@ -463,14 +465,18 @@ exports.getAgentsByCompany = asyncHandler(async (req, res) => {
   if (status && status.trim() !== "") filter.status = status;
   if (search && search.trim() !== "") {
     filter.$or = [
-      { agentName: { $regex: search, $options: "i" } },
+      { name: { $regex: search, $options: "i" } },
       { emailAddress: { $regex: search, $options: "i" } },
       { phoneNumber: { $regex: search, $options: "i" } },
+      { code: { $regex: search, $options: "i" } },
     ];
   }
   // Sorting
   const sortDirection = sortOrder === "desc" ? -1 : 1;
   const sortOptions = { [sortBy || "createdAt"]: sortDirection };
+ 
+
+  
   // Fetch data & total count
   const [agents, total] = await Promise.all([
     Agent.find(filter)
@@ -558,9 +564,10 @@ exports.getAgentsByClient = asyncHandler(async (req, res) => {
 
   if (search && search.trim() !== "") {
     filter.$or = [
-      { agentName: { $regex: search, $options: "i" } },
+      { name: { $regex: search, $options: "i" } },
       { email: { $regex: search, $options: "i" } },
       { contactNumber: { $regex: search, $options: "i" } },
+      { code: { $regex: search, $options: "i" } },
     ];
   }
 
@@ -648,7 +655,7 @@ exports.deleteAgent = asyncHandler(async (req, res) => {
     performedBy: req.user.id,
     referenceId: agent._id,
     clientId: req.user.clientID,
-    details: "agent marked as deleted",
+    details: `${agent.name} marked as deleted`,
     ipAddress,
   });
 

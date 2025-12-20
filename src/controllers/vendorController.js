@@ -10,6 +10,10 @@ const createAuditLog  = require("../utils/createAuditLogMain");
 const { generateUniqueId } = require("../utils/generate16DigiId");
 const processRegistrationDocs =require("../utils/processRegistrationDocs")
 const { generate6DigitUniqueId } = require("../utils/generate6DigitUniqueId");
+const User = require("../models/User");
+const { generateBulkCodes } = require("../utils/bulkSequenceGenerator");
+
+
 
 // Generate unique 18-digit code using timestamp and index
 // const generateUniqueId = (index) => {
@@ -82,14 +86,14 @@ const insertInBatches = async (data, batchSize) => {
 // 🟢 Create Vendor
 // exports.createVendor = asyncHandler(async (req, res) => {
 //   const {
-//     vendorName,
+//     name,
 //     emailAddress,
 //     phoneNumber,
 //     companyID, // company reference
 //     ...rest
 //   } = req.body;
 
-//   if (!vendorName) {
+//   if (!name) {
 //     throw new ApiError(400, "Vendor name and code are required");
 //   }
 //   const clientId = req.user.clientID;
@@ -129,7 +133,7 @@ const insertInBatches = async (data, batchSize) => {
 //   console.log(JSON.parse(req.body.banks), "JSON.parse(req.body.banks)");
 
 //   const vendor = await Vendor.create({
-//     vendorName,
+//     name,
 //     code,
 //     clientId,
 //     emailAddress,
@@ -176,19 +180,21 @@ const insertInBatches = async (data, batchSize) => {
 // });
 
 exports.createVendor = asyncHandler(async (req, res) => {
+  
   const {
-    vendorName,
+    name,
     emailAddress,
     phoneNumber,
-    companyID,
-    registrationDocTypes: rawDocTypes,   // <-- same name as Agent
+    companyId,
+    registrationDocTypes: rawDocTypes,   
     ...rest
   } = req.body;
+  console.log(req.body, "req.body");
 
   const adminId = req?.user?.id;
   const clientId = req.user.clientID;
 
-  if (!vendorName) {
+  if (!name) {
     throw new ApiError(400, "Vendor name and code are required");
   }
   if (!clientId) {
@@ -205,7 +211,7 @@ exports.createVendor = asyncHandler(async (req, res) => {
   );
 
   // ---------- Unique Code ----------
-  const code = await generate6DigitUniqueId(Vendor, "code");
+  // const code = await generate6DigitUniqueId(Vendor, "code");
 
   // ---------- Banks ----------
   let banks = [];
@@ -222,24 +228,24 @@ exports.createVendor = asyncHandler(async (req, res) => {
 
   // ---------- Create Vendor ----------
   const vendor = await Vendor.create({
-    vendorName,
-    code,
+    name,
+    // code,
     clientId,
     emailAddress,
     phoneNumber,
-    companyID,
+    companyId,
+    company: companyId,
     ...rest,
     logo: logoUrl || "",
     registrationDocs: processedDocs,
     banks,
-    company: companyID,
     createdBy: adminId,
     auditLogs: [
       {
         action: "create",
         performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
         timestamp: new Date(),
-        details: "Vendor created",
+        details:`${name} Vendor created`,
       },
     ],
   });
@@ -255,7 +261,7 @@ exports.createVendor = asyncHandler(async (req, res) => {
     performedBy: req.user.id,
     referenceId: vendor._id,
     clientId,
-    details: "vendor created successfully",
+    details: `${vendor.name} created successfully`,
     ipAddress: finalIp,
   });
 
@@ -264,124 +270,431 @@ exports.createVendor = asyncHandler(async (req, res) => {
     .json(new ApiResponse(201, vendor, "Vendor created successfully"));
 });
 
-exports.createBulkVendors = asyncHandler(async (req, res) => {
-  console.log("Processing vendors");
-  const { vendors } = req.body;
+// exports.createBulkVendors = asyncHandler(async (req, res) => {
+//   console.log("Processing vendors");
+//   const { vendors } = req.body;
 
-  // Validate input
+//   // Validate input
+//   if (!Array.isArray(vendors) || vendors.length === 0) {
+//     throw new ApiError(400, "Vendors array is required in body");
+//   }
+
+//   // Validate user
+//   const userId = req.user.id;
+//   const user = await User.findById(userId);
+//   console.log(user, "user");
+//   if (!user) throw new ApiError(404, "User not found");
+//   const clientId = req.user.clientID;
+//   if (!clientId) throw new ApiError(400, "Client ID is required from token");
+
+//   // Preload company IDs
+//   const companies = await Company.find({}, "_id");
+//   const validCompanyIds = new Set(companies.map((c) => String(c._id)));
+
+//   // Preload existing codes
+//   const existingVendors = await Vendor.find({}, "code");
+//   const existingCodes = new Set(existingVendors.map((vendor) => vendor.code));
+
+//   const results = [];
+//   const errors = [];
+//   const seenCodes = new Set();
+
+//   // Process vendors
+//   for (const [index, body] of vendors.entries()) {
+//     try {
+//       // Required fields
+//       if (!body.name || !body.companyId) {
+//         throw new Error("name and companyID are required");
+//       }
+//       if (!validCompanyIds.has(String(body.companyId))) {
+//         throw new Error("Invalid company ID");
+//       }
+
+//       // Generate or validate code
+//       let code = body.code;
+//       if (!code) {
+//         code = generateUniqueId(index); // Generate 18-digit code
+//       } else {
+//         // Check for duplicate code in the input batch
+//         if (seenCodes.has(code)) {
+//           throw new Error("Duplicate code within batch");
+//         }
+//         // Check for duplicate code in the database
+//         if (existingCodes.has(code)) {
+//           throw new Error("Code already exists in database");
+//         }
+//       }
+//       seenCodes.add(code);
+
+//       // Generate unique values for optional fields if not provided
+//       const emailAddress =
+//         body.emailAddress ||
+//         `${body.name
+//           .replace(/\s+/g, "")
+//           .toLowerCase()}${index}@gmail.com`;
+//       const phoneNumber =
+//         body.phoneNumber ||
+//         `+919${(973884720 + index).toString().padStart(9, "0")}`;
+
+//       const vendorObj = {
+//         _id: new mongoose.Types.ObjectId(), // Generate unique_ id
+//         name: body.name,
+//         code,
+//         clientId,
+//         emailAddress,
+//         phoneNumber,
+//         companyId: body.companyId,
+//         company: body.companyId,
+//         createdBy: userId,
+//         ...body, // Spread other fields from input
+//         logo: "", // Skipped as per request
+//         registrationDocs: [], // Skipped as per request
+//         banks: body.banks ? JSON.parse(body.banks) : [], // Parse banks if provided
+//         auditLogs: [
+//           {
+//             action: "create",
+//             performedBy: new mongoose.Types.ObjectId(userId),
+//             timestamp: new Date(),
+//             details: "Bulk vendor import",
+//           },
+//         ],
+//       };
+
+//       results.push(vendorObj);
+//     } catch (err) {
+//       errors.push({
+//         index,
+//         name: body?.name,
+//         code: body?.code,
+//         error: err.message,
+//       });
+//     }
+//   }
+
+//   // Batch insert
+//   const inserted = await insertInBatches(results, 1000);
+
+//   res.status(201).json(
+//     new ApiResponse(
+//       201,
+//       {
+//         totalReceived: vendors.length,
+//         totalInserted: inserted.length,
+//         totalFailed: errors.length,
+//         insertedIds: inserted.map((v) => v._id),
+//         errors,
+//       },
+//       "Bulk vendor import completed successfully"
+//     )
+//   );
+// });
+// exports.createBulkVendors = asyncHandler(async (req, res) => {
+//   console.log("Processing vendors");
+
+//   const { vendors } = req.body;
+//   const clientId = req.user.clientID;
+//   const userId = req.user.id;
+//   const BATCH_SIZE = 1000; // Adjust batch size as needed
+
+//   if (!Array.isArray(vendors) || vendors.length === 0) {
+//     throw new ApiError(400, "Vendors array required");
+//   }
+
+//   const companyId = vendors[0].companyId;
+//   const total = vendors.length;
+
+//   // 🔥 STEP 1: Generate ALL codes in ONE DB call
+//   const codes = await generateBulkCodes({
+//     clientId,
+//     companyId,
+//     type: "vendor",
+//     count: total,
+//   });
+
+//   let insertedCount = 0;
+
+//   // 🔥 STEP 2: Insert in BATCHES
+//   for (let i = 0; i < total; i += BATCH_SIZE) {
+//     const batchVendors = vendors.slice(i, i + BATCH_SIZE);
+//     const batchCodes = codes.slice(i, i + BATCH_SIZE);
+
+//     const payload = batchVendors.map((v, index) => ({
+//       ...v,
+//       clientId,
+//       companyId: v.companyId,
+//       code: batchCodes[index],
+//       createdBy: userId,
+//       auditLogs: [
+//         {
+//           action: "create",
+//           performedBy: userId,
+//           timestamp: new Date(),
+//           details: "Bulk vendor import",
+//         },
+//       ],
+//     }));
+
+//     const inserted = await Vendor.insertMany(payload, {
+//       ordered: false,
+//       validateBeforeSave: false, // ⚡ speed boost
+//     });
+
+//     insertedCount += inserted.length;
+
+//     console.log(
+//       `✅ Inserted batch ${i / BATCH_SIZE + 1} → ${inserted.length} vendors`
+//     );
+//   }
+
+//   res.status(201).json({
+//     success: true,
+//     totalReceived: total,
+//     totalInserted: insertedCount,
+//   });
+// });
+
+
+
+
+
+exports.createBulkVendors = asyncHandler(async (req, res) => {
+  console.time("TotalUploadTime");
+
+  const { vendors } = req.body;
+  const clientId = req.user.clientID;
+  const userId = req.user.id;
+
+  // Configuration
+  const BATCH_SIZE = 2500; 
+  const CONCURRENCY_LIMIT = 2; // Process 2 batches (5000 records) at once
+
   if (!Array.isArray(vendors) || vendors.length === 0) {
-    throw new ApiError(400, "Vendors array is required in body");
+    throw new ApiError(400, "Vendors array required");
   }
 
-  // Validate user
-  const userId = req.user.id;
-  const user = await User.findById(userId);
-  console.log(user, "user");
-  if (!user) throw new ApiError(404, "User not found");
-  const clientId = req.user.clientID;
-  if (!clientId) throw new ApiError(400, "Client ID is required from token");
+  const companyId = vendors[0].companyId;
+  const total = vendors.length;
 
-  // Preload company IDs
-  const companies = await Company.find({}, "_id");
-  const validCompanyIds = new Set(companies.map((c) => String(c._id)));
+  // 1. Generate ALL codes upfront
+  const codes = await generateBulkCodes({
+    clientId,
+    companyId,
+    type: "vendor",
+    count: total,
+  });
 
-  // Preload existing codes
-  const existingVendors = await Vendor.find({}, "code");
-  const existingCodes = new Set(existingVendors.map((vendor) => vendor.code));
+  let insertedCount = 0;
+  let failedCount = 0;
+  const auditTimestamp = new Date();
 
-  const results = [];
-  const errors = [];
-  const seenCodes = new Set();
+  // Helper function to process ONE batch
+  const processBatch = async (batchVendors, batchStartIndex) => {
+    const payload = [];
+    
+    // Loop through this specific batch
+    for (let i = 0; i < batchVendors.length; i++) {
+      const v = batchVendors[i];
+      const codeIndex = batchStartIndex + i;
 
-  // Process vendors
-  for (const [index, body] of vendors.entries()) {
-    try {
-      // Required fields
-      if (!body.vendorName || !body.companyID) {
-        throw new Error("vendorName and companyID are required");
+      // Manual Validation (Super Fast)
+      if (!v.emailAddress || !v.name || !v.type) {
+        // Skip invalid records explicitly
+        continue;
       }
-      if (!validCompanyIds.has(String(body.companyID))) {
-        throw new Error("Invalid company ID");
-      }
 
-      // Generate or validate code
-      let code = body.code;
-      if (!code) {
-        code = generateUniqueId(index); // Generate 18-digit code
-      } else {
-        // Check for duplicate code in the input batch
-        if (seenCodes.has(code)) {
-          throw new Error("Duplicate code within batch");
-        }
-        // Check for duplicate code in the database
-        if (existingCodes.has(code)) {
-          throw new Error("Code already exists in database");
-        }
-      }
-      seenCodes.add(code);
-
-      // Generate unique values for optional fields if not provided
-      const emailAddress =
-        body.emailAddress ||
-        `${body.vendorName
-          .replace(/\s+/g, "")
-          .toLowerCase()}${index}@gmail.com`;
-      const phoneNumber =
-        body.phoneNumber ||
-        `+919${(973884720 + index).toString().padStart(9, "0")}`;
-
-      const vendorObj = {
-        _id: new mongoose.Types.ObjectId(), // Generate unique_ id
-        vendorName: body.vendorName,
-        code,
+      payload.push({
+        ...v,
         clientId,
-        emailAddress,
-        phoneNumber,
-        companyID: body.companyID,
-        company: body.companyID,
+        companyId: v.companyId,
+        code: codes[codeIndex], 
         createdBy: userId,
-        ...body, // Spread other fields from input
-        logo: "", // Skipped as per request
-        registrationDocs: [], // Skipped as per request
-        banks: body.banks ? JSON.parse(body.banks) : [], // Parse banks if provided
-        auditLogs: [
-          {
-            action: "create",
-            performedBy: new mongoose.Types.ObjectId(userId),
-            timestamp: new Date(),
-            details: "Bulk vendor import",
-          },
-        ],
-      };
-
-      results.push(vendorObj);
-    } catch (err) {
-      errors.push({
-        index,
-        vendorName: body?.vendorName,
-        code: body?.code,
-        error: err.message,
+        auditLogs: [{
+          action: "create",
+          performedBy: userId,
+          timestamp: auditTimestamp,
+          details: "Bulk vendor import",
+        }],
       });
     }
+
+    if (payload.length === 0) return 0;
+
+    try {
+      const inserted = await Vendor.insertMany(payload, {
+        ordered: false,
+        validateBeforeSave: false, 
+      });
+      return inserted.length;
+    } catch (error) {
+      if (error.insertedDocs) {
+        return error.insertedDocs.length;
+      } else {
+        console.error("❌ Batch Error:", error.message);
+        return 0;
+      }
+    }
+  };
+
+  // 🚀 NATIVE PARALLEL PROCESSING (No Library Needed)
+  // We jump forward by (BATCH_SIZE * CONCURRENCY_LIMIT) every time
+  const step = BATCH_SIZE * CONCURRENCY_LIMIT;
+
+  for (let i = 0; i < total; i += step) {
+    const promises = [];
+
+    // Create the parallel jobs for this iteration
+    for (let j = 0; j < CONCURRENCY_LIMIT; j++) {
+      const start = i + (j * BATCH_SIZE);
+      
+      // Stop if we went past the total
+      if (start < total) {
+        const batchVendors = vendors.slice(start, start + BATCH_SIZE);
+        // Add the job to our array
+        promises.push(processBatch(batchVendors, start));
+      }
+    }
+
+    // Wait for these specific batches to finish before creating more
+    // This prevents memory leaks from creating 10,000 promises at once
+    const results = await Promise.all(promises);
+    
+    // Tally up results
+    const batchSuccess = results.reduce((sum, val) => sum + (val || 0), 0);
+    insertedCount += batchSuccess;
+    
+    console.log(`✅ Progress: Processed ${Math.min(i + step, total)} / ${total}`);
   }
 
-  // Batch insert
-  const inserted = await insertInBatches(results, 1000);
+  console.timeEnd("TotalUploadTime");
 
-  res.status(201).json(
-    new ApiResponse(
-      201,
-      {
-        totalReceived: vendors.length,
-        totalInserted: inserted.length,
-        totalFailed: errors.length,
-        insertedIds: inserted.map((v) => v._id),
-        errors,
-      },
-      "Bulk vendor import completed successfully"
-    )
-  );
+  res.status(201).json({
+    success: true,
+    totalReceived: total,
+    totalInserted: insertedCount,
+    failedOrDuplicate: total - insertedCount,
+  });
 });
+
+
+exports.createBulkVendors = asyncHandler(async (req, res) => {
+  console.time("TotalUploadTime");
+
+  const { vendors } = req.body;
+  const clientId = req.user.clientID;
+  const userId = req.user.id;
+
+  // Configuration
+  const BATCH_SIZE = 2500; 
+  const CONCURRENCY_LIMIT = 2; // Process 2 batches (5000 records) at once
+
+  if (!Array.isArray(vendors) || vendors.length === 0) {
+    throw new ApiError(400, "Vendors array required");
+  }
+
+  const companyId = vendors[0].companyId;
+  const total = vendors.length;
+
+  // 1. Generate ALL codes upfront
+  const codes = await generateBulkCodes({
+    clientId,
+    companyId,
+    type: "vendor",
+    count: total,
+  });
+
+  let insertedCount = 0;
+  let failedCount = 0;
+  const auditTimestamp = new Date();
+
+  // Helper function to process ONE batch
+  const processBatch = async (batchVendors, batchStartIndex) => {
+    const payload = [];
+    
+    // Loop through this specific batch
+    for (let i = 0; i < batchVendors.length; i++) {
+      const v = batchVendors[i];
+      const codeIndex = batchStartIndex + i;
+
+      // Manual Validation (Super Fast)
+      if (!v.emailAddress || !v.name || !v.type) {
+        // Skip invalid records explicitly
+        continue;
+      }
+
+      payload.push({
+        ...v,
+        clientId,
+        companyId: v.companyId,
+        code: codes[codeIndex], 
+        createdBy: userId,
+        auditLogs: [{
+          action: "create",
+          performedBy: userId,
+          timestamp: auditTimestamp,
+          details: "Bulk vendor import",
+        }],
+      });
+    }
+
+    if (payload.length === 0) return 0;
+
+    try {
+      const inserted = await Vendor.insertMany(payload, {
+        ordered: false,
+        validateBeforeSave: false, 
+      });
+      return inserted.length;
+    } catch (error) {
+      if (error.insertedDocs) {
+        return error.insertedDocs.length;
+      } else {
+        console.error("❌ Batch Error:", error.message);
+        return 0;
+      }
+    }
+  };
+
+  // 🚀 NATIVE PARALLEL PROCESSING (No Library Needed)
+  // We jump forward by (BATCH_SIZE * CONCURRENCY_LIMIT) every time
+  const step = BATCH_SIZE * CONCURRENCY_LIMIT;
+
+  for (let i = 0; i < total; i += step) {
+    const promises = [];
+
+    // Create the parallel jobs for this iteration
+    for (let j = 0; j < CONCURRENCY_LIMIT; j++) {
+      const start = i + (j * BATCH_SIZE);
+      
+      // Stop if we went past the total
+      if (start < total) {
+        const batchVendors = vendors.slice(start, start + BATCH_SIZE);
+        // Add the job to our array
+        promises.push(processBatch(batchVendors, start));
+      }
+    }
+
+    // Wait for these specific batches to finish before creating more
+    // This prevents memory leaks from creating 10,000 promises at once
+    const results = await Promise.all(promises);
+    
+    // Tally up results
+    const batchSuccess = results.reduce((sum, val) => sum + (val || 0), 0);
+    insertedCount += batchSuccess;
+    
+    console.log(`✅ Progress: Processed ${Math.min(i + step, total)} / ${total}`);
+  }
+
+  console.timeEnd("TotalUploadTime");
+
+  res.status(201).json({
+    success: true,
+    totalReceived: total,
+    totalInserted: insertedCount,
+    failedOrDuplicate: total - insertedCount,
+  });
+});
+
+
 // exports.updateVendor = asyncHandler(async (req, res) => {
 //   const { id } = req.params;
 
@@ -600,7 +913,7 @@ exports.updateVendor = asyncHandler(async (req, res) => {
     action: "update",
     performedBy: new mongoose.Types.ObjectId(req.user.id),
     timestamp: new Date(),
-    details: "Vendor updated",
+    details: `${vendor.name} updated successfully`,
     changes,
   });
 
@@ -618,7 +931,7 @@ exports.updateVendor = asyncHandler(async (req, res) => {
     performedBy: req.user.id,
     referenceId: vendor._id,
     clientId: req.user.clientID,
-    details: "vendor updated successfully",
+    details: `${vendor.name} updated successfully`,
     changes,
     ipAddress: finalIp,
   });
@@ -631,8 +944,8 @@ exports.updateVendor = asyncHandler(async (req, res) => {
 
 // 🟢 Get All Vendors (for a company)
 exports.getVendorsByCompany = asyncHandler(async (req, res) => {
-  const clientID = req.user.clientID;
-  if (!clientID) throw new ApiError(400, "Client ID is required");
+  const clientId = req.user.clientID;
+  if (!clientId) throw new ApiError(400, "Client ID is required");
 
   const {
     search = "",
@@ -650,7 +963,7 @@ exports.getVendorsByCompany = asyncHandler(async (req, res) => {
 
   // Filter
   const filter = {
-    clientId: clientID,
+    clientId: clientId,
     company: companyId,
     status: { $ne: "delete" },
   };
@@ -658,7 +971,7 @@ exports.getVendorsByCompany = asyncHandler(async (req, res) => {
 
   if (search && search.trim() !== "") {
     filter.$or = [
-      { vendorName: { $regex: search, $options: "i" } },
+      { name: { $regex: search, $options: "i" } },
       { emailAddress: { $regex: search, $options: "i" } },
       { phoneNumber: { $regex: search, $options: "i" } },
     ];
@@ -666,6 +979,7 @@ exports.getVendorsByCompany = asyncHandler(async (req, res) => {
   // Sorting
   const sortDirection = sortOrder === "asc" ? 1 : -1;
   const sortOptions = { [sortBy]: sortDirection };
+
 
   // Fetch data & total count
   const [vendors, total] = await Promise.all([
@@ -679,27 +993,27 @@ exports.getVendorsByCompany = asyncHandler(async (req, res) => {
       vatRegistered
     ] = await Promise.all([
       Vendor.countDocuments({
-        clientId: clientID,
+        clientId: clientId,
         company: companyId,
         status: { $ne: "delete" },
         gstNumber: { $exists: true, $ne: "" }
       }),
   
       Vendor.countDocuments({
-        clientId: clientID,
+        clientId: clientId,
         company: companyId,
         status: { $ne: "delete" },
         msmeRegistration: { $exists: true, $ne: "" }
       }),
   
       Vendor.countDocuments({
-        clientId: clientID,
+        clientId: clientId,
         company: companyId,
         status: "active"
       }),
   
       Vendor.countDocuments({
-        clientId: clientID,
+        clientId: clientId,
         company: companyId,
         status: { $ne: "delete" },
         vatNumber: { $exists: true, $ne: "" }
@@ -731,8 +1045,8 @@ console.log(vendors)
 });
 
 exports.getVendorsByClient = asyncHandler(async (req, res) => {
-  const clientID = req.user.clientID;
-  if (!clientID) throw new ApiError(400, "Client ID is required");
+  const clientId = req.user.clientID;
+  if (!clientId) throw new ApiError(400, "Client ID is required");
 
   const {
     search = "",
@@ -824,7 +1138,7 @@ exports.deleteVendor = asyncHandler(async (req, res) => {
     action: "delete",
     performedBy: new mongoose.Types.ObjectId(req.user.id),
     timestamp: new Date(),
-    details: "Vendor marked as deleted",
+    details: `${vendor.name} marked as deleted`,
   });
 
   await vendor.save();
@@ -841,7 +1155,7 @@ exports.deleteVendor = asyncHandler(async (req, res) => {
     performedBy: req.user.id,
     referenceId: vendor._id,
     clientId: req.user.clientID,
-    details: "vendor marked as deleted",
+    details: `${vendor.name} marked as deleted`,
     ipAddress,
   });
 

@@ -24,12 +24,17 @@ const CustomerSchema = new mongoose.Schema(
     company: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Company",
-      required: true,
+    
+    },
+    companyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Company",
+      
     },
     clientId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+     
     },
 
     customerType: { type: String, required: true, default: "company" },
@@ -45,7 +50,11 @@ const CustomerSchema = new mongoose.Schema(
     salesPerson: { type: String },
     customerStatus: { type: String },
     companySize: { type: String },
-    
+    type:{ type: String },
+    name:{ type: String },
+    group:{ type: String },
+    category:{ type: String },
+
     // Enum is strictly lowercase
     status: {
       type: String,
@@ -133,40 +142,34 @@ const CustomerSchema = new mongoose.Schema(
 // --- Code Generation Hook ---
 CustomerSchema.pre("validate", async function (next) {
   try {
-    // If code is provided in JSON, skip generation
     if (this.code) return next();
 
-    const Customer = mongoose.models.Customer || mongoose.model("Customer");
+    const Counter = mongoose.model("Counter");
 
-    const lastCustomer = await Customer.findOne({
-      clientId: this.clientId,
-      company: this.company,
-      status: { $ne: "delete" },
-    })
-      .sort({ createdAt: -1 })
-      .select("code");
-
-    let newCode = "000000000001";
-
-    if (lastCustomer && lastCustomer.code) {
-      const lastNum = parseInt(lastCustomer.code, 10);
-      if (!isNaN(lastNum)) {
-        const nextNum = (lastNum + 1).toString().padStart(12, "0");
-        newCode = nextNum;
+    const counter = await Counter.findOneAndUpdate(
+      {
+        clientId: this.clientId,
+        companyId: this.companyId,
+        type: "customer",
+      },
+      { $inc: { seq: 1 } },
+      {
+        new: true,
+        upsert: true,
       }
-    }
+    );
 
-    this.code = newCode;
+    this.code = counter.seq.toString().padStart(6, "0");
+
     next();
-  } catch (err) {
-    console.error("Error generating Customer code:", err);
-    next(err);
+  } catch (error) {
+    next(error);
   }
 });
 
 // --- Indexes ---
 // Unique Code per Company
-CustomerSchema.index({ company: 1, code: 1 }, { unique: true });
+CustomerSchema.index({ company: 1, code: 1 });
 // Search Indexes
 CustomerSchema.index({ company: 1, clientId: 1, status: 1, createdAt: -1 });
 CustomerSchema.index({

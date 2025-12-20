@@ -19,7 +19,7 @@ router.post("/",  upload.fields([
     { name: "registrationDocs", maxCount: 5 },
   ]), createVendor);
 
-  router.post("/", createBulkVendors);
+  router.post("/bulk-create",upload.none(), createBulkVendors);
 
 // Update vendor
 router.put("/:id",upload.fields([
@@ -28,12 +28,12 @@ router.put("/:id",upload.fields([
   ]),  updateVendor);
 
 // Get all vendors by company
-// router.get("/", getVendorsByClient);
-// router.get("/", getVendorsByCompany);
+router.get("/", getVendorsByClient);
+router.get("/", getVendorsByCompany);
 router.get("/:companyId", getVendorsByCompany);
 
-// // Get all vendors by company
-// router.get("/", getVendorsByCompany);
+// Get all vendors by company
+router.get("/", getVendorsByCompany);
 
 // Get vendor by id
 router.get("/:id", getVendorById);

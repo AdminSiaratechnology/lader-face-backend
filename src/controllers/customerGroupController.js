@@ -2,6 +2,7 @@ const CustomerGroup = require("../models/CustomerGroup");
 const asyncHandler = require("../utils/asyncHandler");
 const ApiResponse = require("../utils/apiResponse");
 const ApiError = require("../utils/apiError");
+const Counter = require("../models/Counter");
 
 const escapeRegex = (text) => {
   return text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
@@ -31,6 +32,59 @@ exports.createGroup = asyncHandler(async (req, res) => {
 
   res.status(201).json(new ApiResponse(201, group, "Customer group created"));
 });
+
+exports.bulkCreateCustomerGroups = async (req, res) => {
+  try {
+    const { groups, companyId } = req.body;
+    const clientId = req.user.clientID;
+
+    if (!Array.isArray(groups) || groups.length === 0) {
+      return res.status(400).json({ message: "Groups array required" });
+    }
+
+    const total = groups.length;
+
+    // 🚀 STEP 1: Increment counter ONCE
+    const counter = await Counter.findOneAndUpdate(
+      {
+        clientId,
+        companyId,
+        type: "customerGroup",
+      },
+      { $inc: { seq: total } },
+      { new: true, upsert: true }
+    );
+
+    const startSeq = counter.seq - total + 1;
+
+    // 🚀 STEP 2: Generate payload with groupCode in memory
+    const payload = groups.map((g, index) => ({
+      clientId,
+      companyId,
+      groupName: g.groupName,
+      parentGroup: g.parentGroup || null,
+      groupCode: (startSeq + index).toString().padStart(12, "0"),
+    }));
+
+    // 🚀 STEP 3: Bulk insert (FAST)
+    const result = await CustomerGroup.insertMany(payload, {
+      ordered: true,
+    });
+
+    res.status(201).json({
+      success: true,
+      count: result.length,
+      message: "Customer groups created successfully",
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+};
+
 
 exports.updateGroup = asyncHandler(async (req, res) => {
   const { groupName, status, parentGroup } = req.body;

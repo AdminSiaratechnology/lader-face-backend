@@ -86,7 +86,7 @@ exports.createGodown = asyncHandler(async (req, res) => {
     capacity,
     city,
 
-    company,
+    companyId,
     contactNumber,
     country,
     isPrimary,
@@ -96,27 +96,28 @@ exports.createGodown = asyncHandler(async (req, res) => {
     state,
     status,
   } = req.body;
-  let code = await generate6DigitUniqueId(Godown, "code");
+  // let code = await generate6DigitUniqueId(Godown, "code");
 
   // ✅ Required fields check
-  if (!company || !name) {
+  if (!companyId || !name) {
     throw new ApiError(400, "Company, Code and Name are required");
   }
 
   // ✅ Logged-in user check
-  const user = await User.findById(req.user.id).lean();
-  if (!user) throw new ApiError(404, "User not found");
-
+  // const user = await User.findById(req.user.id).lean();÷
+  
   // ✅ Extract client from user
-  const client = user.clientID;
+  const clientId = req.user.clientID;
+  if (!clientId) throw new ApiError(404, "User not found");
 
   // ✅ Create godown
   const godown = await Godown.create({
     address,
     capacity,
     city,
-    code,
-    company,
+    // code,
+    company: companyId,
+    companyId,
     contactNumber,
     country,
     isPrimary,
@@ -125,7 +126,8 @@ exports.createGodown = asyncHandler(async (req, res) => {
     parent,
     state,
     status,
-    client,
+    client: clientId,
+    clientId,
     createdBy: req?.user?.id,
     auditLogs: [
       {
@@ -505,6 +507,7 @@ exports.getGodownsByCompany = asyncHandler(async (req, res) => {
     const perPage = parseInt(limit, 10);
     const currentPage = parseInt(page, 10);
     const skip = (currentPage - 1) * perPage;
+
 
     // sorting logic
     let sort = {};

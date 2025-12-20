@@ -27,6 +27,7 @@ const customerGroupRoute=require("./routes/customerGroupRoutes")
 const couponRoutes = require("./routes/Coupon");
 const BillTemplateRoute = require("./routes/billTemplateRoutes");
 const posRoutes  = require('./routes/posRoutes')
+const BulkUploadRoute = require('./routes/bulkUploadRoute');
 
 const app = express();
 app.use(cors());
@@ -76,6 +77,7 @@ app.use("/api/contactUs",contactRoute)
 app.use("/api/project", projectRoute);
 app.use(authMiddleware);
 app.use('/api/company', companyRoutes);
+app.use('/api/bulk', BulkUploadRoute);
 app.use('/api/salesman', salesmanRoutes);
 app.use("/api/godowns", godownRoutes);
 app.use("/api/stock-categories", stockCategoryRoutes);
@@ -96,6 +98,7 @@ app.use("/api/order",orderRoute)
 app.use("/api/cart",cartRoute)
 app.use("/api/payment",paymentRoute)
 app.use("/api/bill-templates",BillTemplateRoute)
+
 // Not found middleware (for invalid routes)
 app.use(notFound);
 
