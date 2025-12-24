@@ -2,6 +2,7 @@
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
 const auditLogSchema = require("../middlewares/auditLogSchema");
+const Counter=require("../models/Counter")
 
 // TaxConfiguration sub-schema
 const TaxConfigurationSchema = new Schema(
@@ -54,7 +55,7 @@ const ProductSchema = new Schema(
     clientId: { type: Schema.Types.ObjectId, ref: "User", required: true },
     companyId: { type: Schema.Types.ObjectId, ref: "Company", required: true },
 
-    code: { type: String, required: true, unique: true },
+    code: { type: String, required: true, },
     name: { type: String, required: true },
     partNo: { type: String },
     status: {
@@ -75,6 +76,26 @@ const ProductSchema = new Schema(
     defaultSupplier: { type: String },
     minimumRate: { type: Number },
     maximumRate: { type: Number },
+   mfgDate: {
+      type: Date, 
+    },
+    
+    expiryDate: {
+      type: Date, 
+      validate: {
+        validator: function (value) {
+          // 1. If user didn't provide an Expiry Date, validation passes automatically.
+          if (!value) return true;
+
+          // 2. If user provided Expiry, but NO Mfg Date, we can't compare, so we assume it's valid.
+          if (!this.mfgDate) return true;
+
+          // 3. If BOTH exist, check if Expiry >= Mfg
+          return value >= this.mfgDate;
+        },
+        message: "Expiry Date cannot be before Manufacturing Date.",
+      },
+    },
 
     taxConfigurationHistory: [TaxConfigurationHistorySchema],
     priceIncludesTax: { type: Boolean, default: false },
@@ -95,6 +116,32 @@ const ProductSchema = new Schema(
   },
   { timestamps: true }
 );
+ProductSchema.pre("validate", async function (next) {
+  try {
+    if (this.code) return next();
+
+    
+
+    const counter = await Counter.findOneAndUpdate(
+      {
+        clientId: this.clientId,
+        companyId: this.companyId,
+        type: "Product",
+      },
+      { $inc: { seq: 1 } },
+      {
+        new: true,
+        upsert: true,
+      }
+    );
+
+    this.code = counter.seq.toString().padStart(6, "0");
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 ProductSchema.index({
   clientId: 1,
   companyId: 1,
@@ -108,7 +155,7 @@ ProductSchema.index({
   partNo: "text",
 });
 
-ProductSchema.index({ clientId: 1, companyId: 1, code: 1 }, { unique: true });
+ProductSchema.index({ clientId: 1, companyId: 1, code: 1 });
 
 ProductSchema.index({ stockGroup: 1 });
 ProductSchema.index({ stockCategory: 1 });
