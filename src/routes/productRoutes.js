@@ -25,6 +25,9 @@ router.delete('/:id', productController.deleteProduct);      // delete
 // router.get('/:id', productController.getProductById);        // get by id
 // router.get('/', productController.listProducts);             // list / filter
 router.get('/:companyId', productController.listProductsByCompanyId);             // list / filter
+router.get("/:companyId/:groupId",productController.listProductsByCompanyId)
+router.get('/stock-group/:companyId/:stockGroupId', productController.getProductsByStockGroupId); // get products by stock group id
+
 router.post(
   "/import-csv",
   csvUpload.single("file"),
