@@ -230,6 +230,7 @@ exports.getPaymentReport = async (req, res) => {
       status,
       mode,
       userId,
+      customerId,          // ✅ ADDED (ONLY CHANGE)
       startDate,
       endDate,
     } = req.query;
@@ -243,9 +244,24 @@ exports.getPaymentReport = async (req, res) => {
     }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
-    const query = { companyId: new mongoose.Types.ObjectId(companyId) }; // Fixed: use 'new'
 
-    // Text search
+    // =========================
+    // BASE QUERY
+    // =========================
+    const query = {
+      companyId: new mongoose.Types.ObjectId(companyId),
+    };
+
+    // =========================
+    // ✅ CUSTOMER FILTER (FIX)
+    // =========================
+    if (customerId && mongoose.Types.ObjectId.isValid(customerId)) {
+      query.customerId = new mongoose.Types.ObjectId(customerId);
+    }
+
+    // =========================
+    // SEARCH
+    // =========================
     if (search) {
       query.$or = [
         { remarks: { $regex: search, $options: "i" } },
@@ -253,9 +269,12 @@ exports.getPaymentReport = async (req, res) => {
       ];
     }
 
-    // Filters
+    // =========================
+    // OTHER FILTERS
+    // =========================
     if (status && status !== "all") query.status = status;
     if (mode && mode !== "all") query.mode = mode;
+
     if (userId && userId !== "all") {
       if (!mongoose.Types.ObjectId.isValid(userId)) {
         return res
@@ -265,7 +284,9 @@ exports.getPaymentReport = async (req, res) => {
       query.userId = new mongoose.Types.ObjectId(userId);
     }
 
-    // Date range
+    // =========================
+    // DATE RANGE
+    // =========================
     if (startDate || endDate) {
       query.createdAt = {};
       if (startDate) query.createdAt.$gte = new Date(startDate);
@@ -276,9 +297,12 @@ exports.getPaymentReport = async (req, res) => {
       }
     }
 
-    // Aggregation pipeline
+    // =========================
+    // AGGREGATION PIPELINE
+    // =========================
     const pipeline = [
       { $match: query },
+
       {
         $lookup: {
           from: "customers",
@@ -288,6 +312,7 @@ exports.getPaymentReport = async (req, res) => {
         },
       },
       { $unwind: { path: "$customer", preserveNullAndEmptyArrays: true } },
+
       {
         $lookup: {
           from: "users",
@@ -297,6 +322,7 @@ exports.getPaymentReport = async (req, res) => {
         },
       },
       { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
+
       {
         $addFields: {
           customerName: {
@@ -305,6 +331,7 @@ exports.getPaymentReport = async (req, res) => {
           userName: { $ifNull: ["$user.name", "System"] },
         },
       },
+
       {
         $project: {
           _id: 1,
@@ -321,13 +348,17 @@ exports.getPaymentReport = async (req, res) => {
       },
     ];
 
-    // Total count
+    // =========================
+    // COUNT
+    // =========================
     const countPipeline = [...pipeline, { $count: "total" }];
     const countResult = await Payment.aggregate(countPipeline);
     const total = countResult[0]?.total || 0;
     const totalPages = Math.ceil(total / parseInt(limit));
 
-    // Paginated data
+    // =========================
+    // DATA
+    // =========================
     const dataPipeline = [
       ...pipeline,
       { $sort: { createdAt: -1 } },
@@ -337,7 +368,9 @@ exports.getPaymentReport = async (req, res) => {
 
     const payments = await Payment.aggregate(dataPipeline);
 
-    // Stats
+    // =========================
+    // STATS
+    // =========================
     const statsPipeline = [
       { $match: query },
       {
@@ -389,6 +422,7 @@ exports.getPaymentReport = async (req, res) => {
     });
   }
 };
+
 /**
  * Assumes 'Order' and 'Payment' Mongoose models are imported and available.
  */
