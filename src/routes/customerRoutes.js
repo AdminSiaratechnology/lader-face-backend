@@ -6,12 +6,13 @@ const {
   getCustomerById,
   getCustomersByClient,
   deleteCustomer,
-  createBulkCustomers
-  
+  createBulkCustomers,
+  uploadCustomerCSV
 } = require("../controllers/customerController");
 const upload = require("../config/s3");
-
+const csvUpload = require("../middlewares/csvUpload")
 const router = express.Router();
+const authMiddleware = require('../middlewares/authMiddleware');
 
 // Create customer
 router.post("/",  upload.fields([
@@ -36,5 +37,9 @@ router.get("/:companyId", getCustomersByCompany);
 // Get customer by id
 router.get("/:id", getCustomerById);
 router.delete("/:id",deleteCustomer)
-
+router.post(
+  "/upload-csv",authMiddleware,
+  csvUpload.single("file"),
+  uploadCustomerCSV
+);
 module.exports = router;

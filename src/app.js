@@ -72,6 +72,8 @@ app.get("/",(req,res)=>{
 //     res.send("API is working")
 // })
 // Routes
+
+
 app.use("/api/pos",posRoutes)
 app.use("/api/shift" ,shiftRoutes )
 app.use("/api/coupons", couponRoutes);  //coupnonRoutes
@@ -79,6 +81,7 @@ app.use('/api/auth', authRoutes);
 app.use("/api/contactUs",contactRoute)
 app.use("/api/project", projectRoute);
 app.use(authMiddleware);
+app.use("/api", require("./routes/priceLevelRoutes"));
 app.use('/api/company', companyRoutes);
 app.use('/api/bulk', BulkUploadRoute);
 app.use('/api/salesman', salesmanRoutes);

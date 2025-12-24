@@ -688,7 +688,6 @@ exports.requestLimit = asyncHandler(async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Logged-in user
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({
@@ -697,7 +696,6 @@ exports.requestLimit = asyncHandler(async (req, res) => {
       });
     }
 
-    // Always request to parent
     const requestedToId = user.parent;
     if (!requestedToId) {
       return res.status(400).json({
@@ -715,10 +713,8 @@ exports.requestLimit = asyncHandler(async (req, res) => {
       });
     }
 
-    // Uploaded documents from S3
     const supportingDocuments = req.files?.map((file) => file.location) || [];
 
-    // Parent user (email receiver)
     const requestedToUser = await User.findById(requestedToId);
     if (!requestedToUser) {
       return res.status(404).json({
@@ -729,7 +725,6 @@ exports.requestLimit = asyncHandler(async (req, res) => {
 
     const toEmail = requestedToUser.email;
 
-    // 1️⃣ Save Request on User
     user.requestedLimit = requestedLimit;
 
     user.limitHistory.push({
@@ -740,23 +735,41 @@ exports.requestLimit = asyncHandler(async (req, res) => {
       action: "requested",
       reason: reason || "",
       remarks: "",
-      documents: supportingDocuments, // ⬅️ STORE DOCUMENTS HERE
+      documents: supportingDocuments,
       timestamp: new Date(),
     });
 
     await user.save();
 
-    // 2️⃣ Prepare Email
     const subject = `New Limit Request from ${user.name}`;
     const html = `
       <h3>New Limit Request</h3>
-      <p><strong>User ID:</strong> ${userId}</p>
       <p><strong>User Name:</strong> ${user.name}</p>
       <p><strong>Requested Limit:</strong> ${requestedLimit}</p>
+      <p><strong>Previous Limit:</strong> ${user.limit}</p>
       <p><strong>Reason:</strong> ${reason}</p>
       <p><strong>Role:</strong> ${role}</p>
       <p><strong>Requested To:</strong> ${requestedToUser.name}</p>
       <hr/>
+      <p>Submitted At: ${new Date().toLocaleString()}</p>
+    `;
+    const requesterSubject = "Your Limit Request Has Been Submitted";
+
+    const requesterHtml = `
+      <h3>Limit Request Submitted Successfully</h3>
+      <p>Hello <strong>${user.name}</strong>,</p>
+
+      <p>Your request for increasing limit has been submitted successfully.</p>
+
+      <hr/>
+      <p><strong>Requested Limit:</strong> ${requestedLimit}</p>
+      <p><strong>Current Limit:</strong> ${user.limit}</p>
+      <p><strong>Reason:</strong> ${reason || "N/A"}</p>
+      <p><strong>Sent To:</strong> ${requestedToUser.name}</p>
+
+      <br/>
+      <p>You will be notified once your request is reviewed.</p>
+
       <p>Submitted At: ${new Date().toLocaleString()}</p>
     `;
 
@@ -769,6 +782,12 @@ exports.requestLimit = asyncHandler(async (req, res) => {
         filename: file.originalname,
         path: file.location,
       })),
+    });
+    await sendEmail({
+      to: user.email,
+      from: process.env.ZOHO_USER,
+      subject: requesterSubject,
+      html: requesterHtml,
     });
 
     // if (!result.success) {
@@ -849,7 +868,34 @@ exports.approveLimitRequest = asyncHandler(async (req, res) => {
         <p><strong>Comment:</strong> ${comment || "None"}</p>
       `,
     });
+    if (user.parent && (user.role === "SubPartner" || user.role === "Client")) {
+      const parent = await User.findById(user.parent._id);
+      if (parent) {
+        const parentPreviousLimit = parent.limit || 0;
 
+        if (approvedLimit > parentPreviousLimit) {
+          return res.status(400).json({
+            success: false,
+            message: `Parent's available limit (${parentPreviousLimit}) is less than approved limit (${approvedLimit}).`,
+          });
+        }
+
+        parent.limit = parentPreviousLimit - approvedLimit;
+
+        // Record deduction in parent's history
+        parent.limitHistory.push({
+          previousLimit: parentPreviousLimit,
+          newLimit: parent.limit,
+          action: "deducted",
+          deductedLimit: approvedLimit,
+          remarks: `Approved limit request for ${user.name} (${approvedLimit})`,
+          timestamp: new Date(),
+          performedBy: approverId,
+        });
+
+        await parent.save();
+      }
+    }
     return res.status(200).json({
       success: true,
       message: "Limit approved successfully.",
@@ -1167,16 +1213,15 @@ exports.getDashboardStatsSuperAdmin = async (req, res) => {
 
 exports.getUsersByLocation = async (req, res) => {
   try {
-    const { state, city, area, region, status = "active" } = req.query;
-
+    const { country, state, city, area, region, status = "active" } = req.query;
     const match = { status };
 
-    if (state) match.state = state;
-    if (city) match.city = city;
-    if (area) match.area = area;
-    if (region) match.region = region;
+    if (country?.trim()) match.country = country;
+    if (state?.trim()) match.state = state;
+    if (city?.trim()) match.city = city;
+    if (area?.trim()) match.area = area;
+    if (region?.trim()) match.region = region;
 
-    // 🔐 Role-based visibility
     let allowedRoles = [];
 
     if (req.user.role === "SuperAdmin") {
@@ -1187,6 +1232,7 @@ exports.getUsersByLocation = async (req, res) => {
       allowedRoles = ["Client", "SubPartner"];
       match.parent = new mongoose.Types.ObjectId(req.user.id);
     }
+
     if (req.user.role === "SubPartner") {
       allowedRoles = ["Client"];
       match.parent = new mongoose.Types.ObjectId(req.user.id);
@@ -1200,6 +1246,7 @@ exports.getUsersByLocation = async (req, res) => {
         $group: {
           _id: {
             role: "$role",
+            country: "$country",
             state: "$state",
             city: "$city",
             area: "$area",
@@ -1210,6 +1257,7 @@ exports.getUsersByLocation = async (req, res) => {
       {
         $sort: {
           "_id.role": 1,
+          "_id.country": 1,
           "_id.state": 1,
           "_id.city": 1,
           "_id.area": 1,
@@ -1222,7 +1270,7 @@ exports.getUsersByLocation = async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error(error);
+    console.error("getUsersByLocation error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to fetch users by location",
@@ -1676,16 +1724,30 @@ exports.getDemoAnalytics = async (req, res) => {
           ...baseQuery,
           role: "Client",
           isDemo: true,
-          demoExpiry: { $gte: timelineFrom, $lt: now },
           status: { $nin: ["delete"] },
+          demoExpiry: {
+            $lt: now,
+            ...(fromDate && { $gte: new Date(fromDate) }),
+            ...(toDate && { $lte: new Date(toDate) }),
+          },
         },
       },
       {
         $project: {
-          date: { $dateToString: { format: "%Y-%m-%d", date: "$demoExpiry" } },
+          date: {
+            $dateToString: {
+              format: "%Y-%m-%d",
+              date: "$demoExpiry",
+            },
+          },
         },
       },
-      { $group: { _id: "$date", count: { $sum: 1 } } },
+      {
+        $group: {
+          _id: "$date",
+          count: { $sum: 1 },
+        },
+      },
       { $sort: { _id: 1 } },
     ]);
 
@@ -1887,25 +1949,30 @@ exports.getDemoStatsSummary = async (req, res) => {
   }
 };
 
-exports.getClientUsers = async (req,res) => {
+exports.getClientUsers = async (req, res) => {
   try {
     const { clientId } = req.params;
-    if(!clientId) {
-      return res.status(400).json({ success: false, message: "Client ID not found for the user" });
+    if (!clientId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Client ID not found for the user" });
     }
-    const users = await User.find({ clientID: clientId, status: { $ne: "delete" } }).select("name email role status createdAt lastLogin");
+    const users = await User.find({
+      clientID: clientId,
+      status: { $ne: "delete" },
+    }).select("name email role status createdAt lastLogin");
     return res.status(200).json({
       success: true,
       count: users.length,
       users,
     });
-  }catch{
+  } catch {
     console.error("getClientUsers error:", error);
     return res
       .status(500)
-      .json({ success: false, message: "Client users fetch failed" });  
+      .json({ success: false, message: "Client users fetch failed" });
   }
-}
+};
 
 exports.exportClientsUsers = async (req, res) => {
   try {
@@ -1943,9 +2010,7 @@ exports.exportClientsUsers = async (req, res) => {
       ];
     }
 
-    const clients = await User.find(matchStage)
-      .sort({ createdAt: -1 })
-      .lean();
+    const clients = await User.find(matchStage).sort({ createdAt: -1 }).lean();
 
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Clients & Users");
@@ -1977,10 +2042,7 @@ exports.exportClientsUsers = async (req, res) => {
       sheet.addRow(["Client Code", client.code || "-"]);
       sheet.addRow(["Email", client.email]);
       sheet.addRow(["Status", client.status]);
-      sheet.addRow([
-        "Demo Account",
-        client.isDemo ? "Yes" : "No",
-      ]);
+      sheet.addRow(["Demo Account", client.isDemo ? "Yes" : "No"]);
       sheet.addRow([
         "Demo Period",
         client.demoPeriod ? `${client.demoPeriod} Days` : "-",
@@ -1996,9 +2058,7 @@ exports.exportClientsUsers = async (req, res) => {
         .select("name email role status lastLogin")
         .lean();
 
-      const usersHeader = sheet.addRow([
-        `USERS (Total: ${users.length})`,
-      ]);
+      const usersHeader = sheet.addRow([`USERS (Total: ${users.length})`]);
       usersHeader.font = { bold: true };
 
       const tableHeader = sheet.addRow([
@@ -2016,9 +2076,7 @@ exports.exportClientsUsers = async (req, res) => {
           u.email,
           u.role,
           u.status,
-          u.lastLogin
-            ? new Date(u.lastLogin).toLocaleString()
-            : "Never",
+          u.lastLogin ? new Date(u.lastLogin).toLocaleString() : "Never",
         ]);
       });
 
@@ -2030,6 +2088,11 @@ exports.exportClientsUsers = async (req, res) => {
 
       clientIndex++;
     }
+    sheet.getColumn(1).width = 30;
+    sheet.getColumn(2).width = 35;
+    sheet.getColumn(3).width = 15;
+    sheet.getColumn(4).width = 15;
+    sheet.getColumn(5).width = 25;
 
     /* ---------------- SEND FILE (IMPORTANT PART) ---------------- */
     res.setHeader(
@@ -2043,7 +2106,6 @@ exports.exportClientsUsers = async (req, res) => {
 
     // ✅ DO NOT call res.end()
     await workbook.xlsx.write(res);
-
   } catch (error) {
     console.error("Export error:", error);
 
