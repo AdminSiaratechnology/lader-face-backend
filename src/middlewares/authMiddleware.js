@@ -24,7 +24,18 @@ const authMiddleware = async (req, res, next) => {
         });
       }
     }
-
+    if (user.status !== "active"){
+      return res.status(401).json({
+        message: `Logged out beacuse you have been ${user.status} By Administartor `
+      })
+    }
+    const client = await User.findById(user.clientID)
+    console.log(client)
+    if (client !== null && client?.status !== "active"){
+      return res.status(401).json({
+        message: `Logged out beacuse your client has been ${user.status} By Administartor `
+      })
+    }
     req.user = decoded;
     next();
   } catch (err) {

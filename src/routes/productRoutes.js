@@ -22,5 +22,4 @@ router.delete('/:id', productController.deleteProduct);      // delete
 // router.get('/:id', productController.getProductById);        // get by id
 // router.get('/', productController.listProducts);             // list / filter
 router.get('/:companyId', productController.listProductsByCompanyId);             // list / filter
-
 module.exports = router;

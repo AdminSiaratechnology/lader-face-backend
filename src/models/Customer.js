@@ -24,25 +24,24 @@ const CustomerSchema = new mongoose.Schema(
     company: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Company",
-    
+      required: true,
     },
     companyId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Company",
-      
+      required: true,
     },
     clientId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-     
     },
 
     customerType: { type: String, required: true, default: "company" },
-    
+
     // Code is NOT unique globally, only per company (see indexes at bottom)
     code: { type: String },
 
-    customerName: { type: String, required: true },
+    customerName: { type: String },
     shortName: { type: String },
     customerGroup: { type: String },
     industryType: { type: String },
@@ -50,10 +49,10 @@ const CustomerSchema = new mongoose.Schema(
     salesPerson: { type: String },
     customerStatus: { type: String },
     companySize: { type: String },
-    type:{ type: String },
-    name:{ type: String },
-    group:{ type: String },
-    category:{ type: String },
+    type: { type: String },
+    name: { type: String },
+    group: { type: String },
+    category: { type: String },
 
     // Enum is strictly lowercase
     status: {

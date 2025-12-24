@@ -9,7 +9,8 @@ const User = require("../models/User");
 const { createAuditLog } = require("../utils/createAuditLog");
 const processRegistrationDocs = require("../utils/processRegistrationDocs");
 const { generate6DigitUniqueId } = require("../utils/generate6DigitUniqueId");
-
+const csv = require("csvtojson");
+const CustomerGroup = require("../models/CustomerGroup");
 //  safe JSON parse_
 const safeParse = (value, fallback) => {
   try {
@@ -45,7 +46,7 @@ exports.createCustomer = asyncHandler(async (req, res) => {
       registrationDocTypes: rawDocTypes,
       ...rest
     } = req.body;
-    console.log(req.body,"resssss")
+    console.log(req.body, "resssss");
 
     const adminId = req?.user?.id;
     const clientId = req.user.clientID;
@@ -57,15 +58,11 @@ exports.createCustomer = asyncHandler(async (req, res) => {
       throw new ApiError(400, "Client ID is required from token");
     }
 
- 
-
     // Parallel file processing
     const [logoUrl, processedDocs] = await Promise.all([
       req.files?.logo?.[0]?.location || null,
       processRegistrationDocs(req.files?.registrationDocs || [], rawDocTypes),
     ]);
-
-   
 
     let banks = [];
     if (req.body.banks) {
@@ -82,7 +79,7 @@ exports.createCustomer = asyncHandler(async (req, res) => {
     const customer = await Customer.create({
       name,
       customerName: name,
-    
+
       clientId,
       emailAddress,
       phoneNumber,
@@ -105,8 +102,7 @@ exports.createCustomer = asyncHandler(async (req, res) => {
 
     // Capture IP Address
     let ipAddress =
-      req.headers["x-forwarded-for"]?.split(",")[0] ||
-      req.socket.remoteAddress;
+      req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
     if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
       ipAddress = "127.0.0.1";
     }
@@ -126,24 +122,28 @@ exports.createCustomer = asyncHandler(async (req, res) => {
       console.error("Audit log creation failed:", err.message);
     });
 
-    const safeCustomer=customer.toObject();
-delete safeCustomer.auditLogs
+    const safeCustomer = customer.toObject();
+    delete safeCustomer.auditLogs;
 
     return res
       .status(201)
-      .json(new ApiResponse(201, safeCustomer, "Customer created successfully"));
+      .json(
+        new ApiResponse(201, safeCustomer, "Customer created successfully")
+      );
   } catch (error) {
     // Handle Duplicate Key Error
     if (error.code === 11000) {
       const duplicateField = Object.keys(error.keyValue)[0];
       const duplicateValue = error.keyValue[duplicateField];
-      return res.status(400).json(
-        new ApiResponse(
-          400,
-          null,
-          `Duplicate value found: ${duplicateField} '${duplicateValue}' already exists. Please use a different value.`
-        )
-      );
+      return res
+        .status(400)
+        .json(
+          new ApiResponse(
+            400,
+            null,
+            `Duplicate value found: ${duplicateField} '${duplicateValue}' already exists. Please use a different value.`
+          )
+        );
     }
 
     // Other unexpected errors
@@ -168,7 +168,7 @@ exports.createBulkCustomers = asyncHandler(async (req, res) => {
   // 2. Group Customers by Company ID
   // We do this to generate codes efficiently per company
   const customersByCompany = {};
-  
+
   // Also validate company IDs exist
   const allCompanies = await Company.find({}, "_id");
   const validCompanyIds = new Set(allCompanies.map((c) => String(c._id)));
@@ -194,7 +194,6 @@ exports.createBulkCustomers = asyncHandler(async (req, res) => {
 
       // Add index to track back errors later
       customersByCompany[compId].push({ ...body, originalIndex: index });
-
     } catch (err) {
       formattingErrors.push({
         index,
@@ -210,13 +209,15 @@ exports.createBulkCustomers = asyncHandler(async (req, res) => {
 
     // Find the LAST code currently in DB for this company
     // We sort by 'code' (descending) to get the highest number
-    // Note: We cast code to integer for sorting if stored as string, 
+    // Note: We cast code to integer for sorting if stored as string,
     // but usually string sort works if padding is consistent.
     // Ideally, sort by createdAt or code.
-    const lastCustomer = await Customer.findOne({ 
+    const lastCustomer = await Customer.findOne({
       company: compId,
-      code: { $exists: true } 
-    }).sort({ createdAt: -1, code: -1 }).select("code");
+      code: { $exists: true },
+    })
+      .sort({ createdAt: -1, code: -1 })
+      .select("code");
 
     let currentCodeNum = 0;
     if (lastCustomer && lastCustomer.code) {
@@ -226,7 +227,7 @@ exports.createBulkCustomers = asyncHandler(async (req, res) => {
 
     // Assign new codes to this batch
     batch.forEach((custData) => {
-      currentCodeNum++; 
+      currentCodeNum++;
       // Pad with zeros (e.g., 000000000012)
       const newCode = currentCodeNum.toString().padStart(12, "0");
 
@@ -246,29 +247,38 @@ exports.createBulkCustomers = asyncHandler(async (req, res) => {
           },
         ],
       };
-      
+
       // Remove temporary key before pushing
       const { originalIndex, ...finalObj } = customerObj;
-      
+
       // We store originalIndex separately to map errors back if DB fails
       // But for insertMany, we pass the clean object
       // We attach originalIndex to the object prototype or manage mapping via order
-      // Simpler approach: Just push to valid list, but if write fails, 
+      // Simpler approach: Just push to valid list, but if write fails,
       // we might lose exact index mapping if we don't handle it carefully.
       // For now, we will assume sequential processing for mapping.
-      
+
       // Actually, to map errors correctly, we need to know the original index.
       // We can attach it as a temporary field and use 'strict: false' or remove it?
       // Mongoose ignores unknown fields if strict is true. Let's rely on that.
-      validCustomersToInsert.push({ ...finalObj, _tempIndex: custData.originalIndex });
+      validCustomersToInsert.push({
+        ...finalObj,
+        _tempIndex: custData.originalIndex,
+      });
     });
   }
 
   // If no valid customers, return errors
   if (validCustomersToInsert.length === 0) {
-    return res.status(400).json(
-      new ApiResponse(400, { errors: formattingErrors }, "No valid customers to process")
-    );
+    return res
+      .status(400)
+      .json(
+        new ApiResponse(
+          400,
+          { errors: formattingErrors },
+          "No valid customers to process"
+        )
+      );
   }
 
   let finalInsertedCount = 0;
@@ -276,16 +286,14 @@ exports.createBulkCustomers = asyncHandler(async (req, res) => {
 
   // 4. Bulk Insert
   try {
-    const result = await Customer.insertMany(validCustomersToInsert, { 
+    const result = await Customer.insertMany(validCustomersToInsert, {
       ordered: false, // Continue even if one fails
-      rawResult: true 
+      rawResult: true,
     });
-    
+
     // Mongoose 5/6/7 differences in result structure
     finalInsertedCount = result.insertedCount || result.length || 0;
-
   } catch (error) {
-    
     // A. Handle successes in partial failure
     if (error.insertedDocs) {
       finalInsertedCount = error.insertedDocs.length;
@@ -305,31 +313,31 @@ exports.createBulkCustomers = asyncHandler(async (req, res) => {
 
         // Check for specific Duplicate Key Error (Code 11000)
         if (e.code === 11000) {
-            // Check which field is duplicate
-            if (errMsg.includes("emailAddress")) {
-                errMsg = `Duplicate Email: ${failedItem.emailAddress} already exists.`;
-            } else if (errMsg.includes("code")) {
-                errMsg = `Duplicate Code generated: ${failedItem.code}. Please retry.`;
-            } else {
-                errMsg = "Duplicate entry found.";
-            }
+          // Check which field is duplicate
+          if (errMsg.includes("emailAddress")) {
+            errMsg = `Duplicate Email: ${failedItem.emailAddress} already exists.`;
+          } else if (errMsg.includes("code")) {
+            errMsg = `Duplicate Code generated: ${failedItem.code}. Please retry.`;
+          } else {
+            errMsg = "Duplicate entry found.";
+          }
         }
 
         dbErrors.push({
-          index: realIndex, 
+          index: realIndex,
           name: failedItem.name,
           code: failedItem.code,
           error: errMsg,
         });
       });
     }
-    
+
     // C. Handle Validation Errors
     else if (error.name === "ValidationError") {
-       dbErrors.push({
-         index: "N/A",
-         error: "Validation Error: " + error.message
-       });
+      dbErrors.push({
+        index: "N/A",
+        error: "Validation Error: " + error.message,
+      });
     }
   }
 
@@ -337,7 +345,8 @@ exports.createBulkCustomers = asyncHandler(async (req, res) => {
   // Sort errors by index for readability
   allErrors.sort((a, b) => a.index - b.index);
 
-  const statusCode = allErrors.length > 0 && finalInsertedCount === 0 ? 400 : 201;
+  const statusCode =
+    allErrors.length > 0 && finalInsertedCount === 0 ? 400 : 201;
 
   res.status(statusCode).json(
     new ApiResponse(
@@ -348,8 +357,8 @@ exports.createBulkCustomers = asyncHandler(async (req, res) => {
         totalFailed: allErrors.length,
         errors: allErrors,
       },
-      allErrors.length > 0 
-        ? `Import finished with ${allErrors.length} errors` 
+      allErrors.length > 0
+        ? `Import finished with ${allErrors.length} errors`
         : "Bulk customer import completed successfully"
     )
   );
@@ -462,7 +471,6 @@ exports.updateCustomer = asyncHandler(async (req, res) => {
 //   const clientID = req.user.clientID;
 //   if (!clientID) throw new ApiError(400, "Client ID is required");
 //   const user=User.findById(req.user.id);
-
 
 //   const { companyId } = req.params;
 //   if (!companyId) throw new ApiError(400, "company ID is required");
@@ -746,9 +754,8 @@ exports.getCustomersByCompany = asyncHandler(async (req, res) => {
     sortOrder = "desc",
     page = 1,
     limit = 10,
-    isCustomer = false // String "true" or "false" usually comes from query
+    isCustomer = false, // String "true" or "false" usually comes from query
   } = req.query;
- 
 
   const perPage = parseInt(limit, 10);
   const currentPage = Math.max(parseInt(page, 10), 1);
@@ -764,25 +771,29 @@ exports.getCustomersByCompany = asyncHandler(async (req, res) => {
   // 🔥 Fix 2: User Access Logic Implementation
   // Agar isCustomer true hai, tabhi ye access check chalega
   if (isCustomer === "true" || isCustomer === true) {
-    
     // 1. User ke access array mein se current company find karo
     // Note: Hum toString() use kar rahe hain taaki ID type mismatch na ho
     const companyAccess = user.access.find(
-      (acc) => 
-        (acc.company._id && acc.company._id.toString() === companyId.toString()) || 
-        (acc.company.toString() === companyId.toString())
+      (acc) =>
+        (acc.company._id &&
+          acc.company._id.toString() === companyId.toString()) ||
+        acc.company.toString() === companyId.toString()
     );
 
     // 2. Check karo agar access mila aur usme customerGroups define hain
-    if (companyAccess && companyAccess.customerGroups && companyAccess.customerGroups.length > 0) {
-      
+    if (
+      companyAccess &&
+      companyAccess.customerGroups &&
+      companyAccess.customerGroups.length > 0
+    ) {
       // User ke allowed group IDs nikalo
-      const allowedGroupIds = companyAccess.customerGroups.map(g => g.groupId);
-      
+      const allowedGroupIds = companyAccess.customerGroups.map(
+        (g) => g.groupId
+      );
+
       // Filter mein add karo: Customer ka group inn allowed IDs mein se ek hona chahiye
       filter.customerGroup = { $in: allowedGroupIds };
-      
-    } 
+    }
     // Else: Agar customerGroups empty hai ([]), toh hum filter mein kuch add nahi karenge.
     // Iska matlab automatically "Show All Customers" ho jayega.
   }
@@ -815,39 +826,35 @@ exports.getCustomersByCompany = asyncHandler(async (req, res) => {
   ]);
 
   // 🔥 Counts Logic (Yeh filter use nahi karega, yeh company level total hai)
-  const [
-    gstRegistered,
-    msmeRegistered,
-    activeCustomers,
-    vatRegistered
-  ] = await Promise.all([
-    Customer.countDocuments({
-      clientId: clientID,
-      company: companyId,
-      status: { $ne: "delete" },
-      gstNumber: { $exists: true, $ne: "" }
-    }),
+  const [gstRegistered, msmeRegistered, activeCustomers, vatRegistered] =
+    await Promise.all([
+      Customer.countDocuments({
+        clientId: clientID,
+        company: companyId,
+        status: { $ne: "delete" },
+        gstNumber: { $exists: true, $ne: "" },
+      }),
 
-    Customer.countDocuments({
-      clientId: clientID,
-      company: companyId,
-      status: { $ne: "delete" },
-      msmeRegistration: { $exists: true, $ne: "" }
-    }),
+      Customer.countDocuments({
+        clientId: clientID,
+        company: companyId,
+        status: { $ne: "delete" },
+        msmeRegistration: { $exists: true, $ne: "" },
+      }),
 
-    Customer.countDocuments({
-      clientId: clientID,
-      company: companyId,
-      status: "active"
-    }),
+      Customer.countDocuments({
+        clientId: clientID,
+        company: companyId,
+        status: "active",
+      }),
 
-    Customer.countDocuments({
-      clientId: clientID,
-      company: companyId,
-      status: { $ne: "delete" },
-      vatNumber: { $exists: true, $ne: "" }
-    }),
-  ]);
+      Customer.countDocuments({
+        clientId: clientID,
+        company: companyId,
+        status: { $ne: "delete" },
+        vatNumber: { $exists: true, $ne: "" },
+      }),
+    ]);
 
   res.status(200).json(
     new ApiResponse(
@@ -864,14 +871,13 @@ exports.getCustomersByCompany = asyncHandler(async (req, res) => {
           gstRegistered,
           msmeRegistered,
           activeCustomers,
-          vatRegistered
-        }
+          vatRegistered,
+        },
       },
       customers.length ? "Customers fetched successfully" : "No customers found"
     )
   );
 });
-
 
 exports.getCustomersByClient = asyncHandler(async (req, res) => {
   const clientID = req.user.clientID;
@@ -990,3 +996,89 @@ exports.deleteCustomer = asyncHandler(async (req, res) => {
     data: customer,
   });
 });
+
+const capitalizeFirst = (value) => {
+  if (!value || typeof value !== "string") return value;
+  const cleaned = value.trim().toLowerCase();
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+};
+
+exports.uploadCustomerCSV = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "CSV file is required",
+      });
+    }
+
+    const userId = req.user.id;
+    const user = req.user;
+    const csvData = await csv().fromString(req.file.buffer.toString());
+
+    const customersToInsert = [];
+
+    for (const row of csvData) {
+      const company = row.company;
+      let customerGroup = null;
+      if (row.customerGroup) {
+        const group = await CustomerGroup.findOne({
+          groupName: row.customerGroup,
+          companyId: company,
+        });
+        if (group) customerGroup = group.id; // OR group._id (as per schema)
+      }
+
+      customersToInsert.push({
+        company: company,
+        companyId: company,
+        clientId: user.clientID,
+        emailAddress: row.emailAddress || "noemail@gmail.com",
+        customerName: row.customerName,
+        name: row.customerName,
+        customerType: row.customerType || "company",
+        shortName: row.shortName,
+        group: customerGroup,
+
+        status: "active",
+
+        contactPerson:
+          row.contactPerson && row.contactPerson.trim() !== ""
+            ? row.contactPerson
+            : row.customerName,
+
+        mobileNumber: row.mobileNumber,
+        addressLine1: row.addressLine1,
+        city: capitalizeFirst(row.city),
+        state: capitalizeFirst(row.state),
+        country: capitalizeFirst(row.country),
+        zipCode: row.zipCode,
+        website: row.website,
+
+        createdBy: userId,
+      });
+    }
+
+    if (!customersToInsert.length) {
+      return res.status(400).json({
+        success: false,
+        message: "No valid records found in CSV",
+      });
+    }
+
+    await Customer.insertMany(customersToInsert);
+
+    res.status(201).json({
+      success: true,
+      message: "Customers uploaded successfully",
+      count: customersToInsert.length,
+    });
+  } catch (error) {
+    console.error("CSV Upload Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "CSV upload failed",
+      error: error.message,
+    });
+  }
+};
