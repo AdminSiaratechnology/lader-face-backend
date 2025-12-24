@@ -381,24 +381,15 @@ exports.register = asyncHandler(async (req, res) => {
 
   let clientID = req.body.clientID || req.user.clientID;
 
-  // ================================
-  // 1️⃣ BASIC VALIDATION
-  // ================================
   if (!name || !email || !password || !role) {
     throw new ApiError(400, "Missing required fields");
   }
 
-  // Email duplication check
   const exists = await User.findOne({ email: email.toLowerCase() });
   if (exists) throw new ApiError(409, "Email already in use");
 
-  // Fetch creator info
   const creatorInfo = await User.findById(adminId);
-  console.log(creatorInfo, "creatorInfo");
 
-  // ================================
-  // 2️⃣ PARSE PROJECTS SAFELY
-  // ================================
   let projects = req.body.projects || [];
   if (typeof projects === "string") projects = [projects];
   if (Array.isArray(projects)) {
@@ -413,17 +404,12 @@ exports.register = asyncHandler(async (req, res) => {
       .filter(Boolean);
   }
 
-  // Clone access
   let access = req.body.access ? structuredClone(req.body.access) : [];
 
-  // Allow partner/superadmin to pass projects
   if (creatorInfo.role === "SuperAdmin" || creatorInfo.role === "Partner") {
     req.body.projects = projects;
   }
 
-  // ================================
-  // 3️⃣ ADMIN CAN ONLY CREATE USERS UNDER SAME CLIENT
-  // ================================
   if (creatorInfo.role === "Admin") {
     if (!clientID)
       throw new ApiError(400, "Client ID is required for Admin-created users");
@@ -436,10 +422,6 @@ exports.register = asyncHandler(async (req, res) => {
     }
   }
 
-  // ================================
-  // 4️⃣ STRICT LIMIT VALIDATION (NEW)
-  //    🚫 prevents user creation if limit > partner limit
-  // ================================
   if (
     (creatorInfo.role === "Partner" || creatorInfo.role === "Sub Partner") &&
     limit
@@ -454,14 +436,8 @@ exports.register = asyncHandler(async (req, res) => {
     }
   }
 
-  // ================================
-  // 5️⃣ HASH PASSWORD
-  // ================================
   const hash = await bcrypt.hash(password, 10);
 
-  // ================================
-  // 6️⃣ HANDLE DOCUMENT UPLOADS
-  // ================================
   const uploadedDocs = req.files?.documents || [];
   const uploadedUrls = uploadedDocs.map((file) => file.location);
 
@@ -472,11 +448,8 @@ exports.register = asyncHandler(async (req, res) => {
       ? req.body.documents
       : [];
 
-  // ================================
-  // 7️⃣ CREATE USER (same behavior as before)
-  // ================================
   const user = await User.create({
-    ...req.body, // KEEPING your old behavior
+    ...req.body,
     name,
     email: email.toLowerCase(),
     password: hash,
@@ -487,7 +460,7 @@ exports.register = asyncHandler(async (req, res) => {
     country,
     state,
     area,
-    limit,
+    limit: role === "Client" ? 0 : limit,
     pincode,
     region,
     access,
@@ -503,77 +476,85 @@ exports.register = asyncHandler(async (req, res) => {
     ],
   });
 
-  // ================================
-  // 8️⃣ ROLE-BASED LOGIC
-  // ================================
-
-  // CLIENT ROLE
   if (role === "Client") {
     if (user.isDemo === true) {
       user.demoExpiry = new Date(
         Date.now() + user.demoPeriod * 24 * 60 * 60 * 1000
       );
-      await user.save();
+
       user.demoHistory.push({
         action: "created",
         performedBy: req.user.id,
+        timestamp: new Date(),
       });
+
+      await user.save();
     }
-    const assignedLimit = limit || 0;
 
-    // Only check/deduct if creator is Partner
-    if (creatorInfo.role === "Partner" || creatorInfo.role === "SubPartner") {
-      console.log("Checking partner limit deduction...");
-      const partnerLimit = creatorInfo.limit || 0;
+    const totalLimit = Number(limit) || 0;
+    const reservedForSelf = totalLimit > 0 ? 1 : 0;
+    const usableLimit = Math.max(totalLimit - reservedForSelf, 0);
 
-      if (assignedLimit > partnerLimit) {
+    if (
+      (creatorInfo.role === "Partner" || creatorInfo.role === "SubPartner") &&
+      !user.isDemo
+    ) {
+      const partnerRemainingLimit = creatorInfo.limit || 0;
+
+      if (usableLimit > partnerRemainingLimit) {
         throw new ApiError(
           400,
-          `Partner limit exceeded. You have ${partnerLimit} remaining.`
+          `Partner limit exceeded. Available: ${partnerRemainingLimit}`
         );
       }
 
       await User.updateOne(
         { _id: creatorInfo._id },
-        { $inc: { limit: -assignedLimit } }
-      );
-    }
-
-    if (assignedLimit > 0) {
-      await User.updateOne(
-        { _id: user._id },
         {
+          $inc: { limit: -totalLimit },
           $push: {
             limitHistory: {
               performedBy: adminId,
-              initialLimit: assignedLimit,
-              previousLimit: 0,
-              newLimit: assignedLimit,
-              action: "assigned",
-              reason:
-                creatorInfo.role === "Partner"
-                  ? "Initial limit assigned by Partner"
-                  : "Initial limit assigned by SuperAdmin",
+              previousLimit: partnerRemainingLimit,
+              newLimit: partnerRemainingLimit - totalLimit,
+              deductedLimit: totalLimit,
+              action: "deducted",
+              reason: `Assigned ${totalLimit} limit to Client ${user.name}`,
               timestamp: new Date(),
             },
           },
         }
       );
     }
-
-    user.projects = projects;
+    await User.updateOne(
+      { _id: user._id },
+      {
+        $push: {
+          limitHistory: {
+            performedBy: adminId,
+            initialLimit: totalLimit,
+            previousLimit: 0,
+            newLimit: usableLimit,
+            action: "assigned",
+            reason: "Initial limit assigned (1 reserved for client itself)",
+            timestamp: new Date(),
+          },
+        },
+        $set: {
+          limit: usableLimit,
+        },
+      }
+    );
     user.clientID = user._id;
+    user.projects = projects;
     await user.save();
   }
 
-  // ADMIN ROLE
   if (role === "Admin") {
     const client = await User.findById(clientID).select("projects");
 
     user.projects = client?.projects || [];
     await user.save();
-
-    await User.updateOne({ _id: user.clientID }, { $inc: { limit: -1 } });
   }
 
   // PARTNER / SUB PARTNER ROLE
@@ -598,7 +579,6 @@ exports.register = asyncHandler(async (req, res) => {
   if (role === "SubPartner" && limit) {
     const assignedLimit = limit || 0;
 
-    // Only check/deduct if creator is Partner
     if (creatorInfo.role === "Partner") {
       const partnerRemainingLimit = creatorInfo.limit || 0;
 
@@ -609,11 +589,21 @@ exports.register = asyncHandler(async (req, res) => {
         );
       }
 
-      // Deduct assigned limit from Partner
       await User.updateOne(
         { _id: creatorInfo._id },
         {
           $inc: { limit: -assignedLimit },
+          $push: {
+            limitHistory: {
+              performedBy: adminId,
+              previousLimit: partnerRemainingLimit,
+              newLimit: partnerRemainingLimit - assignedLimit,
+              action: "deducted",
+              deductedLimit: assignedLimit,
+              reason: `Assigned ${assignedLimit} limit to Sub Partner ${user.name}`,
+              timestamp: new Date(),
+            },
+          },
         }
       );
     }
@@ -641,16 +631,14 @@ exports.register = asyncHandler(async (req, res) => {
     for (const acc of access) {
       if (!acc.company) continue;
 
-      const code = await generateUniqueId(Customer, "code");
-
       await Customer.create({
         company: acc.company,
         clientId: creatorInfo?.clientID || adminId,
         customerName: name,
+        name: name,
         contactPerson: name,
         emailAddress: email.toLowerCase(),
         customerType: "company",
-        code,
         createdBy: adminId,
       });
 
@@ -659,29 +647,24 @@ exports.register = asyncHandler(async (req, res) => {
     }
   }
 
-  // ================================
-  // 9️⃣ GENERATE 6 DIGIT USER CODE
-  // ================================
   const code = await generate6DigitUniqueId(User, "code");
   await User.updateOne({ _id: user._id }, { $set: { code } });
+  const LIMIT_CONSUMING_ROLES = ["Admin", "Customer", "Salesman"];
+  if (LIMIT_CONSUMING_ROLES.includes(role)) {
+    const mappedClientId = user.clientID;
 
-  // ================================
-  // 🔟 SEND ADMIN EMAIL
-  // ================================
-  if (role === "Admin") {
-    await sendEmail({
-      to: email,
-      subject: "Your Admin Account Credentials",
-      text: `Hello ${name},\nYour admin account has been created.\nEmail: ${email}\nPassword: ${password}`,
-      html: `
-        <p>Hello <strong>${name}</strong>,</p>
-        <p>Your admin account has been created.</p>
-        <ul>
-          <li><strong>Email:</strong> ${email}</li>
-          <li><strong>Password:</strong> ${password}</li>
-        </ul>
-      `,
-    });
+    const client = await User.findById(mappedClientId).select("limit");
+
+    if (!client || client.limit <= 0) {
+      throw new ApiError(400, "Client limit exceeded");
+    }
+
+    await User.updateOne(
+      { _id: mappedClientId },
+      {
+        $inc: { limit: -1 },
+      }
+    );
   }
 
   // ================================
@@ -799,9 +782,35 @@ exports.updateUser = asyncHandler(async (req, res) => {
 
   // Store old data before update
   const oldData = user.toObject();
+  console.log(oldData);
+  if (
+    updateData.status === "active" &&
+    user.blocked === true &&
+    updateData.blocked !== false
+  ) {
+    throw new ApiError(
+      400,
+      "Please unblock the user before activating the account"
+    );
+  }
+
+  if (user.blocked === true && updateData.blocked === false) {
+    const authUser = await User.findById(req.user.id);
+    const clientUser = await User.findById(user.clientID).select("limit");
+    if (!authUser) {
+      throw new ApiError(401, "Unauthorized");
+    }
+    if (!clientUser || clientUser.limit <= 0) {
+      throw new ApiError(
+        403,
+        "Insufficient limit to unblock and activate this user"
+      );
+    }
+  }
 
   Object.entries(updateData).forEach(([key, value]) => {
     if (["createdBy", "createdAt", "_id", "password"].includes(key)) return;
+    if (key === "clientID") return;
 
     if (["parent", "company"].includes(key)) {
       if (value && mongoose.Types.ObjectId.isValid(value)) {
@@ -872,6 +881,7 @@ exports.updateUser = asyncHandler(async (req, res) => {
   await user.save();
 
   const userResponse = user.toObject();
+  console.log(userResponse);
   delete userResponse.password;
   let ipAddress =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
@@ -1086,7 +1096,21 @@ exports.loginClientPortal = asyncHandler(async (req, res) => {
     });
 
   if (!user) throw new ApiError(401, "Invalid credentials");
-
+  if (user.status === "inactive" || user.status === "blocked") {
+    throw new ApiError(
+      403,
+      `Your account is ${user.status}. Please contact support.`
+    );
+  }
+  if (user.clientID) {
+    const client = await User.findById(user.clientID).select("status name");
+    if (client && client.status !== "active") {
+      throw new ApiError(
+        403,
+        `Your client "${client.name}" is ${client.status}. Please contact them to access the portal.`
+      );
+    }
+  }
   // 3. 🛡️ ROLE GUARD: Portal 1 Specific
   const allowedRoles = ["Admin", "Client", "Salesman", "Customer"];
   if (!allowedRoles.includes(user.role)) {
@@ -1131,7 +1155,11 @@ exports.loginClientPortal = asyncHandler(async (req, res) => {
   delete safeUser.loginHistory;
   delete safeUser.auditLogs;
   safeUser.access = [...(user.access || [])];
+  const clientUser = await User.findById(user.clientID).select("limit");
 
+  if (clientUser) {
+    safeUser.clientLimit = clientUser.limit; // ✅ added inside user
+  }
   // Note: Client portal usually doesn't need the complex stats object,
   // but if you have specific stats for them, add here.
   const stats = {};
@@ -1312,9 +1340,24 @@ const MAX_ATTEMPTS = 3;
 exports.sendResetOTP = async (req, res) => {
   try {
     const { email } = req.body;
+    const PORTAL_ROLE_MAP = {
+  "client-portal": ["Admin", "Client", "Salesman", "Customer"],
+  "management-portal": ["SuperAdmin", "Partner", "SubPartner"],
+};
 
+    const portal=req.headers["auth-source"] || "client-portal";
+    console.log(portal,"portaltype");
+console.log(email,"email");
     const user = await User.findOne({ email });
+      if(user.status === "inactive"){
+    throw new ApiError(403, "Account Inactive. Please contact support.");
+  }
+  if(user.status === "delete"){
+    throw new ApiError(403, "Account Not Found. Please contact support.");
+  }
 
+    console.log(user,"userrole");
+    console.log(!user,"user");
     if (!user) {
       console.log(`Attempted OTP request for non-existent email: ${email}`);
       return res.status(200).json({
@@ -1322,7 +1365,37 @@ exports.sendResetOTP = async (req, res) => {
         attemptsLeft: MAX_ATTEMPTS,
         window: WINDOW / 1000,
       });
+      
     }
+    const allowedRoles = PORTAL_ROLE_MAP[portal];
+
+if (!allowedRoles) {
+  throw new ApiError(400, "Invalid auth-source");
+}
+
+if (!allowedRoles.includes(user.role)) {
+  throw new ApiError(
+    403,
+    `Access Denied: This account does not belong to the ${portal}.`
+  );
+}
+    // if(portal==="client-portal"){
+    //   const allowedRoles = ["Admin", "Client", "Salesman", "Customer"];
+    //   if (!allowedRoles.includes(user.role)) {
+    //     throw new ApiError(
+    //       403,
+    //       "Access Denied: This account belongs to the Management Portal."
+    //     );
+    //   }
+    // }else if(portal==="management-portal"){
+
+    //   const allowedRoles = ["SuperAdmin", "Partner", "SubPartner"];
+    //   if (!allowedRoles.includes(user.role)) {
+    //     throw new ApiError(
+    //       403,
+    //       "Access Denied: This account belongs to the Client Portal."
+    //     );
+    //   }}
 
     const now = Date.now();
     let otpRecord = await OTP.findOne({ email });
@@ -1382,10 +1455,10 @@ exports.sendResetOTP = async (req, res) => {
       window: WINDOW / 1000, // Return window in seconds
     });
   } catch (err) {
-    console.error("Error sending OTP:", err);
+    console.log("Error sending OTP:", err);
     res
       .status(500)
-      .json({ message: "An error occurred while sending the OTP." });
+      .json({ message:  err?.message || "An error occurred while sending OTP." });
   }
 };
 
@@ -1594,10 +1667,7 @@ exports.getUserHierarchy = async (req, res) => {
 
 exports.convertDemoToLive = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  console.log(id);
   const { limit } = req.body;
-  console.log(req.user);
-
   const performedBy = req.user.id;
   const role = req.user.role;
   const performerInfo = await User.findById(performedBy);
@@ -1607,55 +1677,72 @@ exports.convertDemoToLive = asyncHandler(async (req, res) => {
       message: "Not authorized",
     });
   }
-
   const user = await User.findById(id);
-  if (!user) {
-    return res.status(404).json({
-      success: false,
-      message: "User not found",
-    });
+  if (!user || !user.isDemo) {
+    throw new ApiError(400, "Invalid demo client");
   }
 
-  if (!user.isDemo) {
-    return res.status(400).json({
-      success: false,
-      message: "User is already a live account",
-    });
-  }
-
+  // demo → live basic flags
   user.isDemo = false;
   user.demoExpiry = null;
   user.demoPeriod = 0;
   user.maxDemoDays = undefined;
 
+  // 🔑 STEP 1: reserve 1 limit for client itself
+  const totalLimit = limit;
+  const usableLimit = totalLimit - 1; // client khud
+
+  // STEP 2: client ke users lao
+  const clientUsers = await User.find({
+    parent: user._id,
+    role: { $ne: "Client" },
+  });
+  const totalUsersCount = clientUsers.length + 1;
+  // Step 2: assign remaining limit to client
+  const finalClientLimit = totalLimit - totalUsersCount;
+
+  if (usableLimit < 0) {
+    // extreme case: limit = 0
+    // saare users block
+    await User.updateMany(
+      { parent: user._id },
+      {
+        $set: {
+          blocked: true,
+          status: "inactive",
+        },
+      }
+    );
+  } else if (clientUsers.length > usableLimit) {
+    // limit kam hai → extra users block
+    const usersToBlock = clientUsers.slice(usableLimit);
+
+    const blockIds = usersToBlock.map((u) => u._id);
+
+    await User.updateMany(
+      { _id: { $in: blockIds } },
+      {
+        $set: {
+          blocked: true,
+          status: "inactive",
+        },
+      }
+    );
+  }
+
+  // STEP 3: client limit set karo
+  user.limit = finalClientLimit >= 0 ? finalClientLimit : 0;
+
   user.demoHistory.push({
     action: "converted",
-    performedBy,
+    performedBy: req.user.id,
   });
-  // if (performerInfo.role === "Partner" || performerInfo.role === "SubPartner") {
-  //   console.log("Checking partner limit deduction...");
-  //   const partnerLimit = performerInfo.limit || 0;
-
-  //   if (limit > partnerLimit) {
-  //     throw new ApiError(
-  //       400,
-  //       `Partner limit exceeded. You have ${partnerLimit} remaining.`
-  //     );
-  //   }
-
-  //   await User.updateOne(
-  //     { _id: performerInfo._id },
-  //     { $inc: { limit: -limit } }
-  //   );
-  // }
   let limitOwner = null;
 
-  // Case 1: Performer is Partner/SubPartner → deduct from performer
   if (["Partner", "SubPartner"].includes(performerInfo.role)) {
     limitOwner = performerInfo;
   }
 
-  // Case 2: Performer is SuperAdmin → deduct from user's parent (if not SuperAdmin)
   if (performerInfo.role === "SuperAdmin" && user.parent) {
     const parentUser = await User.findById(user.parent);
 
@@ -1664,7 +1751,6 @@ exports.convertDemoToLive = asyncHandler(async (req, res) => {
     }
   }
 
-  // Deduct limit if applicable
   if (limitOwner) {
     const availableLimit = limitOwner.limit || 0;
 
@@ -1680,14 +1766,13 @@ exports.convertDemoToLive = asyncHandler(async (req, res) => {
 
   if (typeof limit === "number") {
     const previousLimit = user.limit || 0;
-    user.limit = limit;
+    // user.limit = limit;
 
     user.limitHistory.push({
       performedBy,
-      initialLimit: previousLimit,
-      previousLimit,
-      newLimit: limit,
-      approvedLimit: limit,
+      initialLimit: limit,
+      // previousLimit,
+      newLimit: user.limit,
       action: "assigned",
       remarks: "Limit assigned during demo to live conversion",
     });
@@ -1723,9 +1808,10 @@ exports.convertDemoToLive = asyncHandler(async (req, res) => {
   });
   await user.save();
 
-  res.status(200).json({
+  res.json({
     success: true,
-    message: "Demo client converted to live successfully",
+    message:
+      "Demo client converted to live. Some users may be blocked due to insufficient limit.",
   });
 });
 
@@ -1855,4 +1941,23 @@ exports.extendDemoClient = asyncHandler(async (req, res) => {
       demoPeriod: user.demoPeriod,
     },
   });
+});
+
+exports.getMe = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user.id)
+    .select("-password -__v -loginHistory -auditLogs")
+    .populate({
+      path: "createdBy",
+      select: "email name",
+    });
+  if (!user) throw new ApiError(404, "User not found");
+  const client = await User.findById(user.clientID)
+  const clientLimit = client?.limit || null;
+
+  res
+    .status(200)
+    .json(new ApiResponse(200,  {
+        ...user.toObject(),
+        clientLimit,
+      }, "Fetched current user successfully"));
 });
