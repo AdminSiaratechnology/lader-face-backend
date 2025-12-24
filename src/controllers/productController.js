@@ -14,7 +14,11 @@ const ApiResponse = require("../utils/apiResponse");
 const { generate6DigitUniqueId } = require("../utils/generate6DigitUniqueId");
 const mongoose = require("mongoose");
 const { createAuditLog } = require("../utils/createAuditLog");
-const StockItem =require("../models/stockItem.mode")
+const StockItem = require("../models/stockItem.mode");
+
+const fs = require("fs");
+const path = require("path");
+const csv = require("csvtojson");
 
 // ✅ Batch insert helper
 const insertInBatches = async (data, batchSize = 1000) => {
@@ -355,19 +359,20 @@ exports.updateProduct = asyncHandler(async (req, res) => {
   Object.assign(product, req.body);
 
   // ⭐ Save old tax history only when taxConfiguration is changed
-if (
-req.body.taxConfiguration &&
-JSON.stringify(product.taxConfiguration) !== JSON.stringify(req.body.taxConfiguration)
-) {
-if (!product.taxConfigurationHistory) {
-product.taxConfigurationHistory = [];
-}
-product.taxConfigurationHistory.push({
-previous: product.taxConfiguration,
-updatedBy: req.user?.id || null,
-updatedAt: new Date()
-});
-}
+  if (
+    req.body.taxConfiguration &&
+    JSON.stringify(product.taxConfiguration) !==
+      JSON.stringify(req.body.taxConfiguration)
+  ) {
+    if (!product.taxConfigurationHistory) {
+      product.taxConfigurationHistory = [];
+    }
+    product.taxConfigurationHistory.push({
+      previous: product.taxConfiguration,
+      updatedBy: req.user?.id || null,
+      updatedAt: new Date(),
+    });
+  }
 
   // ✅ Push audit log
   if (!product.auditLogs) product.auditLogs = [];
@@ -449,7 +454,10 @@ exports.deleteProduct = asyncHandler(async (req, res) => {
     ipAddress = "127.0.0.1";
   }
 
-  await StockItem.updateMany({clientId: clientID, productId:id}, ({status:"delete"}))
+  await StockItem.updateMany(
+    { clientId: clientID, productId: id },
+    { status: "delete" }
+  );
   await createAuditLog({
     module: "Product",
     action: "delete",
@@ -656,13 +664,10 @@ exports.listProductsByCompanyId = asyncHandler(async (req, res) => {
           totalPages: Math.ceil(total / perPage),
         },
       },
-      items.length
-        ? "Products fetched successfully"
-        : "No products found"
+      items.length ? "Products fetched successfully" : "No products found"
     )
   );
 });
-
 
 exports.createBulkProducts = asyncHandler(async (req, res) => {
   const { products } = req.body;
@@ -787,4 +792,113 @@ exports.createBulkProducts = asyncHandler(async (req, res) => {
   );
 });
 
+// Helper: Find by name (case-insensitive)
+const findByName = async (Model, name, companyId) => {
+  if (!name || !name.trim()) return null;
+
+  return await Model.findOne({
+    name: { $regex: new RegExp("^" + name.trim() + "$", "i") },
+    companyId,
+  });
+};
+
+const parseMonthYear = (str) => {
+  if (!str || !str.trim()) return null;
+  const [year, month] = str.trim().split("-");
+  if (!year || !month) return null;
+  return new Date(Date.UTC(+year, +month - 1, 1));
+};
+
+exports.importProductsFromCSV = asyncHandler(async (req, res) => {
+  if (!req.file) throw new ApiError(400, "CSV file required");
+
+  const user = req.user;
+  const csvData = await csv().fromString(req.file.buffer.toString());
+
+  const productsToInsert = [];
+  const errors = [];
+
+  for (let i = 0; i < csvData.length; i++) {
+    const row = csvData[i];
+
+    try {
+      const companyId = row.companyId?.trim();
+      if (!companyId) throw new Error("companyId missing");
+
+      if (!row.Name?.trim()) throw new Error("Product name missing");
+
+      const [stockGroup, stockCategory, unit] = await Promise.all([
+        findByName(StockGroup, row["Stock Group"], companyId),
+        findByName(StockCategory, row["Stock Category"], companyId),
+        findByName(Unit, row["Unit"], companyId),
+      ]);
+
+      productsToInsert.push({
+        clientId: user.clientID,
+        companyId,
+        name: row.Name.trim(),
+        partNo: row["Part No"] || null,
+        stockGroup: stockGroup?._id || null,
+        stockCategory: stockCategory?._id || null,
+        unit: unit?._id || null,
+        minimumQuantity: Number(row["Minimum Quantity"]) || 0,
+        minimumRate: Number(row["Minimum Rate"]) || 0,
+        maximumRate: Number(row["Maximum Rate"]) || 0,
+        batch: ["yes", "true", "1"].includes(
+          (row["Batch Managed"] || "").toLowerCase()
+        ),
+        mfgDate: parseMonthYear(row["Mfg Date (YYYY-MM)"]),
+        expiryDate: parseMonthYear(row["Expiry Date (YYYY-MM)"]),
+        status: "active",
+        createdBy: user.id,
+      });
+    } catch (err) {
+      errors.push(`Row ${i + 2}: ${err.message}`);
+    }
+  }
+  console.log(productsToInsert, "productTOinsrttopush");
+  const inserted = await Product.insertMany(productsToInsert, {
+    ordered: false,
+  });
+
+  res.status(201).json(
+    new ApiResponse(
+      201,
+      {
+        total: csvData.length,
+        inserted: inserted.length,
+        failed: errors.length,
+        errors,
+      },
+      "Products imported successfully"
+    )
+  );
+});
+exports.getProductsByStockGroupId = asyncHandler(async (req, res) => {
+  const { stockGroupId } = req.params;
+
+  const page = Number(req.query.page || 1);
+  const limit = Number(req.query.limit || 40);
+  const skip = (page - 1) * limit;
+
+  const filter = stockGroupId ? { stockGroup: stockGroupId } : {};
+
+  const products = await Product.find(filter, { name: 1 })
+    .skip(skip)
+    .limit(limit);
+
+  const total = await Product.countDocuments(filter);
+
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        products,
+        hasMore: skip + products.length < total,
+        total,
+      },
+      "Products fetched successfully"
+    )
+  );
+});
 

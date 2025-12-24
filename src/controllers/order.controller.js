@@ -2051,7 +2051,7 @@ exports.getOrderReport = asyncHandler(async (req, res) => {
 exports.generateInvoicePDF = async (req, res) => {
   // Get format from query, default to 'A4' if not provided
   // Example usage: /generate-pdf/:id?format=A4 or ?format=80mm
-  const formatType = req.query.format || "A4";
+  const formatType = req.query.formatt || "58mm";
 
   console.log(
     `Generating ${formatType} invoice PDF for order ID:`,
