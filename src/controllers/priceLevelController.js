@@ -1,18 +1,26 @@
 const PriceLevel = require("../models/PriceLevel");
 
 exports.createPriceLevel = async (req, res) => {
-  const { name, companyId } = req.body;
-  console.log(req.user,"req.user")
-  const clientId = req.user.clientID;
-
-  const exists = await PriceLevel.findOne({
+  const {
     name,
     companyId,
+  } = req.body;
+
+  const clientId = req.user.clientID;
+
+  if (!name || !companyId ) {
+    return res.status(400).json({
+      message: "Required fields missing",
+    });
+  }
+
+  const exists = await PriceLevel.findOne({
+    name, companyId
   });
 
   if (exists) {
     return res.status(400).json({
-      message: "Price Level already exists",
+      message: "Price Level already exists" ,
     });
   }
 
@@ -27,6 +35,7 @@ exports.createPriceLevel = async (req, res) => {
     data: priceLevel,
   });
 };
+
 
 
 exports.getPriceLevels = async (req, res) => {
