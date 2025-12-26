@@ -30,6 +30,7 @@ const posRoutes  = require('./routes/posRoutes')
 // const BulkUploadRoute = require('./routes/bulkUploadRoute');
 const shiftRoutes = require('./routes/shift.routes');
 const BulkUploadRoute = require('./routes/bulkUploadRoute');
+const priceListRoutes  =require('./routes/priceList.routes.js');
 
 const app = express();
 app.use(cors());
@@ -74,6 +75,7 @@ app.get("/",(req,res)=>{
 // Routes
 
 
+
 app.use("/api/pos",posRoutes)
 app.use("/api/shift" ,shiftRoutes )
 app.use("/api/coupons", couponRoutes);  //coupnonRoutes
@@ -104,6 +106,7 @@ app.use("/api/order",orderRoute)
 app.use("/api/cart",cartRoute)
 app.use("/api/payment",paymentRoute)
 app.use("/api/bill-templates",BillTemplateRoute)
+app.use("/api", priceListRoutes);
 
 // Not found middleware (for invalid routes)
 // app.use('/api/bulk', BulkUploadRoute);
