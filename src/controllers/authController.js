@@ -1950,14 +1950,27 @@ exports.getMe = asyncHandler(async (req, res) => {
       path: "createdBy",
       select: "email name",
     });
-  if (!user) throw new ApiError(404, "User not found");
-  const client = await User.findById(user.clientID)
-  const clientLimit = client?.limit || null;
 
-  res
-    .status(200)
-    .json(new ApiResponse(200,  {
+  if (!user) throw new ApiError(404, "User not found");
+
+  let clientLimit = null; 
+
+  if (user.clientID) {
+    const client = await User.findById(user.clientID);
+    if (client) {
+      clientLimit = client.limit;
+    }
+  }
+
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      {
         ...user.toObject(),
         clientLimit,
-      }, "Fetched current user successfully"));
+      },
+      "Fetched current user successfully"
+    )
+  );
 });
+
