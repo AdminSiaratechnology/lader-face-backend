@@ -15,11 +15,11 @@ const unitSchema = new mongoose.Schema(
     }, // kis company ka unit hai
 
     name: { type: String, required: true }, // unit name
-    type: { type: String, enum: ["simple", "compound"], required: true }, // simple or compound
+    type: { type: String, enum: ["simple", "compound"], required: true ,default:"simple"}, // simple or compound
 
     // ✅ Simple unit fields
     symbol: { type: String }, // like kg, L, pcs
-    decimalPlaces: { type: Number }, // rounding ke liye
+    decimalPlaces: { type: Number ,default:0}, // rounding ke liye
     UQC: { type: String },
 
     // ✅ Compound unit fields
