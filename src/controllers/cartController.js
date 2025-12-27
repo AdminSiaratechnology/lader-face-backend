@@ -1,28 +1,40 @@
 const mongoose = require("mongoose");
 const Cart = require("../models/Cart");
 const StockItem = require("../models/stockItem.mode");
-
+const Product = require("../models/Product");
 // 🛒 Add or Replace Item in Cart
 exports.addToCart = async (req, res) => {
   try {
-    const { productId, quantity  } = req.body;
+    const { productId, quantity } = req.body;
     const clientId = req.user?.clientID;
     const userId = req.user?.id;
     const { companyId } = req.params;
 
-    if (!companyId || !clientId || !userId || !productId || quantity === undefined ) {
-      return res.status(400).json({ success: false, message: "Missing required fields" });
+    if (
+      !companyId ||
+      !clientId ||
+      !userId ||
+      !productId ||
+      quantity === undefined
+    ) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing required fields" });
     }
 
     // ✅ Validate ObjectId format
     if (!mongoose.Types.ObjectId.isValid(productId)) {
-      return res.status(400).json({ success: false, message: "Invalid productId format" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid productId format" });
     }
 
     // 🔎 Fetch product
-    const stockItem = await StockItem.findById(productId);
+    const stockItem = await Product.findById(productId);
     if (!stockItem) {
-      return res.status(404).json({ success: false, message: "Stock item not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Stock item not found" });
     }
 
     // 🧹 If quantity is 0 → remove item from cart
@@ -32,11 +44,12 @@ exports.addToCart = async (req, res) => {
         clientId,
         userId,
         productId,
-    
       });
 
       if (!deletedCart) {
-        return res.status(404).json({ success: false, message: "Cart item not found to remove" });
+        return res
+          .status(404)
+          .json({ success: false, message: "Cart item not found to remove" });
       }
 
       return res.status(200).json({
@@ -67,81 +80,103 @@ exports.addToCart = async (req, res) => {
   }
 };
 
-
 exports.bulkAddToCart = async (req, res) => {
-try {
-const { items } = req.body;
-const clientId = req.user?.clientID;
-const userId = req.user?.id;
-const { companyId } = req.params;
+  try {
+    const { items } = req.body;
+    const clientId = req.user?.clientID;
+    const userId = req.user?.id;
+    const { companyId } = req.params;
 
-if (!companyId || !clientId || !userId || !items || !Array.isArray(items)) {
-return res.status(400).json({ success: false, message: "Missing required fields or items should be array" });
-}
+    if (!companyId || !clientId || !userId || !Array.isArray(items)) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields or items should be array",
+      });
+    }
 
-let results = [];
+    let results = [];
 
-for (const item of items) {
-const { productId, quantity } = item;
+    for (const item of items) {
+      const { productId, quantity, batch } = item;
 
-if (!productId || quantity === undefined) {
-results.push({ productId, status: "failed", reason: "Missing fields" });
-continue;
-}
+      if (!productId || quantity === undefined) {
+        results.push({ productId, status: "failed", reason: "Missing fields" });
+        continue;
+      }
 
-// Validate ObjectId_
-if (!mongoose.Types.ObjectId.isValid(productId)) {
-results.push({ productId, status: "failed", reason: "Invalid productId" });
-continue;
-}
+      if (!mongoose.Types.ObjectId.isValid(productId)) {
+        results.push({
+          productId,
+          status: "failed",
+          reason: "Invalid productId",
+        });
+        continue;
+      }
 
-// Fetch product_
-const stockItem = await StockItem.findById(productId);
-if (!stockItem) {
-results.push({ productId, status: "failed", reason: "Product not found" });
-continue;
-}
+      const product = await Product.findById(productId);
+      if (!product) {
+        results.push({
+          productId,
+          status: "failed",
+          reason: "Product not found",
+        });
+        continue;
+      }
 
-// If quantity <= 0 → remove item_
-if (quantity <= 0) {
-await Cart.findOneAndDelete({
-companyId,
-clientId,
-userId,
-productId,
-});
+      // Remove item
+      if (quantity <= 0) {
+        await Cart.findOneAndDelete({
+          companyId,
+          clientId,
+          userId,
+          productId,
+          ...(product.batch && {
+            "batch.batchName": batch.batchName,
+            "batch.godownName": batch.godownName,
+          }),
+        });
 
-results.push({ productId, status: "deleted" });
-continue;
-}
+        results.push({ productId, status: "deleted" });
+        continue;
+      }
 
-// Add or Update_
-const cart = await Cart.findOneAndUpdate(
-{ companyId, clientId, userId, productId },
-{ productId, quantity },
-{ new: true, upsert: true }
-);
+      // ✅ UNIQUE KEY INCLUDES BATCH
+      const cart = await Cart.findOneAndUpdate(
+        {
+          companyId,
+          clientId,
+          userId,
+          productId,
+          ...(product.batch && {
+            "batch.batchName": batch.batchName,
+            "batch.godownName": batch.godownName,
+          }),
+        },
+        {
+          productId,
+          quantity,
+          ...(product.batch && { batch }),
+        },
+        { new: true, upsert: true }
+      );
 
-results.push({ productId, status: "updated", cart });
-}
+      results.push({ productId, status: "updated", cart });
+    }
 
-return res.status(200).json({
-success: true,
-message: "Bulk cart update complete",
-results,
-});
-
-} catch (error) {
-console.error("❌ Bulk cart error:", error);
-return res.status(500).json({
-success: false,
-message: "Internal server error",
-error: error.message,
-});
-}
+    return res.status(200).json({
+      success: true,
+      message: "Bulk cart update complete",
+      results,
+    });
+  } catch (error) {
+    console.error("❌ Bulk cart error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
 };
-
-
 
 
 exports.resetPassword = async (req, res) => {
@@ -150,11 +185,13 @@ exports.resetPassword = async (req, res) => {
 
     // --- Modern Password Validation ---
     // Min 8 chars, 1 uppercase, 1 lowercase, 1 number, 1 special char
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
-    
+    const passwordRegex =
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+
     if (!passwordRegex.test(newPassword)) {
       return res.status(400).json({
-        message: "Password must be at least 8 characters, and contain uppercase, lowercase, number, and special characters."
+        message:
+          "Password must be at least 8 characters, and contain uppercase, lowercase, number, and special characters.",
       });
     }
 
@@ -163,7 +200,8 @@ exports.resetPassword = async (req, res) => {
 
     if (!otpRecord) {
       return res.status(400).json({
-        message: "OTP not verified or has expired. Please verify the code again."
+        message:
+          "OTP not verified or has expired. Please verify the code again.",
       });
     }
 
@@ -177,13 +215,13 @@ exports.resetPassword = async (req, res) => {
     await OTP.deleteMany({ email });
 
     return res.json({ message: "Password reset successful" });
-
   } catch (err) {
     console.error("Error resetting password:", err);
-    res.status(500).json({ message: "An error occurred while resetting the password." });
+    res
+      .status(500)
+      .json({ message: "An error occurred while resetting the password." });
   }
 };
-
 
 // 🧾 Get Cart with StockItem Details
 exports.getCart = async (req, res) => {
@@ -191,7 +229,6 @@ exports.getCart = async (req, res) => {
     const { companyId } = req.params;
     const clientId = req.user?.clientID;
     const userId = req.user?.id;
-   
 
     // 🧩 Check required fields
     if (!companyId || !clientId || !userId) {
@@ -205,9 +242,7 @@ exports.getCart = async (req, res) => {
     const carts = await Cart.find({
       companyId,
       clientId,
-      userId
-      
-      
+      userId,
     }).populate("productId");
 
     if (!carts.length) {
@@ -215,8 +250,8 @@ exports.getCart = async (req, res) => {
         success: false,
         message: "Cart is empty",
         totalItems: 0,
-      totalAmount:0,
-      cart: [],
+        totalAmount: 0,
+        cart: [],
       });
     }
 
@@ -239,7 +274,7 @@ exports.getCart = async (req, res) => {
         price,
         discount,
         finalPrice,
-        product:stock
+        product: stock,
       };
     });
 
@@ -261,7 +296,6 @@ exports.getCart = async (req, res) => {
   }
 };
 
-
 // ✏️ Update Item Quantity
 exports.updateCartItem = async (req, res) => {
   try {
@@ -270,7 +304,7 @@ exports.updateCartItem = async (req, res) => {
     const userId = req.user?.id;
     const { companyId } = req.params;
 
-    if (!companyId || !clientId || !userId || !productId || !quantity ) {
+    if (!companyId || !clientId || !userId || !productId || !quantity) {
       return res.status(400).json({
         success: false,
         message: "Missing required fields",
@@ -279,7 +313,7 @@ exports.updateCartItem = async (req, res) => {
 
     // 🔹 Update cart item
     const cart = await Cart.findOneAndUpdate(
-      { companyId, clientId, userId, productId},
+      { companyId, clientId, userId, productId },
       { quantity },
       { new: true }
     ).populate("productId");
@@ -325,7 +359,6 @@ exports.updateCartItem = async (req, res) => {
   }
 };
 
-
 // ❌ Remove Cart Item
 exports.removeCartItem = async (req, res) => {
   try {
@@ -333,15 +366,18 @@ exports.removeCartItem = async (req, res) => {
     const clientId = req.user?.clientID;
     const userId = req.user?.id;
 
-
     if (!id || !clientId || !userId) {
-      return res.status(400).json({ success: false, message: "Missing required fields" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing required fields" });
     }
 
-    const deleted = await Cart.findByIdAndDelete(id)
+    const deleted = await Cart.findByIdAndDelete(id);
 
     if (!deleted) {
-      return res.status(404).json({ success: false, message: "No active cart found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "No active cart found" });
     }
 
     return res.status(200).json({
@@ -369,7 +405,8 @@ exports.clearCart = async (req, res) => {
     if (!companyId || !clientId || !userId) {
       return res.status(400).json({
         success: false,
-        message: "Missing required fields — companyId, clientId, or userId is missing",
+        message:
+          "Missing required fields — companyId, clientId, or userId is missing",
       });
     }
 

@@ -35,4 +35,5 @@ router.post(
 
 );
 
+router.get("/batches/stock-item/:productId", productController.getProductBatches);
 module.exports = router;

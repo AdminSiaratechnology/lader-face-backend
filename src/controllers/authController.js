@@ -633,6 +633,7 @@ exports.register = asyncHandler(async (req, res) => {
 
       await Customer.create({
         company: acc.company,
+        companyId: acc.company,
         clientId: creatorInfo?.clientID || adminId,
         customerName: name,
         name: name,
@@ -640,8 +641,12 @@ exports.register = asyncHandler(async (req, res) => {
         emailAddress: email.toLowerCase(),
         customerType: "company",
         createdBy: adminId,
+        createdFromUser: true
       });
-
+      console.log(
+        "🚀 ~ file: authController.js ~ line 400 ~ acc.company ~ acc.company",
+        acc.company
+      );
       user.projects = creatorInfo.projects || [];
       await user.save();
     }
@@ -782,7 +787,6 @@ exports.updateUser = asyncHandler(async (req, res) => {
 
   // Store old data before update
   const oldData = user.toObject();
-  console.log(oldData);
   if (
     updateData.status === "active" &&
     user.blocked === true &&
@@ -807,7 +811,10 @@ exports.updateUser = asyncHandler(async (req, res) => {
       );
     }
   }
-
+const oldAccessCompanies = Array.isArray(user.access)
+    ? user.access.map((acc) => acc?.company?.toString()).filter(Boolean)
+    : [];
+console.log(oldAccessCompanies, "oldAccessCompanies")
   Object.entries(updateData).forEach(([key, value]) => {
     if (["createdBy", "createdAt", "_id", "password"].includes(key)) return;
     if (key === "clientID") return;
@@ -879,6 +886,53 @@ exports.updateUser = asyncHandler(async (req, res) => {
   });
 
   await user.save();
+  
+  let newAccess = updateData.access || [];
+
+  if (!Array.isArray(newAccess)) {
+    newAccess = [newAccess];
+  }
+
+  const newAccessCompanies = newAccess
+    .map((acc) => acc?.company?.toString())
+    .filter(Boolean);
+    console.log(newAccessCompanies, "newAccessCompanies")
+  const newlyAddedCompanies = newAccessCompanies.filter(
+    (companyId) => !oldAccessCompanies.includes(companyId)
+  );
+  console.log(newlyAddedCompanies, "newlyAddedCompanies")
+  if (
+    (updateData.role === "Customer" || user.role === "Customer") &&
+    newlyAddedCompanies.length > 0
+  ) {
+    for (const companyId of newlyAddedCompanies) {
+      console.log(companyId, "aaaaaaaaaaaaaaa")
+      if (!mongoose.Types.ObjectId.isValid(companyId)) continue;
+
+      const exists = await Customer.findOne({
+        company: companyId,
+        emailAddress: user.email.toLowerCase(),
+        clientId: req.user.clientID,
+      });
+
+      if (exists) continue;
+
+      await Customer.create({
+        company: new mongoose.Types.ObjectId(companyId),
+        companyId: new mongoose.Types.ObjectId(companyId),
+        clientId: req.user.clientID,
+        customerName: user.name,
+        name: user.name,
+        contactPerson: user.name,
+        emailAddress: user.email.toLowerCase(),
+        customerType: "company",
+        createdBy: req.user.id,
+        createdFromUser: true
+      });
+
+      console.log("✅ Customer entry created for company:", companyId);
+    }
+  }
 
   const userResponse = user.toObject();
   console.log(userResponse);
@@ -1341,23 +1395,23 @@ exports.sendResetOTP = async (req, res) => {
   try {
     const { email } = req.body;
     const PORTAL_ROLE_MAP = {
-  "client-portal": ["Admin", "Client", "Salesman", "Customer"],
-  "management-portal": ["SuperAdmin", "Partner", "SubPartner"],
-};
+      "client-portal": ["Admin", "Client", "Salesman", "Customer"],
+      "management-portal": ["SuperAdmin", "Partner", "SubPartner"],
+    };
 
-    const portal=req.headers["auth-source"] || "client-portal";
-    console.log(portal,"portaltype");
-console.log(email,"email");
+    const portal = req.headers["auth-source"] || "client-portal";
+    console.log(portal, "portaltype");
+    console.log(email, "email");
     const user = await User.findOne({ email });
-      if(user.status === "inactive"){
-    throw new ApiError(403, "Account Inactive. Please contact support.");
-  }
-  if(user.status === "delete"){
-    throw new ApiError(403, "Account Not Found. Please contact support.");
-  }
+    if (user.status === "inactive") {
+      throw new ApiError(403, "Account Inactive. Please contact support.");
+    }
+    if (user.status === "delete") {
+      throw new ApiError(403, "Account Not Found. Please contact support.");
+    }
 
-    console.log(user,"userrole");
-    console.log(!user,"user");
+    console.log(user, "userrole");
+    console.log(!user, "user");
     if (!user) {
       console.log(`Attempted OTP request for non-existent email: ${email}`);
       return res.status(200).json({
@@ -1365,20 +1419,19 @@ console.log(email,"email");
         attemptsLeft: MAX_ATTEMPTS,
         window: WINDOW / 1000,
       });
-      
     }
     const allowedRoles = PORTAL_ROLE_MAP[portal];
 
-if (!allowedRoles) {
-  throw new ApiError(400, "Invalid auth-source");
-}
+    if (!allowedRoles) {
+      throw new ApiError(400, "Invalid auth-source");
+    }
 
-if (!allowedRoles.includes(user.role)) {
-  throw new ApiError(
-    403,
-    `Access Denied: This account does not belong to the ${portal}.`
-  );
-}
+    if (!allowedRoles.includes(user.role)) {
+      throw new ApiError(
+        403,
+        `Access Denied: This account does not belong to the ${portal}.`
+      );
+    }
     // if(portal==="client-portal"){
     //   const allowedRoles = ["Admin", "Client", "Salesman", "Customer"];
     //   if (!allowedRoles.includes(user.role)) {
@@ -1456,9 +1509,9 @@ if (!allowedRoles.includes(user.role)) {
     });
   } catch (err) {
     console.log("Error sending OTP:", err);
-    res
-      .status(500)
-      .json({ message:  err?.message || "An error occurred while sending OTP." });
+    res.status(500).json({
+      message: err?.message || "An error occurred while sending OTP.",
+    });
   }
 };
 
@@ -1953,7 +2006,7 @@ exports.getMe = asyncHandler(async (req, res) => {
 
   if (!user) throw new ApiError(404, "User not found");
 
-  let clientLimit = null; 
+  let clientLimit = null;
 
   if (user.clientID) {
     const client = await User.findById(user.clientID);
@@ -1973,4 +2026,3 @@ exports.getMe = asyncHandler(async (req, res) => {
     )
   );
 });
-

@@ -130,7 +130,7 @@ const CustomerSchema = new mongoose.Schema(
 
     logo: { type: String, default: null },
     notes: { type: String },
-
+    createdFromUser: { type: Boolean, default: false },
     registrationDocs: [RegistrationDocumentSchema],
     auditLogs: [auditLogSchema], // Ensure this is imported correctly
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },

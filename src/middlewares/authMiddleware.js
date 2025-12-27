@@ -2,7 +2,6 @@ const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 
 const authMiddleware = async (req, res, next) => {
-  console.log("authmiddleware")
   const authHeader = req.headers["authorization"];
   if (!authHeader)
     return res.status(401).json({ message: "Authorization missing" });
@@ -30,7 +29,6 @@ const authMiddleware = async (req, res, next) => {
       })
     }
     const client = await User.findById(user.clientID)
-    console.log(client)
     if (client !== null && client?.status !== "active"){
       return res.status(401).json({
         message: `Logged out beacuse your client has been ${user.status} By Administartor `
@@ -39,7 +37,6 @@ const authMiddleware = async (req, res, next) => {
     req.user = decoded;
     next();
   } catch (err) {
-    console.log(err,"error")
     return res.status(401).json({ message: "Invalid token" });
   }
 };
