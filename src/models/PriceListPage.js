@@ -13,6 +13,11 @@ const priceListPageSchema = new mongoose.Schema(
       ref: "Client",
       required: true,
     },
+     code: {
+      type: String,
+      // required: true,
+      length: 6,
+    },
 
     priceLevel: {
       type: String,
@@ -22,7 +27,6 @@ const priceListPageSchema = new mongoose.Schema(
     stockGroupId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "StockGroup",
-      required: true,
     },
 
     stockGroupName: {
