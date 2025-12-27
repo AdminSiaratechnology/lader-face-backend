@@ -27,8 +27,26 @@ const cartSchema = new mongoose.Schema(
     },
     productId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "StockItem",
+      ref: "Product",
       required: true,
+    },
+    batch: {
+      stockItemId: {
+        type: mongoose.Schema.Types.ObjectId,
+        required: true,
+      },
+      batchName: {
+        type: String,
+        required: true,
+      },
+      godownName: {
+        type: String,
+        required: true,
+      },
+      availableQtyAtAdd: {
+        type: Number,
+        required: true,
+      },
     },
     quantity: {
       type: Number,

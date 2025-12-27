@@ -489,7 +489,6 @@ exports.getGodownById = asyncHandler(async (req, res) => {
 
 // ✅ Get godowns by Company
 exports.getGodownsByCompany = asyncHandler(async (req, res) => {
-  console.log("gooodcom");
   try {
     const userId = req.user.id;
     // const userId = "68c1503077fd742fa21575df"; // hardcoded for now
