@@ -1,6 +1,7 @@
 // models/StockGroup.js
 const mongoose = require("mongoose");
 const auditLogSchema = require("../middlewares/auditLogSchema");
+const Counter = require("./Counter");
 
 const stockGroupSchema = new mongoose.Schema(
   {
@@ -32,6 +33,34 @@ const stockGroupSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+stockGroupSchema.pre("validate", async function (next) {
+  try {
+    if (this.code) return next();
+
+    
+
+    const counter = await Counter.findOneAndUpdate(
+      {
+        clientId: this.clientId,
+        companyId: this.companyId,
+        type: "StockGroup",
+      },
+      { $inc: { seq: 1 } },
+      {
+        new: true,
+        upsert: true,
+      }
+    );
+
+    this.code = counter.seq.toString().padStart(6, "0");
+    this.stockGroupId=counter.seq.toString().padStart(6, "0")
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 stockGroupSchema.index({ clientId: 1, companyId: 1, status: 1, createdAt: -1 });
 
 stockGroupSchema.index({ stockGroupId: 1 }, { unique: true });

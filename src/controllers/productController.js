@@ -19,6 +19,13 @@ const StockItem = require("../models/stockItem.mode");
 const fs = require("fs");
 const path = require("path");
 const csv = require("csvtojson");
+const {Worker} =require("worker_threads")
+
+const ModelList={
+  "Stock Group":StockGroup,
+  "Stock Category":StockCategory,
+  "Unit":Unit
+}
 
 // ✅ Batch insert helper
 const insertInBatches = async (data, batchSize = 1000) => {
@@ -809,71 +816,71 @@ const parseMonthYear = (str) => {
   return new Date(Date.UTC(+year, +month - 1, 1));
 };
 
-exports.importProductsFromCSV = asyncHandler(async (req, res) => {
-  if (!req.file) throw new ApiError(400, "CSV file required");
+// exports.importProductsFromCSV = asyncHandler(async (req, res) => {
+//   if (!req.file) throw new ApiError(400, "CSV file required");
 
-  const user = req.user;
-  const csvData = await csv().fromString(req.file.buffer.toString());
+//   const user = req.user;
+//   const csvData = await csv().fromString(req.file.buffer.toString());
 
-  const productsToInsert = [];
-  const errors = [];
+//   const productsToInsert = [];
+//   const errors = [];
 
-  for (let i = 0; i < csvData.length; i++) {
-    const row = csvData[i];
+//   for (let i = 0; i < csvData.length; i++) {
+//     const row = csvData[i];
 
-    try {
-      const companyId = row.companyId?.trim();
-      if (!companyId) throw new Error("companyId missing");
+//     try {
+//       const companyId = row.companyId?.trim();
+//       if (!companyId) throw new Error("companyId missing");
 
-      if (!row.Name?.trim()) throw new Error("Product name missing");
+//       if (!row.Name?.trim()) throw new Error("Product name missing");
 
-      const [stockGroup, stockCategory, unit] = await Promise.all([
-        findByName(StockGroup, row["Stock Group"], companyId),
-        findByName(StockCategory, row["Stock Category"], companyId),
-        findByName(Unit, row["Unit"], companyId),
-      ]);
+//       const [stockGroup, stockCategory, unit] = await Promise.all([
+//         findByName(StockGroup, row["Stock Group"], companyId),
+//         findByName(StockCategory, row["Stock Category"], companyId),
+//         findByName(Unit, row["Unit"], companyId),
+//       ]);
 
-      productsToInsert.push({
-        clientId: user.clientID,
-        companyId,
-        name: row.Name.trim(),
-        partNo: row["Part No"] || null,
-        stockGroup: stockGroup?._id || null,
-        stockCategory: stockCategory?._id || null,
-        unit: unit?._id || null,
-        minimumQuantity: Number(row["Minimum Quantity"]) || 0,
-        minimumRate: Number(row["Minimum Rate"]) || 0,
-        maximumRate: Number(row["Maximum Rate"]) || 0,
-        batch: ["yes", "true", "1"].includes(
-          (row["Batch Managed"] || "").toLowerCase()
-        ),
-        mfgDate: parseMonthYear(row["Mfg Date (YYYY-MM)"]),
-        expiryDate: parseMonthYear(row["Expiry Date (YYYY-MM)"]),
-        status: "active",
-        createdBy: user.id,
-      });
-    } catch (err) {
-      errors.push(`Row ${i + 2}: ${err.message}`);
-    }
-  }
-  console.log(productsToInsert, "productTOinsrttopush");
-  const inserted = await Product.insertMany(productsToInsert, {
-    ordered: false,
-  });
+//       productsToInsert.push({
+//         clientId: user.clientID,
+//         companyId,
+//         name: row.Name.trim(),
+//         partNo: row["Part No"] || null,
+//         stockGroup: stockGroup?._id || null,
+//         stockCategory: stockCategory?._id || null,
+//         unit: unit?._id || null,
+//         minimumQuantity: Number(row["Minimum Quantity"]) || 0,
+//         minimumRate: Number(row["Minimum Rate"]) || 0,
+//         maximumRate: Number(row["Maximum Rate"]) || 0,
+//         batch: ["yes", "true", "1"].includes(
+//           (row["Batch Managed"] || "").toLowerCase()
+//         ),
+//         mfgDate: parseMonthYear(row["Mfg Date (YYYY-MM)"]),
+//         expiryDate: parseMonthYear(row["Expiry Date (YYYY-MM)"]),
+//         status: "active",
+//         createdBy: user.id,
+//       });
+//     } catch (err) {
+//       errors.push(`Row ${i + 2}: ${err.message}`);
+//     }
+//   }
+//   console.log(productsToInsert, "productTOinsrttopush");
+//   const inserted = await Product.insertMany(productsToInsert, {
+//     ordered: false,
+//   });
 
-  res.status(201).json(
-    new ApiResponse(
-      201,
-      {
-        total: csvData.length,
-        inserted: inserted.length,
-        failed: errors.length,
-        errors,
-      },
-      "Products imported successfully"
-    )
-  );
-});
+//   res.status(201).json(
+//     new ApiResponse(
+//       201,
+//       {
+//         total: csvData.length,
+//         inserted: inserted.length,
+//         failed: errors.length,
+//         errors,
+//       },
+//       "Products imported successfully"
+//     )
+//   );
+// });
 exports.getProductsByStockGroupId = asyncHandler(async (req, res) => {
   const { stockGroupId } = req.params;
 
@@ -881,7 +888,11 @@ exports.getProductsByStockGroupId = asyncHandler(async (req, res) => {
   const limit = Number(req.query.limit || 40);
   const skip = (page - 1) * limit;
 
-  const filter = stockGroupId ? { stockGroup: stockGroupId } : {};
+  // const filter = stockGroupId ? { stockGroup: stockGroupId } : {};
+  let filter={};
+  if(stockGroupId && stockGroupId !=="All"){
+    filter.stockGroup=stockGroupId
+  }
 
   const products = await Product.find(filter, { name: 1 })
     .skip(skip)
@@ -901,4 +912,328 @@ exports.getProductsByStockGroupId = asyncHandler(async (req, res) => {
     )
   );
 });
+
+const findOrCreateByName = async (
+  Model,
+  name,
+  companyId,
+  userId,
+  clientId
+) => {
+  if (!name || !name.trim()) return null;
+
+  const trimmed = name.trim();
+
+  // 🔍 Find existing (case-insensitive)
+  let doc = await Model.findOne({
+    name: { $regex: new RegExp("^" + trimmed + "$", "i") },
+    companyId,
+  });
+
+  // ➕ Create if not exists
+  if (!doc) {
+    const payload = {
+      name: trimmed,
+      clientId,
+      companyId,
+      createdBy: userId,
+      status: "active",
+    };
+
+    // ⭐ Special handling for Unit model
+    if (Model.modelName === "Unit") {
+      payload.type = "simple";     // required by Unit schema
+      payload.symbol = trimmed;    // symbol = unit name for now
+    }
+
+    doc = await Model.create(payload);
+  }
+
+  return doc;
+};
+
+
+const productExists = async (name, companyId, clientId) => {
+  return await Product.exists({
+    name: { $regex: new RegExp("^" + name.trim() + "$", "i") },
+    companyId,
+    clientId,
+  });
+};
+
+// exports.importProductsFromCSV = asyncHandler(async (req, res) => {
+//   if (!req.file) throw new ApiError(400, "CSV file required");
+
+//   const user = req.user;
+//   const clientId=req.user.clientID;
+//   console.log(clientId,"clientID")
+//   const csvData = await csv().fromString(req.file.buffer.toString());
+
+//   const productsToInsert = [];
+//   const errors = [];
+//   let skipped = 0;
+
+//   for (let i = 0; i < csvData.length; i++) {
+//     const row = csvData[i];
+
+//     try {
+//       const companyId = row.companyId?.trim();
+//       if (!companyId) throw new Error("companyId missing");
+
+//       if (!row.Name?.trim()) throw new Error("Product name missing");
+
+//       // 🔁 Skip if product already exists
+//       const alreadyExists = await productExists(
+//         row.Name,
+//         companyId,
+//         clientId
+//       );
+//       console.log(alreadyExists,"alredyexisttt")
+
+//       if (alreadyExists) {
+//         skipped++;
+//         continue;
+//       }
+
+//       // 🔁 Find or create dependencies
+//       const [stockGroup, stockCategory, unit] = await Promise.all([
+//         findOrCreateByName(
+//           StockGroup,
+//           row["Stock Group"],
+//           companyId,
+//           user.id,
+//           clientId
+//         ),
+//         findOrCreateByName(
+//           StockCategory,
+//           row["Stock Category"],
+//           companyId,
+//           user.id,
+//           clientId
+//         ),
+//         findOrCreateByName(Unit, row["Unit"], companyId, user.id,clientId),
+//       ]);
+
+//       productsToInsert.push({
+//         clientId: clientId,
+//         companyId,
+//         name: row.Name.trim(),
+//         partNo: row["Part No"] || null,
+//         stockGroup: stockGroup?._id || null,
+//         stockCategory: stockCategory?._id || null,
+//         unit: unit?._id || null,
+//         minimumQuantity: Number(row["Minimum Quantity"]) || 0,
+//         minimumRate: Number(row["Minimum Rate"]) || 0,
+//         maximumRate: Number(row["Maximum Rate"]) || 0,
+//         batch: ["yes", "true", "1"].includes(
+//           (row["Batch Managed"] || "").toLowerCase()
+//         ),
+//         mfgDate: parseMonthYear(row["Mfg Date (YYYY-MM)"]),
+//         expiryDate: parseMonthYear(row["Expiry Date (YYYY-MM)"]),
+//         status: "active",
+//         createdBy: user.id,
+//       });
+//     } catch (err) {
+//       errors.push(`Row ${i + 2}: ${err.message}`);
+//     }
+//   }
+//   console.log(productsToInsert,"productsToInsert")
+
+//   const inserted = await Product.insertMany(productsToInsert, {
+//     ordered: false,
+//   });
+
+//   res.status(201).json(
+//     new ApiResponse(
+//       201,
+//       {
+//         total: csvData.length,
+//         inserted: inserted.length,
+//         skipped,
+//         failed: errors.length,
+//         errors,
+//       },
+//       "Products imported successfully"
+//     )
+//   );
+// });
+
+
+// exports.importProductsFromCSV = asyncHandler(async (req, res) => {
+//   if (!req.file) throw new ApiError(400, "CSV file required");
+
+//   const worker = new Worker(
+//     path.join(__dirname, "../workers/productImport.worker.js"),
+//     {
+//       workerData: {
+//         // csvBuffer: req.file.buffer,
+//      filePath: req.file.path,
+//         user: req.user,
+//         clientId: req.user.clientID,
+//       },
+//     }
+//   );
+
+//   worker.on("message", (result) => {
+//     res.status(201).json(
+//       new ApiResponse(201, result, "Import started successfully")
+//     );
+//   });
+
+//   worker.on("error", (err) => {
+//     console.error("Worker error:", err);
+//     throw new ApiError(500, "CSV import failed");
+//   });
+// });
+
+
+
+// exports.importProductsFromCSV = asyncHandler(async (req, res) => {
+//   if (!req.file) {
+//     throw new ApiError(400, "CSV file required");
+//   }
+
+//   const worker = new Worker(
+//     path.join(__dirname, "../workers/productImport.worker.js"),
+//     {
+//       workerData: {
+//         filePath: req.file.path,          // ✅ THIS WAS MISSING
+//         user: req.user,
+//         clientId: req.user.clientID,
+//       },
+//     }
+//   );
+
+//   worker.on("message", (result) => {
+//     res.status(201).json(
+//       new ApiResponse(201, result, "Products imported successfully")
+//     );
+//   });
+
+//   worker.on("error", (err) => {
+//     console.error("Worker error:", err);
+//     throw new ApiError(500, err.message);
+//   });
+
+//   worker.on("exit", (code) => {
+//     if (code !== 0) {
+//       console.error(`Worker stopped with exit code ${code}`);
+//     }
+//   });
+// });
+
+// exports.importProductsFromCSV = asyncHandler(async (req, res) => {
+//   if (!req.file) {
+//     throw new ApiError(400, "CSV file required");
+//   }
+
+//   // 🔴 DEBUG (ek baar check kar lo)
+//   console.log("buffer exists?", !!req.file.buffer);
+
+//   const worker = new Worker(
+//     path.join(__dirname, "../workers/productImport.worker.js"),
+//     {
+//       workerData: {
+//         csvBuffer: req.file.buffer, // ✅ MUST BE THIS
+//         user: req.user,
+//         clientId: req.user.clientID,
+//       },
+//     }
+//   );
+
+//   worker.on("message", (result) => {
+//     res.status(201).json(
+//       new ApiResponse(201, result, "Products imported successfully")
+//     );
+//   });
+
+//   worker.on("error", (err) => {
+//     console.error("Worker error:", err);
+//     res.status(500).json({ message: err.message });
+//   });
+// });
+
+
+exports.importProductsFromCSV = asyncHandler(async (req, res) => {
+  if (!req.file) {
+    throw new ApiError(400, "CSV file required");
+  }
+
+  console.log("buffer exists?", !!req.file.buffer);
+  console.log("buffer size:", req.file.buffer.length);
+
+  const worker = new Worker(
+    path.join(__dirname, "../workers/productImport.worker.js"),
+    {
+      workerData: {
+        csvString: req.file.buffer.toString('utf-8'), // ✅ Convert Buffer to string
+        user: {
+          id: req.user.id || req.user._id,
+          clientID: req.user.clientID,
+        },
+        clientId: req.user.clientID,
+      },
+    }
+  );
+
+  worker.on("message", (result) => {
+    if (result.error) {
+      return res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+    }
+
+    res.status(201).json(
+      new ApiResponse(201, result, "Products imported successfully")
+    );
+  });
+
+  worker.on("error", (err) => {
+    console.error("Worker error:", err);
+    res.status(500).json({ 
+      success: false,
+      message: err.message 
+    });
+  });
+
+  worker.on("exit", (code) => {
+    if (code !== 0) {
+      console.error(`Worker stopped with exit code ${code}`);
+    }
+  });
+});
+
+exports.getProductBatches = async (req, res) => { 
+  const { productId } = req.params; 
+  const { companyId } = req.query; 
+ 
+  if (!productId || !companyId) { 
+    throw new ApiError(400, "productId and companyId are required"); 
+  } 
+ 
+  const stockItem = await StockItem.findOne({ 
+    productId, 
+    companyId, 
+    status: "active", 
+  }).lean(); 
+ 
+  if (!stockItem) { 
+    return res.status(200).json( 
+      new ApiResponse(200, [], "No batch data found") 
+    ); 
+  } 
+ 
+  const batches = stockItem.GodownDetails.map((g, index) => ({ 
+    _id: `${stockItem._id}_${index}`, // frontend key 
+    batchName: g.BatchName, 
+    godownName: g.GodownName, 
+    availableQty: g.Qty, 
+  })); 
+ 
+  return res.status(200).json( 
+    new ApiResponse(200, batches, "Batch details fetched") 
+  ); 
+};
+
 
