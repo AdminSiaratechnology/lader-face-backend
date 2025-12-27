@@ -7,6 +7,7 @@ const {
   getAllPriceList,
   importPriceListFromCSV,
   getPriceListById,
+  updatePriceListPage,
 } = require("../controllers/priceList.controller");
 
 // ✅ DEFINE UPLOAD
@@ -20,7 +21,14 @@ router.post(
   upload.single("file"),
   importPriceListFromCSV
 );
+
+
 router.get("/price-list/:id", getPriceListById);
 
+// routes/priceList.routes.js
+router.put(
+  "/price-list/:id",
+  updatePriceListPage
+);
 
 module.exports = router;
