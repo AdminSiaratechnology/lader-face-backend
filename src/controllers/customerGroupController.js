@@ -3,16 +3,23 @@ const asyncHandler = require("../utils/asyncHandler");
 const ApiResponse = require("../utils/apiResponse");
 const ApiError = require("../utils/apiError");
 const Counter = require("../models/Counter");
+const { checkUnique } = require("../utils/checkUnique");
 
 const escapeRegex = (text) => {
   return text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
 };
 
 exports.createGroup = asyncHandler(async (req, res) => {
-  const { groupName, status = "active", companyId, parentGroup } = req.body;
+  const { name, status = "active", companyId, parentGroup } = req.body;
+  const clientId = req?.user?.clientID;
 
-  if (!groupName?.trim()) throw new ApiError(400, "Group name is required");
+  if (!name?.trim()) throw new ApiError(400, "Group name is required");
   if (!companyId) throw new ApiError(400, "Company ID is required");
+     await checkUnique({
+    model: CustomerGroup,
+    filter: { companyId, clientId, name:name.trim() },
+    message: "Customer Group name already exists",
+  });
 
   // Optional: Prevent circular reference
   if (parentGroup) {
@@ -23,10 +30,10 @@ exports.createGroup = asyncHandler(async (req, res) => {
   }
 
   const group = await CustomerGroup.create({
-    groupName: groupName.trim(),
+    name: name.trim(),
     status,
     companyId,
-    clientId: req.user.clientID,
+    clientId: clientId,
     parentGroup: parentGroup || null,
   });
 
@@ -57,13 +64,13 @@ exports.bulkCreateCustomerGroups = async (req, res) => {
 
     const startSeq = counter.seq - total + 1;
 
-    // 🚀 STEP 2: Generate payload with groupCode in memory
+    // 🚀 STEP 2: Generate payload with code in memory
     const payload = groups.map((g, index) => ({
       clientId,
       companyId,
-      groupName: g.groupName,
+      name: g.name,
       parentGroup: g.parentGroup || null,
-      groupCode: (startSeq + index).toString().padStart(12, "0"),
+      code: (startSeq + index).toString().padStart(12, "0"),
     }));
 
     // 🚀 STEP 3: Bulk insert (FAST)
@@ -87,15 +94,25 @@ exports.bulkCreateCustomerGroups = async (req, res) => {
 
 
 exports.updateGroup = asyncHandler(async (req, res) => {
-  const { groupName, status, parentGroup } = req.body;
+  const { name, status, parentGroup } = req.body;
+  const clientId = req?.user?.clientID;
+      const companyId=req?.body?.companyId
+
 
   const updateData = {
-    ...(groupName && { groupName: groupName.trim() }),
+    ...(name && { name: name.trim() }),
     ...(status && { status }),
     ...(parentGroup !== undefined && {
       parentGroup: parentGroup || null ? null : parentGroup,
     }),
   };
+       await checkUnique({
+    model: CustomerGroup,
+    filter: { companyId, clientId, name:name.trim() },
+    excludeId: req.params.id,
+    
+    message: "Customer Group name already exists",
+  });
 
   const group = await CustomerGroup.findOneAndUpdate(
     { _id: req.params.id, clientId: req.user.clientID, isDeleted: false },
@@ -119,7 +136,9 @@ exports.getGroups = asyncHandler(async (req, res) => {
     limit = 10,
   } = req.query;
 
+
   if (!companyId) throw new ApiError(400, "companyId is required");
+
 
   // Base filter (never changes)
   const baseFilter = {
@@ -132,7 +151,7 @@ exports.getGroups = asyncHandler(async (req, res) => {
   const listFilter = {
     ...baseFilter,
     ...(search && {
-      groupName: { $regex: escapeRegex(search), $options: "i" },
+      name: { $regex: escapeRegex(search), $options: "i" },
     }),
     ...(status && status !== "all" && { status }),
   };
@@ -182,17 +201,22 @@ exports.getGroupById = asyncHandler(async (req, res) => {
     clientId: req.user.clientID,
     isDeleted: false,
   });
+  
 
   if (!group) throw new ApiError(404, "Group not found");
   res.json(new ApiResponse(200, group));
 });
 
 exports.deleteGroup = asyncHandler(async (req, res) => {
+
+
+  
   const group = await CustomerGroup.findOneAndUpdate(
     { _id: req.params.id, clientId: req.user.clientID, isDeleted: false },
     { isDeleted: true },
     { new: true }
   );
+
 
   if (!group) throw new ApiError(404, "Group not found");
 

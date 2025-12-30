@@ -25,7 +25,7 @@ const stockGroupSchema = new mongoose.Schema(
     parent: { type: mongoose.Schema.Types.ObjectId, ref: "StockGroup" },
     stockGroupId: {
       type: String,
-      required: true,
+     
     },
     code: { type: String },
     auditLogs: [auditLogSchema],
@@ -63,7 +63,7 @@ stockGroupSchema.pre("validate", async function (next) {
 });
 stockGroupSchema.index({ clientId: 1, companyId: 1, status: 1, createdAt: -1 });
 
-stockGroupSchema.index({ stockGroupId: 1 }, { unique: true });
+
 
 stockGroupSchema.index({ name: "text", description: "text" });
 

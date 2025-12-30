@@ -8,6 +8,8 @@ const { generateUniqueId } = require("../utils/generate16DigiId");
 // const { createAuditLog } = require("../utils/createAuditLog");
 const  createAuditLog  = require("../utils/createAuditLogMain");
 const { generate6DigitUniqueId } = require("../utils/generate6DigitUniqueId");
+const  {checkUnique}  = require("../utils/checkUnique");
+const validateCompanyOwnership = require("../utils/validateCompanyOwnership");
 
 // Generate unique 18-digit code using timestamp and index
 const generateUniqueIdBulk = (index) => {
@@ -100,7 +102,7 @@ exports.createGodown = asyncHandler(async (req, res) => {
 
   // ✅ Required fields check
   if (!companyId || !name) {
-    throw new ApiError(400, "Company, Code and Name are required");
+    throw new ApiError(400, "Company, and Name are required");
   }
 
   // ✅ Logged-in user check
@@ -109,6 +111,14 @@ exports.createGodown = asyncHandler(async (req, res) => {
   // ✅ Extract client from user
   const clientId = req.user.clientID;
   if (!clientId) throw new ApiError(404, "User not found");
+ 
+await checkUnique({
+  model: Godown,
+  filter: { companyId, clientId, name },
+  message: "Godown name already exists!",
+});
+
+
 
   // ✅ Create godown
   const godown = await Godown.create({
@@ -289,13 +299,25 @@ exports.createBulkGodowns = asyncHandler(async (req, res) => {
 });
 exports.updateGodown = asyncHandler(async (req, res) => {
   const { id } = req.params;
+   const clientId = req.user.clientID;
+  const companyId=req.body.companyId
+  const name=req.body.name
+
   if (!id) throw new ApiError(400, "Godown ID is required");
 
   const user = await User.findById(req.user.id);
   if (!user) throw new ApiError(404, "User not found");
+  
+  if (!name) throw new ApiError(404, "Name is reqired found");
 
   const godown = await Godown.findById(id);
   if (!godown) throw new ApiError(404, "Godown not found");
+  await checkUnique({
+  model: Godown,
+  filter: { companyId, clientId, name },
+  excludeId: req.params.id,
+  message: "Godown name already exists",
+});
 
   console.log("Godown before update:", godown);
 
@@ -682,6 +704,9 @@ exports.deleteGodown = asyncHandler(async (req, res) => {
   // ✅ 2️⃣ Ensure godown exists
   const godown = await Godown.findById(id);
   if (!godown) throw new ApiError(404, "Godown not found");
+   if (godown.clientId.toString() !== clientId.toString()) {
+    throw new ApiError(403, "Unauthorized to delete this godown");
+  }
 
   // ✅ 3️⃣ Track changes for audit log
   const oldStatus = godown.status;

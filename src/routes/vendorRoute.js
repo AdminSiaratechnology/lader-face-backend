@@ -10,6 +10,7 @@ const {
   
 } = require("../controllers/vendorController");
 const upload = require("../config/s3");
+ const validateCompany = require("../middlewares/validateCompanyMiddleware");
 
 const router = express.Router();
 
@@ -17,7 +18,7 @@ const router = express.Router();
 router.post("/",  upload.fields([
     { name: "logo", maxCount: 1 },
     { name: "registrationDocs", maxCount: 5 },
-  ]), createVendor);
+  ]),validateCompany, createVendor);
 
   router.post("/bulk-create",upload.none(), createBulkVendors);
 
@@ -25,12 +26,12 @@ router.post("/",  upload.fields([
 router.put("/:id",upload.fields([
     { name: "logo", maxCount: 1 },
     { name: "registrationDocs", maxCount: 5 },
-  ]),  updateVendor);
+  ]),validateCompany,  updateVendor);
 
 // Get all vendors by company
 router.get("/", getVendorsByClient);
 router.get("/", getVendorsByCompany);
-router.get("/:companyId", getVendorsByCompany);
+router.get("/:companyId",validateCompany, getVendorsByCompany);
 
 // Get all vendors by company
 router.get("/", getVendorsByCompany);

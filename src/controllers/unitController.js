@@ -6,6 +6,7 @@ const User = require("../models/User");
 const mongoose = require("mongoose");
 const { createAuditLog } = require("../utils/createAuditLog");
 const { generate6DigitUniqueId } = require("../utils/generate6DigitUniqueId");
+const { checkUnique } = require("../utils/checkUnique");
 
 const insertInBatches = async (data, batchSize) => {
   if (!data || !Array.isArray(data) || data.length === 0) {
@@ -95,13 +96,19 @@ exports.createUnit = asyncHandler(async (req, res) => {
   }
 
   const clientId = agentDetail.clientID;
-  const code = await generate6DigitUniqueId(Unit, "code");
+
+  await checkUnique({
+  model: Unit,
+  filter: { companyId, clientId, name },
+  message: "Unit name already exists!",
+});
+  // const code = await generate6DigitUniqueId(Unit, "code");
   const unit = await Unit.create({
     clientId,
     companyId,
     name,
     type,
-    code,
+    // code,
     symbol,
     decimalPlaces,
     firstUnit,
@@ -242,9 +249,25 @@ exports.createBulkUnits = asyncHandler(async (req, res) => {
 exports.updateUnit = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
+       const clientId = req.user.clientID;
+      const companyId=req.body.companyId;
+      const name=req?.body?.name;
+        if (!name) throw new ApiError(404, "Unit name is require");
+        if (!companyId) throw new ApiError(404, "Unit companyId is require");
+
+    
+    
+    await checkUnique({
+    model: Unit,
+    filter: { companyId, clientId, name },
+    excludeId: req.params.id,
+    message: "Unit name already exists",
+  });
+
   // ✅ Step 1: Find existing unit
   const unit = await Unit.findById(id);
   if (!unit) throw new ApiError(404, "Unit not found");
+
 
   // ✅ Step 2: Allowed fields for update
   const allowedFields = [
@@ -311,11 +334,15 @@ exports.updateUnit = asyncHandler(async (req, res) => {
 
 // ✅ Delete Unit
 exports.deleteUnit = asyncHandler(async (req, res) => {
-  const { id } = req.params;
+  const { id } = req?.params;
+      const clientId = req?.user?.clientID;
 
   const unit = await Unit.findByIdAndDelete(id);
 
   if (!unit) throw new ApiError(404, "Unit not found");
+     if (unit.clientId.toString() !== clientId.toString()) {
+    throw new ApiError(403, "Unauthorized to delete this godown");
+  }
 
   let ipAddress =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
