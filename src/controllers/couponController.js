@@ -92,21 +92,12 @@ exports.createCoupon = async (req, res) => {
       });
     }
 
-
-
-    // 🔍 Debug (temporary)
-    console.log(
-      "INCOMING BOGO 👉",
-      JSON.stringify(data.bogoConfig, null, 2)
-    );
-
     // 4️⃣ Create
     const coupon = await CouponModel.create(data);
 
     res.json({ success: true, data: coupon });
 
   } catch (err) {
-    console.error(err);
     res.status(500).json({
       success: false,
       message: "Something went wrong while creating coupon",

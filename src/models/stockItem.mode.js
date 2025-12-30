@@ -5,6 +5,8 @@ const godownDetailSchema = new mongoose.Schema(
     GodownName: { type: String, required: true },
     BatchName: { type: String, required: true },
     Qty: { type: Number, required: true },
+    Mfg: { type: Date },
+    Expiry: { type: Date},
   },
   { _id: false }
 );

@@ -18,7 +18,7 @@ const Product = require("../models/Product");
 // ✅ Create Order
 exports.createOrder = asyncHandler(async (req, res) => {
   try {
-    const { companyId, customerId, shippingAddress, items, orderSource } =
+    const { companyId, customerId, shippingAddress, items, orderSource, } =
       req.body;
     const clientId = req.user?.clientID;
     const userId = req.user?.id;
@@ -47,15 +47,11 @@ exports.createOrder = asyncHandler(async (req, res) => {
       }
 
       // 1️⃣ Fetch product
-      const product = await StockItem.findById(item.productId)
-        .populate("productId")
-        .lean();
-      console.log(product, " fetched product for item:", item.productId);
-
+      const product = await Product.findById(item.productId);
       if (!product)
         throw new ApiError(404, `Product not found: ${item.productId}`);
-
-      let hsnCode = product?.productId.taxConfiguration?.hsnCode || "";
+console.log(product)
+      let hsnCode = product?.taxConfiguration?.hsnCode || "";
       let isGST = company.country === "India" ? true : false;
       let IGST = company.state !== shippingAddress.state ? true : false;
       const {
@@ -64,12 +60,12 @@ exports.createOrder = asyncHandler(async (req, res) => {
         cess = 0,
         additionalCess = 0,
         taxPercentage = 0,
-      } = product?.productId.taxConfiguration || {};
+      } = product?.taxConfiguration || {};
 
       const taxPercent = isGST
         ? cgst + sgst + cess + additionalCess
         : taxPercentage;
-      const includesTax = product?.productId.priceIncludesTax;
+      const includesTax = product?.priceIncludesTax;
       console.log(
         `Tax % for product ${item.productId}:`,
         taxPercent,
@@ -100,7 +96,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
       item.taxableValue = Number((taxable * qty).toFixed(2));
       item.taxAmount = Number((taxAmount * qty).toFixed(2));
       item.total = Number((item.taxableValue + item.taxAmount).toFixed(2));
-      item.hsnCode = product?.productId.taxConfiguration?.hsnCode || "";
+      item.hsnCode = product?.taxConfiguration?.hsnCode || "";
       item.isGST = isGST;
       item.isIGST = IGST;
       item.CGST = cgst;

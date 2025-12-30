@@ -33,7 +33,7 @@ const posSchema = new mongoose.Schema({
   customer: {
     name: String,
     phone: String,
-    customerId: { type: mongoose.Types.ObjectId, default: null },
+    customerId: { type: mongoose.Types.ObjectId, ref: "Customer", default: null },
   },
 
   items: [
@@ -44,6 +44,20 @@ const posSchema = new mongoose.Schema({
       qty: Number,
       price: Number,
       total: Number,
+      batch: {
+        stockItemId: {
+          type: mongoose.Schema.Types.ObjectId,
+        },
+        batchName: {
+          type: String,
+        },
+        godownName: {
+          type: String,
+        },
+        availableQtyAtAdd: {
+          type: Number,
+        },
+      },
     },
   ],
 
