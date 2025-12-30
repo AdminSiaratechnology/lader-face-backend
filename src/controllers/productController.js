@@ -19,7 +19,8 @@ const StockItem = require("../models/stockItem.mode");
 const fs = require("fs");
 const path = require("path");
 const csv = require("csvtojson");
-const {Worker} =require("worker_threads")
+const {Worker} =require("worker_threads");
+const { checkUnique } = require("../utils/checkUnique");
 
 const ModelList={
   "Stock Group":StockGroup,
@@ -81,6 +82,14 @@ exports.createProduct = asyncHandler(async (req, res) => {
       throw new ApiError(404, "User not found");
     }
     const clientId = user.clientID;
+     const companyId=req?.body?.companyId
+     const name=req?.body?.name
+
+        await checkUnique({
+    model: Product,
+    filter: { companyId, clientId, name },
+    message: "Product name already exists",
+  });
     console.log("clientId", clientId);
 
     // Check for duplicate product name
@@ -151,13 +160,13 @@ exports.createProduct = asyncHandler(async (req, res) => {
         fileName: file.originalname,
       }));
     }
-    const code = await generate6DigitUniqueId(Product, "code");
+    // const code = await generate6DigitUniqueId(Product, "code");
 
     // Build product object
     const productObj = {
       clientId: clientId,
       companyId: body.companyId,
-      code: code,
+      // code: code,
       name: body.name,
       partNo: body.partNo,
       stockGroup: body.stockGroup || null,
@@ -291,10 +300,20 @@ exports.createProduct = asyncHandler(async (req, res) => {
 exports.updateProduct = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const clientId = req.user.clientID;
+  const companyId=req?.body?.companyId;
+  const name=req?.body?.name;
+
 
   // ✅ Step 0: Validate ID
   if (!id) throw new ApiError(400, "Product ID is required");
+  console.log(companyId,"companyid")
   // Check for duplicate product name
+     await checkUnique({
+    model: Product,
+    filter: { companyId, clientId, name },
+    excludeId: req.params.id,
+    message: "Product name already exists",
+  });
 
   const product = await Product.findById(id);
   if (!product) throw new ApiError(404, "Product not found");
@@ -424,6 +443,7 @@ exports.deleteProduct = asyncHandler(async (req, res) => {
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
   if (!clientID) throw new ApiError(403, "Invalid user");
+
 
   // ✅ Step 2: Find product with ownership check
   const product = await Product.findOne({ _id: id, clientId: clientID });

@@ -33,6 +33,32 @@ const stockCategorySchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+stockCategorySchema.pre("validate", async function (next) {
+  try {
+    if (this.code) return next();
+
+    const Counter = mongoose.model("Counter");
+
+    const counter = await Counter.findOneAndUpdate(
+      {
+        clientId: this.clientId || this.client,
+        companyId: this.companyId || this.company,
+        type: "StockCategory",
+      },
+      { $inc: { seq: 1 } },
+      {
+        new: true,
+        upsert: true,
+      }
+    );
+
+    this.code = counter.seq.toString().padStart(6, "0");
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 
 stockCategorySchema.index({
   clientId: 1,

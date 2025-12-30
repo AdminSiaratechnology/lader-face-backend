@@ -11,6 +11,7 @@ const {
   
 } = require("../controllers/ladgerController");
 const upload = require("../config/s3");
+const validateCompany = require("../middlewares/validateCompanyMiddleware");
 
 const router = express.Router();
 
@@ -18,17 +19,17 @@ const router = express.Router();
 router.post("/", upload.fields([
     { name: "logo", maxCount: 1 },
     { name: "registrationDocs", maxCount: 5 },
-  ]), createLedger);
+  ]),validateCompany, createLedger);
   router.post("/bulk", createBulkLedgers);
 
 // Update agent
 router.put("/:id",upload.fields([
     { name: "logo", maxCount: 1 },
     { name: "registrationDocs", maxCount: 5 },
-  ]),  updateLedger);
+  ]),validateCompany,  updateLedger);
 
 // Get all agents by company
-router.get("/:companyId", getLedgersByCompany);
+router.get("/:companyId",validateCompany, getLedgersByCompany);
 // router.get("/", getLedgersByClient);
 // // Get all agents by company
 // router.get("/", getAgentsByCompany);

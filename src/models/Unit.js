@@ -37,6 +37,32 @@ const unitSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+unitSchema.pre("validate", async function (next) {
+  try {
+    if (this.code) return next();
+
+    const Counter = mongoose.model("Counter");
+
+    const counter = await Counter.findOneAndUpdate(
+      {
+        clientId: this.clientId || this.client,
+        companyId: this.companyId || this.company,
+        type: "Unit",
+      },
+      { $inc: { seq: 1 } },
+      {
+        new: true,
+        upsert: true,
+      }
+    );
+
+    this.code = counter.seq.toString().padStart(6, "0");
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 unitSchema.index({ clientId: 1, companyId: 1, status: 1, createdAt: -1 });
 
 unitSchema.index(

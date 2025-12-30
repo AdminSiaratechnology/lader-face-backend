@@ -7,18 +7,22 @@ const {
   getCustomersByClient,
   deleteCustomer,
   createBulkCustomers,
-  uploadCustomerCSV
+  uploadCustomerCSV,
+  createCounterCustomer
+
 } = require("../controllers/customerController");
 const upload = require("../config/s3");
 const csvUpload = require("../middlewares/csvUpload")
 const router = express.Router();
 const authMiddleware = require('../middlewares/authMiddleware');
+  const validateCompany = require("../middlewares/validateCompanyMiddleware");
+
 
 // Create customer
 router.post("/",  upload.fields([
     { name: "logo", maxCount: 1 },
     { name: "registrationDocs", maxCount: 5 },
-  ]), createCustomer);
+  ]),validateCompany, createCustomer);
 
   //bulk create customers
   router.post("/bulk", createBulkCustomers);
@@ -27,12 +31,12 @@ router.post("/",  upload.fields([
 router.put("/:id",upload.fields([
     { name: "logo", maxCount: 1 },
     { name: "registrationDocs", maxCount: 5 },
-  ]),  updateCustomer);
+  ]),validateCompany,  updateCustomer);
 
 // Get all customers by company
 // router.get("/", getCustomersByClient);
 // // Get all customers by company
-router.get("/:companyId", getCustomersByCompany);
+router.get("/:companyId",validateCompany, getCustomersByCompany);
 
 // Get customer by id
 router.get("/:id", getCustomerById);
@@ -42,4 +46,5 @@ router.post(
   csvUpload.single("file"),
   uploadCustomerCSV
 );
+router.post("/counter", createCounterCustomer)
 module.exports = router;

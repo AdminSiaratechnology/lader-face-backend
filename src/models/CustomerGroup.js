@@ -17,13 +17,24 @@ const CustomerGroupSchema = new mongoose.Schema(
 
     groupName: {
       type: String,
+      // required: true,
+      trim: true,
+    },
+    name: {
+      type: String,
       required: true,
       trim: true,
     },
 
     groupCode: {
       type: String,
-      unique: true,
+      // unique: true,
+    },
+    code: {
+      type: String,
+       required: true,
+      
+      // unique: true,
     },
 
     status: {
@@ -71,7 +82,7 @@ CustomerGroupSchema.pre("validate", async function (next) {
       }
     );
 
-    this.groupCode = counter.seq.toString().padStart(12, "0");
+    this.code = counter.seq.toString().padStart(6, "0");
 
     next();
   } catch (error) {

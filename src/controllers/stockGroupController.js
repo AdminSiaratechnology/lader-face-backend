@@ -9,6 +9,7 @@ const User = require("../models/User");
 const mongoose = require("mongoose");
 const { createAuditLog } = require("../utils/createAuditLog");
 const { generate6DigitUniqueId } = require("../utils/generate6DigitUniqueId");
+const  {checkUnique}  = require("../utils/checkUnique");
 
 // Generate unique 18-digit code using timestamp and index
 const generateUniqueId = (index) => {
@@ -109,16 +110,22 @@ exports.createStockGroup = asyncHandler(async (req, res) => {
   }
 
   const clientId = agentDetail.clientID;
+  await checkUnique({
+    model: StockGroup,
+    filter: { companyId, clientId, name },
+    message: "Stock Group name already exists!",
+  });
+
 
   // Generate unique stockGroupId
-  const stockGroupId = await generate6DigitUniqueId(StockGroup, "stockGroupId");
-  const code = await generate6DigitUniqueId(StockGroup, "code");
+  // const stockGroupId = await generate6DigitUniqueId(StockGroup, "stockGroupId");
+  // const code = await generate6DigitUniqueId(StockGroup, "code");
   // Create stock group 
   const stockGroup = await StockGroup.create({
     clientId,
     companyId,
-    stockGroupId,
-    code,
+    // stockGroupId,
+    // code,
     parent,
     name,
     description,
@@ -457,6 +464,7 @@ exports.getStockGroupsByCompany = asyncHandler(async (req, res) => {
 // Update
 exports.updateStockGroup = asyncHandler(async (req, res) => {
   const agentId = req.user.id;
+  const clientId=req.user.clientID
   const { companyId, name, description, status, parent } = req.body;
 
   // ✅ Required field check
@@ -470,9 +478,18 @@ exports.updateStockGroup = asyncHandler(async (req, res) => {
     throw new ApiError(403, "You are not permitted to perform this action");
   }
 
+    await checkUnique({
+    model: StockGroup,
+    filter: { companyId, clientId, name },
+    excludeId: req.params.id,
+    message: "Stock Group name already exists",
+  });
+
   // ✅ Find existing StockGroup
   const stockGroup = await StockGroup.findById(req.params.id);
   if (!stockGroup) throw new ApiError(404, "Stock Group not found");
+
+  
 
   // ✅ Allowed fields for update
   const allowedFields = [

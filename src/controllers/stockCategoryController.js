@@ -8,6 +8,7 @@ const User = require("../models/User");
 const { default: mongoose } = require("mongoose");
 const { createAuditLog } = require("../utils/createAuditLog");
 const { generate6DigitUniqueId } = require("../utils/generate6DigitUniqueId");
+const {checkUnique} =require("../utils/checkUnique")
 
 // ===== Helpers ===== //
 const ensureFound = (doc, message = "Resource not found") => {
@@ -92,14 +93,19 @@ exports.createStockCategory = asyncHandler(async (req, res) => {
     throw new ApiError(403, "You are not permitted to perform this action");
   }
 
-  const clientId = agentDetail.clientID;
-  const code = await generate6DigitUniqueId(StockCategory, "code");
+        const clientId = req.user.clientID;
+  // const code = await generate6DigitUniqueId(StockCategory, "code");
   // Create category
+    await checkUnique({
+    model: StockCategory,
+    filter: { companyId, clientId, name },
+    message: "Stock Group name already exists",
+  });
   const category = await StockCategory.create({
     clientId,
     companyId,
     name,
-    code,
+    // code,
     description,
     parent,
     status: "active",
@@ -410,8 +416,19 @@ exports.getStockCategoriesByCompanyId = asyncHandler(async (req, res) => {
 // Update Stock Category
 exports.updateStockCategory = asyncHandler(async (req, res) => {
   const { id } = req.params;
+  const companyId=req?.body?.companyId;
+   const clientId = req?.user?.clientID;
+   const name=req?.body?.name;
 
   // ✅ Find existing StockCategory
+  
+   await checkUnique({
+    model: StockCategory,
+    filter: { companyId, clientId, name },
+    excludeId: req.params.id,
+    message: "StockCategory name already exists",
+  });
+
   const stockCategory = await StockCategory.findById(id);
   if (!stockCategory) throw new ApiError(404, "Stock Category not found");
 
@@ -473,8 +490,13 @@ exports.updateStockCategory = asyncHandler(async (req, res) => {
 // Delete Stock Category (Soft delete → status: "Delete")
 exports.deleteStockCategory = asyncHandler(async (req, res) => {
   const { id } = req.params;
+  const clientId = req.user.clientID;
   const category = await StockCategory.findById(id);
   ensureFound(category, "Stock Category not found");
+    if (category.clientId.toString() !== clientId.toString()) {
+    throw new ApiError(403, "Unauthorized to delete this Stock Category");
+  }
+
 
   category.status = "delete";
   const agentId = req.user.id;

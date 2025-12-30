@@ -10,6 +10,7 @@ const {
   
 } = require("../controllers/agentController");
 const upload = require("../config/s3");
+const validateCompany = require("../middlewares/validateCompanyMiddleware");
 
 const router = express.Router();
 
@@ -17,19 +18,19 @@ const router = express.Router();
 router.post("/", upload.fields([
     { name: "logo", maxCount: 1 },
     { name: "registrationDocs", maxCount: 5 },
-  ]), createAgent);
+  ]),validateCompany, createAgent);
   router.post("/bulk", createBulkAgents);
 
 // Update agent
 router.put("/:id",upload.fields([
     { name: "logo", maxCount: 1 },
     { name: "registrationDocs", maxCount: 5 },
-  ]),  updateAgent);
+  ]),validateCompany,  updateAgent);
 
 // Get all agents by company
 // router.get("/", getAgentsByClient);
 // // Get all agents by company
-router.get("/:companyId", getAgentsByCompany);
+router.get("/:companyId",validateCompany, getAgentsByCompany);
 
 // Get agent by id
 router.get("/:id", getAgentById);

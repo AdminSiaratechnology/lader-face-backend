@@ -87,11 +87,38 @@ const companySchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    defaultDecimalPlaces: { type: Number, default: 2 },
     isDeleted: { type: Boolean, default: false },
     auditLogs: [auditLogSchema],
   },
   { timestamps: true }
 );
+companySchema.pre("validate", async function (next) {
+  try {
+    if (this.code) return next();
+
+    const Counter = mongoose.model("Counter");
+
+    const counter = await Counter.findOneAndUpdate(
+      {
+        clientId: this.clientId,
+        companyId: this.companyId,
+        type: "Company",
+      },
+      { $inc: { seq: 1 } },
+      {
+        new: true,
+        upsert: true,
+      }
+    );
+
+    this.code = counter.seq.toString().padStart(6, "0");
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 companySchema.index({ client: 1, status: 1, createdAt: -1 });
 
 companySchema.index(
@@ -102,5 +129,5 @@ companySchema.index(
 companySchema.index({ email: 1 });
 companySchema.index({ createdBy: 1 });
 
-companySchema.index({ code: 1 }, { unique: true });
+
 module.exports = mongoose.model("Company", companySchema);
