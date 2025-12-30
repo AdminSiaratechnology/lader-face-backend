@@ -11,7 +11,9 @@ const mongoose = require("mongoose");
 // const { createAuditLog } = require("../utils/createAuditLog");
 const createAuditLog  = require("../utils/createAuditLogMain");
 const processRegistrationDocs = require("../utils/processRegistrationDocs");
-
+const {
+  createDefaultMastersForClient,
+} = require("../workers/defaultMasters");
 const generateUniqueCodeInMemory = (existingSet) => {
   let code;
   do {
@@ -71,7 +73,7 @@ exports.createCompany = asyncHandler(async (req, res) => {
     ),
     req.files?.brandingImages || [],
   ]);
-  const code = await generate6DigitUniqueId(Company, "code");
+
   const banksParsed = JSON.parse(banks || "[]");
   const processedBranding = brandingFiles.map((file) => ({
     type: "banner",
@@ -82,7 +84,6 @@ exports.createCompany = asyncHandler(async (req, res) => {
   const company = await Company.create({
     namePrint,
     ...rest,
-    code,
     client: clientId,
     banks: banksParsed,
     logo: logoUrl,
@@ -98,7 +99,11 @@ exports.createCompany = asyncHandler(async (req, res) => {
       },
     ],
   });
-  ; // Fire audit log async (non-blocking)_
+  await createDefaultMastersForClient({
+  companyId: company._id,
+  clientId: clientId,
+});
+  // Fire audit log async (non-blocking)_
   createAuditLogAsync(req, company._id).catch(console.error);
   res
     .status(201)
@@ -216,7 +221,6 @@ exports.createBulkCompanies = asyncHandler(async (req, res) => {
 // 🟢 Agent ke liye apne client ki saari companies laana
 exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
   const agentId = req.user.id;
-  console.log("Agent ID from tokenggggggg:", agentId);
 
   const agent = await User.findById(agentId);
   if (!agent) throw new ApiError(404, "Agent not found");
@@ -226,8 +230,6 @@ exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
   const { search, status, sortBy, sortOrder, limit = 3, page = 1 } = req.query;
 
   let filter = { client: clientId, status: { $ne: "delete" } };
-  console.log("Search Query:", search);
-  console.log("Status Filter:", status);
 
   if (status && status !== "") {
     filter.status = status;
@@ -243,7 +245,6 @@ exports.getCompaniesForAgent = asyncHandler(async (req, res) => {
 
     ];
   }
-  console.log("Final Filter Object:", filter);
 
   // sorting
   let sort = {};

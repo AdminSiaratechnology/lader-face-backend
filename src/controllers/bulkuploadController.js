@@ -97,9 +97,7 @@ exports.createBulkUpload = asyncHandler(async (req, res) => {
 
       // ⚡ DYNAMIC VALIDATION
       const isValid = config.requiredFields.every((field) => item[field]);
-      console.log("Validating item:", item, "isValid:", isValid);
       if (!isValid) continue; // Skip invalid records
-      console.log("Inserting item:", item);
 
       payload.push({
         ...item,

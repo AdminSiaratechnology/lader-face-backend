@@ -33,14 +33,14 @@ const insertInBatches = async (data, batchSize) => {
       continue;
     }
 
-    console.log(`Inserting batch of ${batch.length} records`);
+    // console.log(`Inserting batch of ${batch.length} records`);
     try {
       const inserted = await Agent.insertMany(batch, { ordered: false });
       if (inserted && Array.isArray(inserted)) {
         results.push(...inserted);
-        console.log(`Inserted ${inserted.length} records in batch`);
+        // console.log(`Inserted ${inserted.length} records in batch`);
       } else {
-        console.error("No records inserted in batch");
+        // console.error("No records inserted in batch");
       }
     } catch (error) {
       if (error.name === "MongoBulkWriteError" && error.code === 11000) {
@@ -75,7 +75,7 @@ const insertInBatches = async (data, batchSize) => {
     insertedIds.length > 0
       ? await Agent.find({ _id: { $in: insertedIds } })
       : [];
-  console.log(`Verified ${verifiedDocs.length} records in database`);
+  // console.log(`Verified ${verifiedDocs.length} records in database`);
   return verifiedDocs;
 };
 
@@ -145,7 +145,7 @@ exports.createAgent = asyncHandler(async (req, res) => {
     ipAddress = "127.0.0.1";
   }
 
-  console.log(ipAddress, "ipaddress");
+  // console.log(ipAddress, "ipaddress");
   await createAuditLog({
     module: "Agent",
     action: "create",
@@ -162,7 +162,7 @@ exports.createAgent = asyncHandler(async (req, res) => {
 });
 
 exports.createBulkAgents = asyncHandler(async (req, res) => {
-  console.log("Processing agents");
+  // console.log("Processing agents");
   const { agents } = req.body;
 
   // Validate input
@@ -173,7 +173,7 @@ exports.createBulkAgents = asyncHandler(async (req, res) => {
   // Validate user
   const userId = req.user.id;
   const user = await User.findById(userId);
-  console.log(user, "user");
+  // console.log(user, "user");
   if (!user) throw new ApiError(404, "User not found");
   const clientId = req.user.clientID;
   if (!clientId) throw new ApiError(400, "Client ID is required from token");
@@ -444,7 +444,7 @@ exports.getAgentsByCompany = asyncHandler(async (req, res) => {
   const clientId = req.user.clientID;
   if (!clientId) throw new ApiError(400, "Client ID is required");
   const { companyId } = req.params;
-  console.log(req.params, "req.prams");
+  // console.log(req.params, "req.prams");
   if (!companyId) throw new ApiError(400, "Company ID is required");
 
 

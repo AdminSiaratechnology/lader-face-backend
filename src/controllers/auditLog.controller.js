@@ -35,7 +35,7 @@ const modelMap = {
 exports.getAuditLogsByClient = asyncHandler(async (req, res) => {
   const clientID = req.user.clientID;
   if (!clientID) throw new ApiError(400, "Client ID is required");
-  console.log("hiiii");
+  // console.log("hiiii");
   // Query params for filtering/sorting/pagination
   const {
     search = "",
@@ -183,7 +183,7 @@ exports.getAuditLogsByClientDetailByID = asyncHandler(async (req, res) => {
   if (!clientID) throw new ApiError(400, "Client ID is required");
 
   const { id } = req.params;
-  console.log("getAuditLogsByClientDetailByID");
+  // console.log("getAuditLogsByClientDetailByID");
   // Query params for filtering/sorting/pagination
 
   // ✅ Filters
@@ -210,7 +210,7 @@ exports.getAuditLogsByClientDetailByID = asyncHandler(async (req, res) => {
 });
 
 exports.restoreRecord = async (req, res) => {
-  console.log("restoreRecord");
+  // console.log("restoreRecord");
   try {
     const { module, referenceId, id } = req.body; // module = model name, id = audit log id
     const performedBy = req.user.id;
@@ -229,10 +229,10 @@ exports.restoreRecord = async (req, res) => {
         success: false,
         message: "Invalid module name",
       });
-    console.log(Model, "model");
+    // console.log(Model, "model");
     const record = await Model.findById(referenceId);
-    console.log(module, "module");
-    console.log(record, "record");
+    // console.log(module, "module");
+    // console.log(record, "record");
 
     if (!record)
       return res.status(404).json({

@@ -11,6 +11,7 @@ const Customer = require("../models/Customer");
 const sendEmail = require("../utils/sendEmail");
 const OTP = require("../models/OTP");
 const generateOTPTemplate = require("../utils/pdfTemplates/generateOTPTemplate");
+const CustomerGroup = require("../models/CustomerGroup");
 
 // 🔐 Token Generator
 const signToken = (userId, clientID, role, deviceId) => {
@@ -22,340 +23,6 @@ const signToken = (userId, clientID, role, deviceId) => {
     }
   );
 };
-
-// ✅ REGISTER USER
-// exports.register = asyncHandler(async (req, res) => {
-//   const adminId = req?.user?.id;
-//   const {
-//     name,
-//     email,
-//     password,
-//     role,
-//     city,
-//     country,
-//     state,
-//     area,
-//     limit,
-//     pincode,
-//     region,
-//     multiplePhones,
-//   } = req.body;
-//   let clientID = req.body.clientID || req.user.clientID;
-//   // Backend - parse each projects entry
-//   let projects = req.body.projects || [];
-
-//   // If it's a single JSON string
-//   if (typeof projects === "string") {
-//     projects = [projects];
-//   }
-
-//   if (Array.isArray(projects)) {
-//     projects = projects
-//       .map((p) => {
-//         if (typeof p === "string") {
-//           try {
-//             return JSON.parse(p);
-//           } catch (e) {
-//             return null;
-//           }
-//         }
-//         return p;
-//       })
-//       .filter(Boolean);
-//   }
-
-//   // Now projects will be properly formatted array of objects
-//   let access = structuredClone(req.body.access);
-//   if (!name || !email || !password || !role) {
-//     throw new ApiError(400, "Missing required fields");
-//   }
-
-//   const exists = await User.findOne({ email: email.toLowerCase() });
-//   if (exists) throw new ApiError(409, "Email already in use");
-
-//   const creatorInfo = await User.findById(adminId);
-//   if (creatorInfo.role === "SuperAdmin" || creatorInfo.role === "Partner") {
-//     req.body.projects = projects;
-//   }
-
-//   if (creatorInfo.role !== "SuperAdmin") {
-//     if (creatorInfo.role === "Admin") {
-//       // Admin can only create users under their assigned client
-//       if (!clientID)
-//         throw new ApiError(
-//           400,
-//           "Client ID is required for Admin-created users"
-//         );
-
-//       const client = await User.findById(clientID);
-//       if (!client) throw new ApiError(404, "Client not found");
-
-//       if (client.limit <= 0) {
-//         throw new ApiError(400, "Client limit exceeded");
-//       }
-//     }
-//   }
-
-//   const hash = await bcrypt.hash(password, 10);
-//   const uploadedDocs = req.files?.documents || [];
-//   const uploadedUrls = uploadedDocs.map((file) => file.location);
-
-//   // Final documents array (uploaded OR body OR fallback)
-//   const finalDocuments =
-//     uploadedUrls.length > 0
-//       ? uploadedUrls
-//       : Array.isArray(req.body.documents)
-//       ? req.body.documents
-//       : [];
-
-//   const user = await User.create({
-//     ...req.body,
-//     email: email.toLowerCase(),
-//     password: hash,
-//     clientID: clientID || creatorInfo?.clientID,
-//     createdBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
-//     parent: creatorInfo?._id || null,
-//     city,
-//     country,
-//     state,
-//     area,
-//     limit,
-//     pincode,
-//     region,
-//     access: access,
-//     documents: finalDocuments,
-//     multiplePhones,
-//     auditLogs: [
-//       {
-//         action: "create",
-//         performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
-//         timestamp: new Date(),
-//         details: "User created",
-//       },
-//     ],
-//   });
-//   if (role === "Client") {
-//     const assignedLimit = limit || 0;
-
-//     // Only check/deduct if creator is Partner
-//     if (creatorInfo.role === "Partner") {
-//       const partnerRemainingLimit = creatorInfo.limit || 0;
-
-//       if (assignedLimit > partnerRemainingLimit) {
-//         throw new ApiError(
-//           400,
-//           `Partner limit exceeded. You have ${partnerRemainingLimit} remaining.`
-//         );
-//       }
-
-//       // Deduct assigned limit from Partner
-//       await User.updateOne(
-//         { _id: creatorInfo._id },
-//         {
-//           $inc: { limit: -assignedLimit },
-//         }
-//       );
-//     }
-
-//     // Assign initial limit to the Client regardless of creator role
-//     if (assignedLimit > 0) {
-//       await User.updateOne(
-//         { _id: user._id },
-//         {
-//           $push: {
-//             limitHistory: {
-//               performedBy: adminId
-//                 ? new mongoose.Types.ObjectId(adminId)
-//                 : null,
-//               initialLimit: assignedLimit,
-//               previousLimit: 0,
-//               newLimit: assignedLimit,
-//               action: "assigned",
-//               reason:
-//                 creatorInfo.role === "Partner"
-//                   ? "Initial limit assigned by Partner"
-//                   : "Initial limit assigned by SuperAdmin",
-//               timestamp: new Date(),
-//             },
-//           },
-//         }
-//       );
-//     }
-//     // If client is being created, attach project list given
-//     user.projects = projects;
-//     user.clientID = user._id;
-//     console.log(user, "userclientid");
-//     await user.save();
-//   }
-//   if (role === "Admin") {
-//     const client = await User.findById(clientID).select("projects");
-
-//     user.projects = client?.projects || [];
-//     await user.save();
-
-//     // Deduct 1 license from Client
-//     await User.updateOne({ _id: user.clientID }, { $inc: { limit: -1 } });
-//   }
-
-//   if (role === "Partner" && limit) {
-//     await User.updateOne(
-//       { _id: user._id },
-//       {
-//         $push: {
-//           limitHistory: {
-//             performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
-//             initialLimit: limit,
-//             previousLimit: 0,
-//             newLimit: limit,
-//             action: "assigned",
-//             reason: "Initial limit assigned on creation",
-//             timestamp: new Date(),
-//           },
-//         },
-//       }
-//     );
-//   }
-//   if (role === "Sub Partner" && limit) {
-//     await User.updateOne(
-//       { _id: user._id },
-//       {
-//         $push: {
-//           limitHistory: {
-//             performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
-//             initialLimit: limit,
-//             previousLimit: 0,
-//             newLimit: limit,
-//             action: "assigned",
-//             reason: "Initial limit assigned on creation",
-//             timestamp: new Date(),
-//           },
-//         },
-//       }
-//     );
-//   }
-
-//   if (role === "Customer" && Array.isArray(access) && access.length > 0) {
-//     console.log("Auto-creating customers for access:", access);
-//     for (const acc of access) {
-//       const companyId = acc.company;
-
-//       if (!companyId) continue;
-
-//       const code = await generateUniqueId(Customer, "code");
-
-//       const customer = await Customer.create({
-//         company: companyId,
-//         clientId: creatorInfo?.clientID || adminId,
-
-//         // Required fields
-//         customerName: name,
-//         contactPerson: name,
-//         emailAddress: email.toLowerCase(),
-//         customerType: "company",
-//         code,
-
-//         createdBy: adminId,
-//         auditLogs: [
-//           {
-//             action: "create",
-//             performedBy: adminId ? new mongoose.Types.ObjectId(adminId) : null,
-//             timestamp: new Date(),
-//             details: "Customer auto-created from user registration",
-//           },
-//         ],
-//       });
-//       // Customer inherits creator's projects (client projects)
-//       user.projects = creatorInfo.projects || [];
-//       await user.save();
-
-//       // ✅ Debug log
-//       console.log(
-//         `✅ Auto-Created Customer --> ID: ${
-//           customer._id
-//         }, Company: ${companyId}, Code: ${code}, Email: ${email.toLowerCase()}`
-//       );
-//     }
-//   }
-//   const code = await generate6DigitUniqueId(User, "code");
-//   await User.updateOne(
-//     { _id: user._id },
-//     {
-//       $set: {
-//         code,
-//       },
-//     }
-//   );
-//   // After all role-based updates (Client, Admin deduction, Partner limit history, Customer auto-creation)
-//   // BEFORE generating code
-
-//   // 📩 Send email to Admin user with credentials
-//   if (role === "Admin") {
-//     const emailSubject = "Your Admin Account Credentials";
-//     const emailText = `
-// Hello ${name},
-
-// Your admin account has been created successfully.
-
-// Login Credentials:
-// Email: ${email}
-// Password: ${password}
-
-// Please log in to continue working.
-
-// Regards,
-// Team
-// `;
-
-//     const emailHtml = `
-//   <p>Hello <strong>${name}</strong>,</p>
-//   <p>Your admin account has been successfully created.</p>
-//   <p><strong>Login Credentials:</strong></p>
-//   <ul>
-//     <li><strong>Email:</strong> ${email}</li>
-//     <li><strong>Password:</strong> ${password}</li>
-//   </ul>
-//   <p>Please change your password after first login.</p>
-//   <br/>
-//   <p>Regards,<br/>Team</p>
-//   `;
-
-//     const emailStatus = await sendEmail({
-//       to: email,
-//       subject: emailSubject,
-//       text: emailText,
-//       html: emailHtml,
-//     });
-
-//     if (!emailStatus.success) {
-//       console.error(
-//         "⚠️ Failed to send admin credentials email:",
-//         emailStatus.error
-//       );
-//     }
-//   }
-
-//   const userResponse = user.toObject();
-//   delete userResponse.password;
-//   let ipAddress =
-//     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-
-//   // convert ::1 → 127.0.0.1
-//   if (ipAddress === "::1" || ipAddress === "127.0.0.1") {
-//     ipAddress = "127.0.0.1";
-//   }
-//   await createAuditLog({
-//     module: "User",
-//     action: "create",
-//     performedBy: req.user.id,
-//     referenceId: user._id,
-//     clientId: req.user.clientID,
-//     details: "User created successfully",
-//     ipAddress,
-//   });
-//   res
-//     .status(201)
-//     .json(new ApiResponse(201, userResponse, "User registered successfully"));
-// });
 
 exports.register = asyncHandler(async (req, res) => {
   const adminId = req?.user?.id;
@@ -630,7 +297,9 @@ exports.register = asyncHandler(async (req, res) => {
   if (role === "Customer" && Array.isArray(access) && access.length > 0) {
     for (const acc of access) {
       if (!acc.company) continue;
-
+      const customerGroup = await CustomerGroup.findOne({
+        groupName: "User", companyId: acc.company
+      });
       await Customer.create({
         company: acc.company,
         companyId: acc.company,
@@ -641,12 +310,10 @@ exports.register = asyncHandler(async (req, res) => {
         emailAddress: email.toLowerCase(),
         customerType: "company",
         createdBy: adminId,
-        createdFromUser: true
+        createdFromUser: true,
+        customerGroup: customerGroup._id,
+        group:customerGroup._id,
       });
-      console.log(
-        "🚀 ~ file: authController.js ~ line 400 ~ acc.company ~ acc.company",
-        acc.company
-      );
       user.projects = creatorInfo.projects || [];
       await user.save();
     }
@@ -705,7 +372,7 @@ exports.registerInside = asyncHandler(async (req, res) => {
   const adminId = req?.user?.id;
   const { name, email, password, role } = req.body;
   let access = structuredClone(req.body.access);
-  console.log(access, "access");
+  // console.log(access, "access");
 
   if (!name || !email || !password || !role) {
     throw new ApiError(400, "Missing required fields");
@@ -746,7 +413,7 @@ exports.registerInside = asyncHandler(async (req, res) => {
     ipAddress = "127.0.0.1";
   }
 
-  console.log(ipAddress, "ipaddress");
+  // console.log(ipAddress, "ipaddress");
   await createAuditLog({
     module: "User",
     action: "create",
@@ -811,10 +478,10 @@ exports.updateUser = asyncHandler(async (req, res) => {
       );
     }
   }
-const oldAccessCompanies = Array.isArray(user.access)
+  const oldAccessCompanies = Array.isArray(user.access)
     ? user.access.map((acc) => acc?.company?.toString()).filter(Boolean)
     : [];
-console.log(oldAccessCompanies, "oldAccessCompanies")
+  // console.log(oldAccessCompanies, "oldAccessCompanies");
   Object.entries(updateData).forEach(([key, value]) => {
     if (["createdBy", "createdAt", "_id", "password"].includes(key)) return;
     if (key === "clientID") return;
@@ -886,7 +553,7 @@ console.log(oldAccessCompanies, "oldAccessCompanies")
   });
 
   await user.save();
-  
+
   let newAccess = updateData.access || [];
 
   if (!Array.isArray(newAccess)) {
@@ -896,17 +563,14 @@ console.log(oldAccessCompanies, "oldAccessCompanies")
   const newAccessCompanies = newAccess
     .map((acc) => acc?.company?.toString())
     .filter(Boolean);
-    console.log(newAccessCompanies, "newAccessCompanies")
   const newlyAddedCompanies = newAccessCompanies.filter(
     (companyId) => !oldAccessCompanies.includes(companyId)
   );
-  console.log(newlyAddedCompanies, "newlyAddedCompanies")
   if (
     (updateData.role === "Customer" || user.role === "Customer") &&
     newlyAddedCompanies.length > 0
   ) {
     for (const companyId of newlyAddedCompanies) {
-      console.log(companyId, "aaaaaaaaaaaaaaa")
       if (!mongoose.Types.ObjectId.isValid(companyId)) continue;
 
       const exists = await Customer.findOne({
@@ -927,15 +591,12 @@ console.log(oldAccessCompanies, "oldAccessCompanies")
         emailAddress: user.email.toLowerCase(),
         customerType: "company",
         createdBy: req.user.id,
-        createdFromUser: true
+        createdFromUser: true,
       });
-
-      console.log("✅ Customer entry created for company:", companyId);
     }
   }
 
   const userResponse = user.toObject();
-  console.log(userResponse);
   delete userResponse.password;
   let ipAddress =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
@@ -1129,7 +790,6 @@ exports.deleteUser = asyncHandler(async (req, res) => {
 // ==========================================
 exports.loginClientPortal = asyncHandler(async (req, res) => {
   const { email, password, deviceId } = req.body;
-  console.log(email, "email");
 
   // 1. Basic Validation
   if (!email || !password)
@@ -1179,7 +839,7 @@ exports.loginClientPortal = asyncHandler(async (req, res) => {
   if (!isMatch) throw new ApiError(401, "Invalid credentials");
   const newDeviceId =
     req?.headers["auth-source"] == "Api" ? user.currentDeviceId : deviceId;
-  console.log(req?.headers["auth-source"], "fhjefvghergh", newDeviceId);
+  // console.log(req?.headers["auth-source"], "fhjefvghergh", newDeviceId);
 
   // 5. Generate Token
   const token = signToken(user._id, user.clientID, user.role, newDeviceId);
@@ -1400,8 +1060,6 @@ exports.sendResetOTP = async (req, res) => {
     };
 
     const portal = req.headers["auth-source"] || "client-portal";
-    console.log(portal, "portaltype");
-    console.log(email, "email");
     const user = await User.findOne({ email });
     if (user.status === "inactive") {
       throw new ApiError(403, "Account Inactive. Please contact support.");
@@ -1409,11 +1067,7 @@ exports.sendResetOTP = async (req, res) => {
     if (user.status === "delete") {
       throw new ApiError(403, "Account Not Found. Please contact support.");
     }
-
-    console.log(user, "userrole");
-    console.log(!user, "user");
     if (!user) {
-      console.log(`Attempted OTP request for non-existent email: ${email}`);
       return res.status(200).json({
         message: "If the email is registered, an OTP has been sent.",
         attemptsLeft: MAX_ATTEMPTS,
@@ -1508,7 +1162,6 @@ exports.sendResetOTP = async (req, res) => {
       window: WINDOW / 1000, // Return window in seconds
     });
   } catch (err) {
-    console.log("Error sending OTP:", err);
     res.status(500).json({
       message: err?.message || "An error occurred while sending OTP.",
     });

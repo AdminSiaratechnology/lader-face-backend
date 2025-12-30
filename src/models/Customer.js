@@ -65,7 +65,7 @@ const CustomerSchema = new mongoose.Schema(
     designation: { type: String },
     phoneNumber: { type: String, default: "" },
     mobileNumber: { type: String },
-    emailAddress: { type: String, required: true },
+    emailAddress: { type: String },
     faxNumber: { type: String },
 
     addressLine1: { type: String },

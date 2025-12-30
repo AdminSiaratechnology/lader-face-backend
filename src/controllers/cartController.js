@@ -275,6 +275,7 @@ exports.getCart = async (req, res) => {
         discount,
         finalPrice,
         product: stock,
+        batch: cart.batch,
       };
     });
 

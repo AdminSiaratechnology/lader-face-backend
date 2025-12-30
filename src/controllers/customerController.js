@@ -46,7 +46,6 @@ exports.createCustomer = asyncHandler(async (req, res) => {
       registrationDocTypes: rawDocTypes,
       ...rest
     } = req.body;
-    console.log(req.body, "resssss");
 
     const adminId = req?.user?.id;
     const clientId = req.user.clientID;
@@ -57,7 +56,9 @@ exports.createCustomer = asyncHandler(async (req, res) => {
     if (!clientId) {
       throw new ApiError(400, "Client ID is required from token");
     }
-
+    if (!emailAddress) {
+      throw new ApiError(400, "Email is required");
+    }
     // Parallel file processing
     const [logoUrl, processedDocs] = await Promise.all([
       req.files?.logo?.[0]?.location || null,
@@ -1020,13 +1021,16 @@ exports.uploadCustomerCSV = async (req, res) => {
 
     for (const row of csvData) {
       const company = row.company;
-      let customerGroup = null;
+      let customerGroup = await CustomerGroup.findOne({
+        groupName: "Sundry Debtors",
+        companyId: company,
+      });
       if (row.customerGroup) {
         const group = await CustomerGroup.findOne({
           groupName: row.customerGroup,
           companyId: company,
         });
-        if (group) customerGroup = group.id; // OR group._id (as per schema)
+        if (group) customerGroup = group.id;
       }
 
       customersToInsert.push({
@@ -1038,8 +1042,7 @@ exports.uploadCustomerCSV = async (req, res) => {
         name: row.customerName,
         customerType: row.customerType || "company",
         shortName: row.shortName,
-        group: customerGroup,
-
+        group: customerGroup ? customerGroup._id : null,
         status: "active",
 
         contactPerson:
@@ -1079,6 +1082,64 @@ exports.uploadCustomerCSV = async (req, res) => {
       success: false,
       message: "CSV upload failed",
       error: error.message,
+    });
+  }
+};
+
+exports.createCounterCustomer = async (req, res) => {
+  try {
+    const { name, phoneNumber, companyId } = req.body;
+
+    const adminId = req.user?.id;
+    const clientId = req.user?.clientID;
+
+    if (!name || !companyId) {
+      return res.status(400).json({
+        success: false,
+        message: "Customer name and companyId are required",
+      });
+    }
+
+    // 🔹 Find default customer group
+    const customerGroup = await CustomerGroup.findOne({
+      groupName: "Counter",
+      companyId,
+    });
+
+    if (!customerGroup) {
+      return res.status(404).json({
+        success: false,
+        message: "Default customer group not found",
+      });
+    }
+
+    const customer = await Customer.create({
+      company: companyId,
+      companyId,
+      clientId,
+
+      name,
+      customerName: name,
+      contactPerson: name,
+      phoneNumber,
+
+      customerType: "company",
+      customerGroup: customerGroup._id,
+      group: customerGroup._id,
+      createdBy: adminId,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Customer created successfully",
+      data: customer,
+    });
+  } catch (err) {
+    console.error("createCounterCustomer error:", err);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
     });
   }
 };
