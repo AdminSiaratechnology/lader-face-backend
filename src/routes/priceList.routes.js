@@ -8,6 +8,7 @@ const {
   importPriceListFromCSV,
   getPriceListById,
   updatePriceListPage,
+  deletePriceList,
 } = require("../controllers/priceList.controller");
 
 // ✅ DEFINE UPLOAD
@@ -30,5 +31,7 @@ router.put(
   "/price-list/:id",
   updatePriceListPage
 );
+router.delete("/price-list/:id", deletePriceList);
+
 
 module.exports = router;

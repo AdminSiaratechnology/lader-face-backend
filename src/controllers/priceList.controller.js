@@ -1,7 +1,13 @@
 
 const csv = require("csvtojson");
 const mongoose = require("mongoose");
+const fs = require("fs");
+const path = require("path")
 const PriceListPage =  require("../models/PriceListPage");
+const PriceLevel = require("../models/PriceLevel");
+
+const Product = require("../models/Product");
+const { Parser } = require("json2csv");
 
 const generateSixDigitCode = async (companyId) => {
   let code;
@@ -152,11 +158,24 @@ const getAllPriceList = async (req, res) => {
 };
 
 
+/* ===========================
+   UTILITY: ENSURE DIRECTORY
+=========================== */
+const ensureDirExists = (dirPath) => {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+};
+
+
 const importPriceListFromCSV = async (req, res) => {
   const clientId = req.user.clientID;
   const { companyId } = req.body;
+  const priceLevelCache = new Set();
+
 
   try {
+    /* ===== BASIC VALIDATIONS ===== */
     if (!req.file) {
       return res.status(400).json({ message: "CSV file required" });
     }
@@ -166,78 +185,192 @@ const importPriceListFromCSV = async (req, res) => {
     }
 
     const rows = await csv().fromFile(req.file.path);
-
     if (!rows.length) {
       return res.status(400).json({ message: "Empty CSV file" });
     }
 
+    /* ===== DATA HOLDERS ===== */
     const grouped = {};
+    const missingProducts = [];
+    const duplicatePriceLists = [];
 
-    rows.forEach((r) => {
-      if (!r.stockGroupName || !r.priceLevel || !r.applicableFrom) return;
+    /* ===========================
+       PROCESS EACH ROW (SAFE)
+    ============================ */
+    for (const r of rows) {
+      try {
+        if (!r.itemName || !r.priceLevel || !r.applicableFrom) continue;
 
-      const key = [
-        companyId,
-        r.priceLevel,
-        r.stockGroupName,
-        r.applicableFrom,
-        Number(r.page || 1),
-      ].join("|");
-
-      if (!grouped[key]) {
-        grouped[key] = {
-          companyId: new mongoose.Types.ObjectId(companyId),
-          clientId: new mongoose.Types.ObjectId(clientId),
-          priceLevel: r.priceLevel,
-          stockGroupName: r.stockGroupName,
-          applicableFrom: r.applicableFrom,
-          page: Number(r.page || 1),
-          items: [
-            {
-              itemId: null,
-              itemName: r.itemName,
-              slabs: [],
-            },
-          ],
-        };
-      }
-
-      if (Number(r.rate) > 0 || Number(r.discount) > 0) {
-        grouped[key].items[0].slabs.push({
-          fromQty: Number(r.fromQty),
-          lessThanQty:
-            r.lessThanQty === "" || r.lessThanQty === null
-              ? null
-              : Number(r.lessThanQty),
-          rate: Number(r.rate) || 0,
-          discount: Number(r.discount) || 0,
+        /* ===== PRODUCT CHECK ===== */
+        const product = await Product.findOne({
+          companyId,
+          name: r.itemName,
         });
-      }
+
+        if (!product) {
+          missingProducts.push({
+            itemName: r.itemName,
+            priceLevel: r.priceLevel,
+            applicableFrom: r.applicableFrom,
+          });
+          continue;
+        }
+        /* ===== PRICE LEVEL CHECK ===== */
+if (!priceLevelCache.has(r.priceLevel)) {
+  const exists = await PriceLevel.findOne({
+    name: r.priceLevel,
+    companyId,
+    clientId,
+  });
+
+  if (!exists) {
+    await PriceLevel.create({
+      name: r.priceLevel,
+      companyId,
+      clientId,
     });
+  }
 
-    const docs = Object.values(grouped).filter(
-      (d) => d.items[0].slabs.length > 0
-    );
+  priceLevelCache.add(r.priceLevel);
+}
+    /* ===== PAGE LEVEL GROUP KEY ===== */
+        const key = [
+          companyId,
+          clientId,
+          r.priceLevel,
+          r.stockGroupName || "",
+          r.applicableFrom,
+          Number(r.page || 1),
+        ].join("|");
 
-    for (const d of docs) {
-      await PriceListPage.findOneAndUpdate(
-        {
-          companyId: d.companyId,
-          clientId: d.clientId,
-          priceLevel: d.priceLevel,
-          stockGroupName: d.stockGroupName,
-          applicableFrom: d.applicableFrom,
-          page: d.page,
-        },
-        d,
-        { upsert: true, new: true }
-      );
+        /* ===== INIT PAGE ===== */
+        if (!grouped[key]) {
+          grouped[key] = {
+            companyId: new mongoose.Types.ObjectId(companyId),
+            clientId: new mongoose.Types.ObjectId(clientId),
+            priceLevel: r.priceLevel,
+            stockGroupName: r.stockGroupName,
+            applicableFrom: r.applicableFrom,
+            page: Number(r.page || 1),
+            items: [],
+          };
+        }
+
+        /* ===== ITEM MERGE ===== */
+        let item = grouped[key].items.find(
+          (i) => i.itemId.toString() === product._id.toString()
+        );
+
+        if (!item) {
+          item = {
+            itemId: product._id,
+            itemName: product.name,
+            slabs: [],
+          };
+          grouped[key].items.push(item);
+        }
+
+        /* ===== SLAB ADD ===== */
+        if (Number(r.rate) > 0 || Number(r.discount) > 0) {
+          item.slabs.push({
+            fromQty: Number(r.fromQty) || 0,
+            lessThanQty:
+              r.lessThanQty === "" || r.lessThanQty === null
+                ? null
+                : Number(r.lessThanQty),
+            rate: Number(r.rate) || 0,
+            discount: Number(r.discount) || 0,
+          });
+        }
+      } catch (rowErr) {
+        console.error("ROW ERROR:", rowErr);
+      }
     }
 
-    return res.status(200).json({
-      message: "Price List imported successfully",
-      pagesSaved: docs.length,
-    });
+    /* ===========================
+       SAVE / DUPLICATE CHECK
+    ============================ */
+    let pagesSaved = 0;
+
+    for (const doc of Object.values(grouped)) {
+      const exists = await PriceListPage.findOne({
+        companyId: doc.companyId,
+        clientId: doc.clientId,
+        priceLevel: doc.priceLevel,
+        stockGroupName: doc.stockGroupName,
+        applicableFrom: doc.applicableFrom,
+        page: doc.page,
+      });
+
+      if (exists) {
+        duplicatePriceLists.push({
+          priceLevel: doc.priceLevel,
+          applicableFrom: doc.applicableFrom,
+          page: doc.page,
+        });
+        continue;
+      }
+
+      if (doc.items.length) {
+        await PriceListPage.create(doc);
+        pagesSaved++;
+      }
+    }
+
+    /* ===========================
+       CSV EXPORT
+    ============================ */
+    const uploadDir = path.join(__dirname, "../uploads");
+    ensureDirExists(uploadDir);
+
+    const downloadFiles = [];
+
+    if (missingProducts.length) {
+      const parser = new Parser();
+      const csvData = parser.parse(missingProducts);
+      const filePath = path.join(uploadDir, "missing-products.csv");
+      fs.writeFileSync(filePath, csvData);
+      downloadFiles.push(filePath);
+    }
+
+    if (duplicatePriceLists.length) {
+      const parser = new Parser();
+      const csvData = parser.parse(duplicatePriceLists);
+      const filePath = path.join(uploadDir, "duplicate-price-lists.csv");
+      fs.writeFileSync(filePath, csvData);
+      downloadFiles.push(filePath);
+    }
+
+const archiver = require("archiver");
+/* ===========================
+   SEND ZIP FILE
+=========================== */
+if (missingProducts.length || duplicatePriceLists.length) {
+  res.setHeader("Content-Type", "application/zip");
+  res.setHeader(
+    "Content-Disposition",
+    "attachment; filename=price-list-import-report.zip"
+  );
+
+  const archive = archiver("zip", { zlib: { level: 9 } });
+  archive.pipe(res);
+
+  if (missingProducts.length) {
+    const parser = new Parser();
+    const csvData = parser.parse(missingProducts);
+    archive.append(csvData, { name: "missing-products.csv" });
+  }
+
+  if (duplicatePriceLists.length) {
+    const parser = new Parser();
+    const csvData = parser.parse(duplicatePriceLists);
+    archive.append(csvData, { name: "duplicate-price-lists.csv" });
+  }
+
+  await archive.finalize();
+  return;
+}
+
   } catch (err) {
     console.error("PRICE LIST CSV IMPORT ERROR:", err);
     return res.status(500).json({ message: err.message });
@@ -249,9 +382,9 @@ const importPriceListFromCSV = async (req, res) => {
 const getPriceListById = async (req, res) => {
   try {
     const { id } = req.params;
-
+console.log(id)
     const doc = await PriceListPage.findById(id);
-
+console.log(doc)
     if (!doc) {
       return res.status(404).json({ message: "Price list not found" });
     }
@@ -315,8 +448,33 @@ const updatePriceListPage = async (req, res) => {
   }
 };
 
+const deletePriceList = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const clientId = req.user.clientID;
 
+    const deleted = await PriceListPage.findOneAndDelete({
+      _id: id,
+      clientId,
+    });
 
-module.exports =  {getAllPriceList, savePriceListPage,importPriceListFromCSV , getPriceListById, updatePriceListPage} ;
+    if (!deleted) {
+      return res.status(404).json({
+        message: "Price list not found",
+      });
+    }
+
+    return res.json({
+      message: "Price list deleted successfully",
+    });
+  } catch (err) {
+    console.error("DELETE PRICE LIST ERROR:", err);
+    return res.status(500).json({
+      message: "Failed to delete price list",
+    });
+  }
+};
+
+module.exports =  {getAllPriceList, savePriceListPage,importPriceListFromCSV , getPriceListById, updatePriceListPage,deletePriceList} ;
 
 
