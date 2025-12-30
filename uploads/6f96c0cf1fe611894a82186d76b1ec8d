@@ -1,7 +1,0 @@
-priceLevel,stockGroupName,applicableFrom,page,itemName,fromQty,lessThanQty,rate,discount
-Level 1,All,01-01-2025,1,Item A,1,10,100,5.555
-Level 1,All,02-01-2025,1,Item A,11,20,95,5
-Level 3,All,03-01-2025,1,Item B,1,5,200,4.55
-Level 4,All,04-01-2025,1,Item B,6,15,180,10
-Level 5,All,05-01-2025,2,Item C,1,,150,0
-Level 6,All,06-01-2025,2,Item C,2,10,140,3
